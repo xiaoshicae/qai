@@ -103,3 +103,22 @@ pub fn list_history(
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     crate::db::execution::list_recent(&conn, limit.unwrap_or(50)).map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub fn list_request_runs(
+    db: State<'_, DbState>,
+    request_id: String,
+    limit: Option<u32>,
+) -> Result<Vec<crate::db::execution::RunRecord>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    crate::db::execution::list_by_request(&conn, &request_id, limit.unwrap_or(20)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_collection_status(
+    db: State<'_, DbState>,
+    collection_id: String,
+) -> Result<Vec<crate::db::execution::RequestLastStatus>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    crate::db::execution::get_last_status_for_collection(&conn, &collection_id).map_err(|e| e.to_string())
+}

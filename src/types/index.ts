@@ -101,6 +101,32 @@ export interface Environment {
   updated_at: string
 }
 
+export interface RunRecord {
+  id: string
+  status: string
+  request_url: string
+  request_method: string
+  request_headers: string
+  request_body: string | null
+  response_status: number | null
+  response_headers: string
+  response_body: string | null
+  response_time_ms: number
+  response_size: number
+  assertion_results: string
+  error_message: string | null
+  executed_at: string
+}
+
+export interface RequestLastStatus {
+  request_id: string
+  status: string
+  executed_at: string
+  response_time_ms: number
+  assertion_total: number
+  assertion_passed: number
+}
+
 export interface HistoryEntry {
   id: string
   request_id: string

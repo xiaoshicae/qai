@@ -6,6 +6,7 @@ import { useRequestStore } from '@/stores/request-store'
 import { useTabsStore } from '@/stores/tabs-store'
 import RequestPanel from '@/components/request/request-panel'
 import ResponsePanel from '@/components/response/response-panel'
+import CollectionOverview from '@/components/collection/collection-overview'
 
 const METHOD_COLORS: Record<string, string> = {
   GET: 'text-method-get',
@@ -17,26 +18,23 @@ const METHOD_COLORS: Record<string, string> = {
 }
 
 export default function WorkbenchView() {
-  const selectedRequestId = useCollectionStore((s) => s.selectedRequestId)
+  const { selectedNodeId, selectedRequestId, collections, trees } = useCollectionStore()
   const { currentRequest, loadRequest } = useRequestStore()
   const { tabs, activeTabId, openTab, closeTab, setActiveTab } = useTabsStore()
 
-  // 侧边栏点击请求 → 打开标签
+  // 判断选中的是集合还是请求
+  const selectedCollection = collections.find((c) => c.id === selectedNodeId)
+
   useEffect(() => {
-    if (selectedRequestId) {
-      // 需要先加载请求信息拿到 name/method
-      loadRequest(selectedRequestId)
-    }
+    if (selectedRequestId) loadRequest(selectedRequestId)
   }, [selectedRequestId])
 
-  // 请求加载完成后打开标签
   useEffect(() => {
     if (currentRequest && selectedRequestId === currentRequest.id) {
       openTab(currentRequest.id, currentRequest.name, currentRequest.method)
     }
   }, [currentRequest?.id])
 
-  // 切换标签时加载对应请求
   useEffect(() => {
     const activeTab = tabs.find((t) => t.id === activeTabId)
     if (activeTab && activeTab.requestId !== currentRequest?.id) {
@@ -44,7 +42,6 @@ export default function WorkbenchView() {
     }
   }, [activeTabId])
 
-  // 更新标签名称（当请求名变化时）
   useEffect(() => {
     if (currentRequest) {
       useTabsStore.getState().updateTab(currentRequest.id, {
@@ -53,6 +50,18 @@ export default function WorkbenchView() {
       })
     }
   }, [currentRequest?.name, currentRequest?.method])
+
+  // 选中集合时显示概览
+  if (selectedCollection && !selectedRequestId) {
+    return (
+      <div className="h-full overflow-y-auto">
+        <CollectionOverview
+          collection={selectedCollection}
+          tree={trees[selectedCollection.id]}
+        />
+      </div>
+    )
+  }
 
   if (tabs.length === 0) {
     return (
@@ -101,7 +110,6 @@ export default function WorkbenchView() {
         })}
       </div>
 
-      {/* 请求/响应面板 */}
       {currentRequest ? (
         <>
           <div className="shrink-0 overflow-y-auto p-5 pb-3 max-h-[50%]">

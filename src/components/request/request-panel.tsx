@@ -6,6 +6,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useRequestStore } from '@/stores/request-store'
 import KeyValueTable from './key-value-table'
 import AssertionEditor from '@/components/assertion/assertion-editor'
+import RunsTab from './runs-tab'
 import type { KeyValuePair } from '@/types'
 
 const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD'] as const
@@ -97,6 +98,7 @@ export default function RequestPanel() {
           <TabsTrigger value="headers">Headers</TabsTrigger>
           <TabsTrigger value="body">Body</TabsTrigger>
           <TabsTrigger value="assertions">Assertions</TabsTrigger>
+          <TabsTrigger value="runs">Runs</TabsTrigger>
         </TabsList>
         <TabsContent value="params">
           <KeyValueTable value={queryParams} onChange={setQueryParams} />
@@ -138,6 +140,9 @@ export default function RequestPanel() {
         </TabsContent>
         <TabsContent value="assertions">
           {currentRequest && <AssertionEditor requestId={currentRequest.id} />}
+        </TabsContent>
+        <TabsContent value="runs">
+          {currentRequest && <RunsTab requestId={currentRequest.id} />}
         </TabsContent>
       </Tabs>
     </div>

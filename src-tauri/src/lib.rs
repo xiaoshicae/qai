@@ -47,6 +47,8 @@ pub fn run() {
             commands::runner_cmd::run_collection,
             commands::runner_cmd::export_report_html,
             commands::runner_cmd::list_history,
+            commands::runner_cmd::list_request_runs,
+            commands::runner_cmd::get_collection_status,
             commands::ai_cmd::ai_generate_tests,
             commands::ai_cmd::ai_suggest_assertions,
             commands::ai_cmd::ai_chat,

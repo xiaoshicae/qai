@@ -5,6 +5,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { cn } from '@/lib/utils'
 import type { Collection, CollectionTreeNode } from '@/types'
 import { useCollectionStore } from '@/stores/collection-store'
+import { useStatusStore } from '@/stores/status-store'
 import { Input } from '@/components/ui/input'
 
 interface CollectionTreeProps {
@@ -36,6 +37,7 @@ export default function CollectionTree({ collections, trees, selectedNodeId, onS
   const navigate = useNavigate()
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const { loadTree, createRequest, createFolder, deleteCollection, renameCollection, selectNode } = useCollectionStore()
+  const loadForCollection = useStatusStore((s) => s.loadForCollection)
   const [menu, setMenu] = useState<ContextMenu | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
@@ -55,8 +57,11 @@ export default function CollectionTree({ collections, trees, selectedNodeId, onS
       next.has(id) ? next.delete(id) : next.add(id)
       return next
     })
-    if (collectionId && !trees[collectionId]) await loadTree(collectionId)
-  }, [trees, loadTree])
+    if (collectionId) {
+      if (!trees[collectionId]) await loadTree(collectionId)
+      loadForCollection(collectionId)
+    }
+  }, [trees, loadTree, loadForCollection])
 
   const expand = useCallback((id: string) => {
     setExpanded((prev) => new Set(prev).add(id))
@@ -235,14 +240,23 @@ interface TreeNodeProps {
 function TreeNode({ node, collectionId, level, expanded, selectedNodeId, renamingId, renameValue, onRenameChange, onRenameCommit, onStartRename, onToggle, onSelect, onContextMenu }: TreeNodeProps) {
   const isExpanded = expanded.has(node.id)
   const nodeType = node.node_type
+  const status = useStatusStore((s) => s.statuses[node.id])
 
   if (nodeType === 'request') {
     const method = node.method?.toUpperCase() ?? ''
     const colorClass = METHOD_COLORS[method] ?? 'text-muted-foreground'
+    const statusDot = status
+      ? status.status === 'success' ? 'bg-emerald-500' : 'bg-red-500'
+      : ''
     return (
       <TreeRow
         id={node.id}
-        icon={<span className={cn('text-[10px] font-bold font-mono w-8 text-right shrink-0 tracking-tight', colorClass)}>{method.substring(0, 4)}</span>}
+        icon={
+          <span className="relative shrink-0">
+            <span className={cn('text-[10px] font-bold font-mono w-8 text-right inline-block tracking-tight', colorClass)}>{method.substring(0, 4)}</span>
+            {statusDot && <span className={cn('absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full', statusDot)} />}
+          </span>
+        }
         label={node.name}
         level={level}
         selected={selectedNodeId === node.id}

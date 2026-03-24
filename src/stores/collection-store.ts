@@ -98,6 +98,8 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
         return
       }
     }
+    // 不是 request 节点（集合或文件夹），清空 requestId 以显示概览
+    set({ selectedRequestId: null })
   },
 }))
 

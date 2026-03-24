@@ -1,0 +1,124 @@
+use std::sync::Arc;
+use tokio::sync::Semaphore;
+use uuid::Uuid;
+
+use crate::models::assertion::Assertion;
+use crate::models::execution::ExecutionResult;
+use crate::models::request::ApiRequest;
+use crate::runner::assertion::evaluate_assertions;
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct TestProgress {
+    pub batch_id: String,
+    pub request_id: String,
+    pub request_name: String,
+    pub status: String,
+    pub current: u32,
+    pub total: u32,
+}
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct BatchResult {
+    pub batch_id: String,
+    pub total: u32,
+    pub passed: u32,
+    pub failed: u32,
+    pub errors: u32,
+    pub total_time_ms: u64,
+    pub results: Vec<ExecutionResult>,
+}
+
+pub async fn run_batch(
+    client: &reqwest::Client,
+    requests: Vec<(ApiRequest, Vec<Assertion>)>,
+    concurrency: usize,
+    progress_callback: impl Fn(TestProgress) + Send + Sync + 'static,
+) -> BatchResult {
+    let batch_id = Uuid::new_v4().to_string();
+    let total = requests.len() as u32;
+    let semaphore = Arc::new(Semaphore::new(concurrency));
+    let callback = Arc::new(progress_callback);
+    let client = client.clone();
+
+    let mut handles = Vec::new();
+
+    for (index, (req, assertions)) in requests.into_iter().enumerate() {
+        let sem = semaphore.clone();
+        let cb = callback.clone();
+        let bid = batch_id.clone();
+        let client = client.clone();
+
+        let handle = tokio::spawn(async move {
+            let _permit = sem.acquire().await.expect("semaphore closed");
+
+            cb(TestProgress {
+                batch_id: bid.clone(),
+                request_id: req.id.clone(),
+                request_name: req.name.clone(),
+                status: "running".to_string(),
+                current: index as u32 + 1,
+                total,
+            });
+
+            let mut result = match crate::http::client::execute(&client, &req).await {
+                Ok(r) => r,
+                Err(e) => ExecutionResult {
+                    execution_id: Uuid::new_v4().to_string(),
+                    request_id: req.id.clone(),
+                    request_name: req.name.clone(),
+                    status: "error".to_string(),
+                    response: None,
+                    assertion_results: vec![],
+                    error_message: Some(e.to_string()),
+                },
+            };
+
+            if let Some(ref response) = result.response {
+                if !assertions.is_empty() {
+                    result.assertion_results = evaluate_assertions(&assertions, response);
+                    if result.assertion_results.iter().any(|a| !a.passed) {
+                        result.status = "failed".to_string();
+                    }
+                }
+            }
+
+            let status = result.status.clone();
+            cb(TestProgress {
+                batch_id: bid,
+                request_id: req.id.clone(),
+                request_name: req.name.clone(),
+                status,
+                current: index as u32 + 1,
+                total,
+            });
+
+            result
+        });
+        handles.push(handle);
+    }
+
+    let mut results = Vec::new();
+    let mut total_time_ms = 0u64;
+    for handle in handles {
+        if let Ok(result) = handle.await {
+            if let Some(ref resp) = result.response {
+                total_time_ms += resp.time_ms;
+            }
+            results.push(result);
+        }
+    }
+
+    let passed = results.iter().filter(|r| r.status == "success").count() as u32;
+    let failed = results.iter().filter(|r| r.status == "failed").count() as u32;
+    let errors = results.iter().filter(|r| r.status == "error").count() as u32;
+
+    BatchResult {
+        batch_id,
+        total,
+        passed,
+        failed,
+        errors,
+        total_time_ms,
+        results,
+    }
+}

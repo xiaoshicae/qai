@@ -1,0 +1,89 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git:*)",
+      "Bash(gh:*)",
+      "Bash(npm:*)",
+      "Bash(npx:*)",
+      "Bash(node:*)",
+      "Bash(cargo:*)",
+      "Bash(rustc:*)",
+      "Bash(cargo tauri:*)",
+      "Bash(ls:*)",
+      "Bash(tree:*)",
+      "Bash(wc:*)",
+      "Bash(du:*)",
+      "Bash(lsof:*)",
+      "Bash(ps:*)",
+      "Bash(curl -s:*)",
+      "Bash(curl --head:*)",
+      "Bash(open:*)"
+    ],
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Bash(rm -r /:*)",
+      "Bash(git push --force:*)",
+      "Bash(git reset --hard:*)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v jq >/dev/null 2>&1 || exit 0; fp=$(cat - | jq -r '.tool_input.file_path // .tool_input.filePath // empty'); [ -n \"$fp\" ] && echo \"$fp\" | grep -qE '\\.(rs)$' && [ -f \"$fp\" ] && grep -n 'println!' \"$fp\" 2>/dev/null | head -3 | while read line; do echo \"[Hook] WARNING: println! found: $line\"; done || true"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v jq >/dev/null 2>&1 || exit 0; fp=$(cat - | jq -r '.tool_input.file_path // .tool_input.filePath // empty'); [ -n \"$fp\" ] && echo \"$fp\" | grep -qE '\\.(ts|vue)$' && [ -f \"$fp\" ] && grep -n 'console\\.log' \"$fp\" 2>/dev/null | head -3 | while read line; do echo \"[Hook] WARNING: console.log found: $line\"; done || true"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v jq >/dev/null 2>&1 || exit 0; fp=$(cat - | jq -r '.tool_input.file_path // .tool_input.filePath // empty'); [ -n \"$fp\" ] && echo \"$fp\" | grep -qE '\\.(rs)$' && [ -f \"$fp\" ] && grep -n 'unwrap()' \"$fp\" 2>/dev/null | head -5 | while read line; do echo \"[Hook] NOTE: unwrap() usage: $line\"; done || true"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v jq >/dev/null 2>&1 || exit 0; fp=$(cat - | jq -r '.tool_input.file_path // .tool_input.filePath // empty'); [ -n \"$fp\" ] && echo \"$fp\" | grep -qE '\\.(ts|vue|rs)$' && [ -f \"$fp\" ] && lines=$(wc -l < \"$fp\") && [ \"$lines\" -gt 400 ] && echo \"[Hook] WARNING: File has $lines lines (exceeds 400 line limit): $fp\" || true"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v jq >/dev/null 2>&1 || exit 0; cmd=$(cat - | jq -r '.tool_input.command // empty'); echo \"$cmd\" | grep -qE '\\.(env|pem|key)' && echo 'BLOCKED: Potential sensitive file access' && exit 1 || true"
+          }
+        ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v jq >/dev/null 2>&1 || exit 0; fp=$(cat - | jq -r '.tool_input.file_path // empty'); echo \"$fp\" | grep -q 'node_modules\\|target/' && echo 'BLOCKED: Do not write to node_modules or target' && exit 1 || true"
+          }
+        ]
+      }
+    ]
+  }
+}

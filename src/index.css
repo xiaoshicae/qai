@@ -1,0 +1,114 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --font-sans: 'Geist Variable', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+
+  /* 品牌色 - 天蓝（与参考项目一致） */
+  --color-primary: oklch(0.6231 0.188 259.81);
+  --color-primary-foreground: oklch(1 0 0);
+
+  /* Dark theme - 纯净中性灰（无蓝调） */
+  --color-background: oklch(0.205 0 0);
+  --color-foreground: oklch(0.922 0 0);
+  --color-card: oklch(0.269 0 0);
+  --color-card-foreground: oklch(0.922 0 0);
+  --color-popover: oklch(0.269 0 0);
+  --color-popover-foreground: oklch(0.922 0 0);
+  --color-secondary: oklch(0.269 0 0);
+  --color-secondary-foreground: oklch(0.922 0 0);
+  --color-muted: oklch(0.239 0 0);
+  --color-muted-foreground: oklch(0.716 0 0);
+  --color-accent: oklch(0.379 0.138 265.52);
+  --color-accent-foreground: oklch(0.882 0.057 254.13);
+  --color-destructive: oklch(0.637 0.208 25.33);
+  --color-destructive-foreground: oklch(1 0 0);
+  --color-border: oklch(0.372 0 0);
+  --color-input: oklch(0.372 0 0);
+  --color-ring: oklch(0.6231 0.188 259.81);
+
+  /* 侧边栏 */
+  --color-sidebar: oklch(0.205 0 0);
+  --color-sidebar-foreground: oklch(0.922 0 0);
+  --color-sidebar-primary: oklch(0.6231 0.188 259.81);
+  --color-sidebar-primary-foreground: oklch(1 0 0);
+  --color-sidebar-accent: oklch(0.379 0.138 265.52);
+  --color-sidebar-accent-foreground: oklch(0.882 0.057 254.13);
+  --color-sidebar-border: oklch(0.372 0 0);
+  --color-sidebar-ring: oklch(0.6231 0.188 259.81);
+
+  /* 圆角 - 更小更精致 */
+  --radius: 0.375rem;
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+}
+
+@theme {
+  --color-method-get: oklch(0.72 0.19 155);
+  --color-method-post: oklch(0.75 0.18 55);
+  --color-method-put: oklch(0.68 0.17 250);
+  --color-method-delete: oklch(0.65 0.2 27);
+  --color-method-patch: oklch(0.68 0.18 300);
+  --color-method-head: oklch(0.55 0.01 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground font-sans;
+  }
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 滚动条 */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: oklch(0.35 0 0);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(0.45 0 0);
+}
+
+/* 原生 select */
+select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 30px !important;
+}
+
+/* 禁用选中 */
+body {
+  user-select: none;
+}
+
+input, textarea, pre, code {
+  user-select: text;
+}

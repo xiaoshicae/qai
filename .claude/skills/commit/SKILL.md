@@ -22,9 +22,9 @@ cd src-tauri && cargo check
 cd src-tauri && cargo test
 ```
 
-仅当有 `.ts` / `.vue` 文件变更时：
+仅当有 `.ts` / `.tsx` 文件变更时：
 ```bash
-npx vue-tsc --noEmit
+npx tsc --noEmit
 ```
 
 有错误时询问用户：取消/强制提交。
@@ -37,7 +37,7 @@ npx vue-tsc --noEmit
 |----------|----------|
 | architecture.md | 依赖方向、文件放置位置、Tauri 命令注册 |
 | rust-patterns.md | unwrap 使用、错误处理、Mutex 使用 |
-| vue-patterns.md | console.log、直接 fetch、组件结构 |
+| react-patterns.md | console.log、直接 fetch、组件结构 |
 | security.md | 硬编码凭证、SQL 注入 |
 
 ### 4. 暂存并提交

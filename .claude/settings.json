@@ -15,9 +15,16 @@
       "Bash(du:*)",
       "Bash(lsof:*)",
       "Bash(ps:*)",
+      "Bash(sleep:*)",
       "Bash(curl -s:*)",
       "Bash(curl --head:*)",
-      "Bash(open:*)"
+      "Bash(curl -X GET:*)",
+      "Bash(curl -s http://127.0.0.1:*)",
+      "Bash(curl -s http://localhost:*)",
+      "Bash(open:*)",
+      "Bash(CLAUDE_COMMIT=1 git commit:*)",
+      "Bash(CLAUDE_PUSH=1 git push:*)",
+      "Bash(CLAUDE_REBUILD=1 git reset:*)"
     ],
     "deny": [
       "Bash(rm -rf:*)",
@@ -42,7 +49,16 @@
         "hooks": [
           {
             "type": "command",
-            "command": "command -v jq >/dev/null 2>&1 || exit 0; fp=$(cat - | jq -r '.tool_input.file_path // .tool_input.filePath // empty'); [ -n \"$fp\" ] && echo \"$fp\" | grep -qE '\\.(ts|vue)$' && [ -f \"$fp\" ] && grep -n 'console\\.log' \"$fp\" 2>/dev/null | head -3 | while read line; do echo \"[Hook] WARNING: console.log found: $line\"; done || true"
+            "command": "command -v jq >/dev/null 2>&1 || exit 0; fp=$(cat - | jq -r '.tool_input.file_path // .tool_input.filePath // empty'); [ -n \"$fp\" ] && echo \"$fp\" | grep -qE '\\.(ts|tsx)$' && [ -f \"$fp\" ] && grep -n 'console\\.log' \"$fp\" 2>/dev/null | head -3 | while read line; do echo \"[Hook] WARNING: console.log found: $line\"; done || true"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v jq >/dev/null 2>&1 || exit 0; fp=$(cat - | jq -r '.tool_input.file_path // .tool_input.filePath // empty'); [ -n \"$fp\" ] && echo \"$fp\" | grep -qE '\\.(ts|tsx)$' && [ -f \"$fp\" ] && grep -n ': any' \"$fp\" 2>/dev/null | head -3 | while read line; do echo \"[Hook] WARNING: any type found: $line\"; done || true"
           }
         ]
       },
@@ -60,7 +76,16 @@
         "hooks": [
           {
             "type": "command",
-            "command": "command -v jq >/dev/null 2>&1 || exit 0; fp=$(cat - | jq -r '.tool_input.file_path // .tool_input.filePath // empty'); [ -n \"$fp\" ] && echo \"$fp\" | grep -qE '\\.(ts|vue|rs)$' && [ -f \"$fp\" ] && lines=$(wc -l < \"$fp\") && [ \"$lines\" -gt 400 ] && echo \"[Hook] WARNING: File has $lines lines (exceeds 400 line limit): $fp\" || true"
+            "command": "command -v jq >/dev/null 2>&1 || exit 0; fp=$(cat - | jq -r '.tool_input.file_path // .tool_input.filePath // empty'); [ -n \"$fp\" ] && echo \"$fp\" | grep -qE '\\.(ts|tsx|rs)$' && [ -f \"$fp\" ] && lines=$(wc -l < \"$fp\") && [ \"$lines\" -gt 400 ] && echo \"[Hook] WARNING: File has $lines lines (exceeds 400 line limit): $fp\" || true"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v jq >/dev/null 2>&1 || exit 0; cmd=$(cat - | jq -r '.tool_input.command // empty'); echo \"$cmd\" | grep -q 'gh pr create' && echo '[Hook] PR created - check CI status' || true"
           }
         ]
       }
@@ -72,6 +97,15 @@
           {
             "type": "command",
             "command": "command -v jq >/dev/null 2>&1 || exit 0; cmd=$(cat - | jq -r '.tool_input.command // empty'); echo \"$cmd\" | grep -qE '\\.(env|pem|key)' && echo 'BLOCKED: Potential sensitive file access' && exit 1 || true"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v jq >/dev/null 2>&1 || exit 0; cmd=$(cat - | jq -r '.tool_input.command // empty'); echo \"$cmd\" | grep -q 'git push' && echo '[Hook] About to push - ensure lint and build passed' || true"
           }
         ]
       },

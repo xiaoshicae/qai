@@ -86,9 +86,11 @@ npm run build                       # 仅构建前端
 @.claude/rules/architecture.md
 @.claude/rules/rust-patterns.md
 @.claude/rules/react-patterns.md
+@.claude/rules/performance.md
 @.claude/rules/security.md
 @.claude/rules/git-workflow.md
 @.claude/rules/testing.md
+@.claude/rules/code-review-strategy.md
 
 ## 可用 Agents
 
@@ -96,6 +98,7 @@ npm run build                       # 仅构建前端
 |-------|------|---------|
 | code-reviewer | 全栈代码审查专家 | 代码修改后质量审查 |
 | build-error-resolver | 构建错误解决专家 | Rust/TypeScript/Tauri 构建失败时 |
+| security-reviewer | 安全漏洞检测专家 | 涉及用户输入、认证、敏感数据的代码 |
 
 ## 可用 Skills
 
@@ -105,9 +108,15 @@ npm run build                       # 仅构建前端
 | Git | `/push` | 推送到远程（含质量检查） |
 | Git | `/pr [target]` | 创建 Pull Request |
 | Git | `/ship [target]` | 一键 commit + push + pr |
+| Git | `/merge [branch]` | 合并分支到当前分支 |
+| Git | `/rebuild` | 从 main 重建当前分支 |
 | 质量 | `/lint` | Rust check + TypeScript 类型检查 |
 | 质量 | `/build` | 完整 Tauri 构建并分析产物 |
 | 质量 | `/check [filter]` | 运行 Rust 测试 |
+| 质量 | `/code-review` | 全栈代码审查（Bugbot 策略） |
+| 质量 | `/security-review` | 安全审查（OWASP Top 10） |
+| 质量 | `/refactor <cmd>` | 代码重构（scan/dedup/extract/deps） |
+| 依赖 | `/deps [cmd]` | 依赖安全审计与更新（npm + cargo） |
 | 工具 | `/dev` | 启动 Tauri 开发模式 |
 | 工具 | `/kill-port <port>` | Kill 端口占用进程 |
 

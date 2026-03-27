@@ -45,6 +45,8 @@ export default function CollectionOverview({ collection, tree }: Props) {
   const [detailData, setDetailData] = useState<Record<string, CollectionItem>>({})
   const [editReq, setEditReq] = useState<CollectionItem | null>(null)
   const [isNewReq, setIsNewReq] = useState(false)
+  const [runMode, setRunMode] = useState<'concurrent' | 'sequential'>('concurrent')
+  const [delayMs, setDelayMs] = useState(0)
   const unlistenRef = useRef<(() => void) | null>(null)
 
   useEffect(() => { return () => { unlistenRef.current?.() } }, [])
@@ -101,15 +103,36 @@ export default function CollectionOverview({ collection, tree }: Props) {
   const runAll = async () => {
     abortRef.current = false
     setRunning(true); setProgress([]); setBatchResult(null); setSingleResults({}); setError(null); setExpandedRows(new Set())
-    unlistenRef.current = await listen<TestProgress>('test-progress', (e) => {
-      if (abortRef.current) return
-      setProgress((prev) => { const idx = prev.findIndex((x) => x.item_id === e.payload.item_id); if (idx >= 0) { const n = [...prev]; n[idx] = e.payload; return n } return [...prev, e.payload] })
-    })
-    try {
-      const result = await invoke<BatchResult>('run_collection', { collectionId: collection.id, concurrency: 5 })
-      if (!abortRef.current) { setBatchResult(result); loadStatuses() }
-    } catch (e: any) { if (!abortRef.current) setError(typeof e === 'string' ? e : e.message) }
-    finally { setRunning(false); unlistenRef.current?.(); unlistenRef.current = null }
+
+    if (runMode === 'sequential') {
+      // 顺序执行 + delay
+      for (const item of allRequests) {
+        if (abortRef.current) break
+        setRunningIds((prev) => new Set(prev).add(item.id))
+        try {
+          const result = await invoke<ExecutionResult>('send_request', { id: item.id })
+          setSingleResults((prev) => ({ ...prev, [item.id]: result }))
+        } catch {}
+        setRunningIds((prev) => { const n = new Set(prev); n.delete(item.id); return n })
+        // delay
+        if (delayMs > 0 && !abortRef.current) {
+          await new Promise((r) => setTimeout(r, delayMs))
+        }
+      }
+      setRunning(false)
+      loadStatuses()
+    } else {
+      // 并发执行（原有逻辑）
+      unlistenRef.current = await listen<TestProgress>('test-progress', (e) => {
+        if (abortRef.current) return
+        setProgress((prev) => { const idx = prev.findIndex((x) => x.item_id === e.payload.item_id); if (idx >= 0) { const n = [...prev]; n[idx] = e.payload; return n } return [...prev, e.payload] })
+      })
+      try {
+        const result = await invoke<BatchResult>('run_collection', { collectionId: collection.id, concurrency: 5 })
+        if (!abortRef.current) { setBatchResult(result); loadStatuses() }
+      } catch (e: any) { if (!abortRef.current) setError(typeof e === 'string' ? e : e.message) }
+      finally { setRunning(false); unlistenRef.current?.(); unlistenRef.current = null }
+    }
   }
 
   const stopRun = () => {
@@ -266,7 +289,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
       </div>
 
       {/* 操作栏 */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         {running ? (
           <Button onClick={stopRun} size="sm" variant="destructive" className="gap-1.5">
             <Square className="h-3 w-3" /> 停止
@@ -276,6 +299,39 @@ export default function CollectionOverview({ collection, tree }: Props) {
             <Play className="h-3.5 w-3.5" /> 运行全部
           </Button>
         )}
+
+        {/* 执行模式切换 */}
+        <div className="flex items-center h-8 rounded-lg border border-overlay/[0.08] overflow-hidden text-xs">
+          <button
+            onClick={() => setRunMode('concurrent')}
+            className={`px-2.5 h-full cursor-pointer transition-colors ${runMode === 'concurrent' ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:bg-overlay/[0.04]'}`}
+          >
+            并发
+          </button>
+          <button
+            onClick={() => setRunMode('sequential')}
+            className={`px-2.5 h-full cursor-pointer transition-colors ${runMode === 'sequential' ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:bg-overlay/[0.04]'}`}
+          >
+            顺序
+          </button>
+        </div>
+
+        {/* 顺序模式下显示 delay 设置 */}
+        {runMode === 'sequential' && (
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span>Delay</span>
+            <input
+              type="number"
+              value={delayMs}
+              onChange={(e) => setDelayMs(Math.max(0, Number(e.target.value)))}
+              className="w-16 h-7 rounded-md border border-overlay/[0.08] bg-transparent text-center text-xs outline-none focus:border-primary/50"
+              min={0}
+              step={100}
+            />
+            <span>ms</span>
+          </div>
+        )}
+
         <Button variant="outline" size="sm" className="gap-1.5" onClick={addTestCase}>
           <Plus className="h-3.5 w-3.5" /> 添加用例
         </Button>

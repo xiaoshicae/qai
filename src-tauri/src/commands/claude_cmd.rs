@@ -38,6 +38,7 @@ pub async fn claude_send(
         "-p".into(),
         "--output-format".into(), "stream-json".into(),
         "--verbose".into(),
+        "--include-partial-messages".into(),
     ];
 
     if let Some(ref config) = mcp_config_path {
@@ -89,20 +90,31 @@ pub async fn claude_send(
         let event_type = json.get("type").and_then(|v| v.as_str()).unwrap_or("unknown");
 
         match event_type {
-            "assistant" => {
-                if let Some(message) = json.get("message") {
-                    if let Some(content) = message.get("content").and_then(|c| c.as_array()) {
-                        for block in content {
-                            if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
-                                let trimmed = text.trim();
-                                if !trimmed.is_empty() {
+            "stream_event" => {
+                // 流式 token 事件
+                if let Some(event) = json.get("event") {
+                    let sub_type = event.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                    if sub_type == "content_block_delta" {
+                        if let Some(delta) = event.get("delta") {
+                            if let Some(text) = delta.get("text").and_then(|t| t.as_str()) {
+                                if !text.is_empty() {
                                     let _ = app.emit("claude-event", ClaudeEvent {
-                                        event_type: "assistant".into(),
-                                        content: trimmed.to_string(),
+                                        event_type: "delta".into(),
+                                        content: text.to_string(),
                                         raw: None,
                                     });
                                 }
                             }
+                        }
+                    }
+                }
+            }
+            "assistant" => {
+                // 完整 assistant 消息（忽略，用 stream_event delta 代替）
+                // 但提取工具调用
+                if let Some(message) = json.get("message") {
+                    if let Some(content) = message.get("content").and_then(|c| c.as_array()) {
+                        for block in content {
                             if block.get("type").and_then(|t| t.as_str()) == Some("tool_use") {
                                 let tool_name = block.get("name").and_then(|n| n.as_str()).unwrap_or("");
                                 let _ = app.emit("claude-event", ClaudeEvent {
@@ -116,7 +128,6 @@ pub async fn claude_send(
                 }
             }
             "result" => {
-                // result 是最终事件，只发费用信息（文本已由 assistant 事件处理）
                 let _ = app.emit("claude-event", ClaudeEvent {
                     event_type: "result".into(),
                     content: String::new(),

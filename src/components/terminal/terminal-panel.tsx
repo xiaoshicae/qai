@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { PlusCircle, X, ArrowUp, Square, Wrench, Clock, ChevronLeft } from 'lucide-react'
+import Markdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 interface Props {
   onClose: () => void
@@ -55,7 +57,8 @@ export default function TerminalPanel({ onClose }: Props) {
     listen<ClaudeEvent>('claude-event', (event) => {
       if (!mountedRef.current) return
       const { event_type, content } = event.payload
-      if (event_type === 'assistant') {
+      if (event_type === 'delta') {
+        // 流式 token — 逐字追加到最后的 assistant 消息
         setSessions((prev) => prev.map((s) => {
           if (s.id !== activeSessionId) return s
           const msgs = [...s.messages]
@@ -224,7 +227,9 @@ export default function TerminalPanel({ onClose }: Props) {
           if (msg.role === 'assistant') return (
             <div key={msg.id} className="flex gap-2.5">
               <div className="shrink-0 mt-0.5 h-4 w-4 rounded-full bg-[#D4A574]/20 flex items-center justify-center"><div className="h-1.5 w-1.5 rounded-full bg-[#D4A574]" /></div>
-              <div className="text-sm leading-relaxed whitespace-pre-wrap min-w-0">{msg.content}</div>
+              <div className="text-sm leading-relaxed min-w-0 prose prose-sm prose-invert max-w-none [&_pre]:bg-overlay/[0.08] [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:text-xs [&_code]:text-xs [&_code]:bg-overlay/[0.08] [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0.5">
+                <Markdown remarkPlugins={[remarkGfm]}>{msg.content}</Markdown>
+              </div>
             </div>
           )
           if (msg.role === 'tool') return <div key={msg.id} className="flex items-center gap-1.5 text-xs text-muted-foreground/70 pl-6"><Wrench className="h-3 w-3" /><span>{msg.content}</span></div>

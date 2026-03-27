@@ -2,19 +2,19 @@ use std::time::Instant;
 use uuid::Uuid;
 
 use crate::models::execution::{Execution, ExecutionResult};
-use crate::models::request::{ApiRequest, HttpResponse, KeyValuePair};
+use crate::models::item::{CollectionItem, HttpResponse, KeyValuePair};
 
-pub async fn execute(client: &reqwest::Client, req: &ApiRequest) -> Result<ExecutionResult, anyhow::Error> {
-    let headers: Vec<KeyValuePair> = serde_json::from_str(&req.headers).unwrap_or_default();
-    let query_params: Vec<KeyValuePair> = serde_json::from_str(&req.query_params).unwrap_or_default();
+pub async fn execute(client: &reqwest::Client, item: &CollectionItem) -> Result<ExecutionResult, anyhow::Error> {
+    let headers: Vec<KeyValuePair> = serde_json::from_str(&item.headers).unwrap_or_default();
+    let query_params: Vec<KeyValuePair> = serde_json::from_str(&item.query_params).unwrap_or_default();
 
-    let mut builder = match req.method.to_uppercase().as_str() {
-        "POST" => client.post(&req.url),
-        "PUT" => client.put(&req.url),
-        "DELETE" => client.delete(&req.url),
-        "PATCH" => client.patch(&req.url),
-        "HEAD" => client.head(&req.url),
-        _ => client.get(&req.url),
+    let mut builder = match item.method.to_uppercase().as_str() {
+        "POST" => client.post(&item.url),
+        "PUT" => client.put(&item.url),
+        "DELETE" => client.delete(&item.url),
+        "PATCH" => client.patch(&item.url),
+        "HEAD" => client.head(&item.url),
+        _ => client.get(&item.url),
     };
 
     for kv in headers.iter().filter(|kv| kv.enabled) {
@@ -28,22 +28,22 @@ pub async fn execute(client: &reqwest::Client, req: &ApiRequest) -> Result<Execu
         .collect();
     builder = builder.query(&enabled_params);
 
-    match req.body_type.as_str() {
+    match item.body_type.as_str() {
         "json" => {
-            if !req.body_content.is_empty() {
-                let json_value: serde_json::Value = serde_json::from_str(&req.body_content)
-                    .unwrap_or(serde_json::Value::String(req.body_content.clone()));
+            if !item.body_content.is_empty() {
+                let json_value: serde_json::Value = serde_json::from_str(&item.body_content)
+                    .unwrap_or(serde_json::Value::String(item.body_content.clone()));
                 builder = builder.json(&json_value);
             }
         }
         "raw" => {
-            if !req.body_content.is_empty() {
-                builder = builder.body(req.body_content.clone());
+            if !item.body_content.is_empty() {
+                builder = builder.body(item.body_content.clone());
             }
         }
         "form" | "urlencoded" => {
             let form_data: Vec<KeyValuePair> =
-                serde_json::from_str(&req.body_content).unwrap_or_default();
+                serde_json::from_str(&item.body_content).unwrap_or_default();
             let form: Vec<(&str, &str)> = form_data
                 .iter()
                 .filter(|kv| kv.enabled)
@@ -53,7 +53,7 @@ pub async fn execute(client: &reqwest::Client, req: &ApiRequest) -> Result<Execu
         }
         "form-data" => {
             let form_data: Vec<KeyValuePair> =
-                serde_json::from_str(&req.body_content).unwrap_or_default();
+                serde_json::from_str(&item.body_content).unwrap_or_default();
             let mut multipart = reqwest::multipart::Form::new();
             for kv in form_data.iter().filter(|kv| kv.enabled) {
                 multipart = multipart.text(kv.key.clone(), kv.value.clone());
@@ -84,7 +84,7 @@ pub async fn execute(client: &reqwest::Client, req: &ApiRequest) -> Result<Execu
 
     let execution_id = Uuid::new_v4().to_string();
 
-    let expected = req.expect_status;
+    let expected = item.expect_status;
     let is_success = if expected > 0 {
         status == expected
     } else {
@@ -93,8 +93,8 @@ pub async fn execute(client: &reqwest::Client, req: &ApiRequest) -> Result<Execu
 
     Ok(ExecutionResult {
         execution_id,
-        request_id: req.id.clone(),
-        request_name: req.name.clone(),
+        item_id: item.id.clone(),
+        item_name: item.name.clone(),
         status: if is_success { "success".to_string() } else { "failed".to_string() },
         response: Some(HttpResponse {
             status,
@@ -109,7 +109,7 @@ pub async fn execute(client: &reqwest::Client, req: &ApiRequest) -> Result<Execu
     })
 }
 
-pub fn to_execution(req: &ApiRequest, result: &ExecutionResult) -> Execution {
+pub fn to_execution(item: &CollectionItem, result: &ExecutionResult) -> Execution {
     let (response_status, response_headers, response_body, response_time_ms, response_size) =
         if let Some(ref resp) = result.response {
             (
@@ -125,17 +125,12 @@ pub fn to_execution(req: &ApiRequest, result: &ExecutionResult) -> Execution {
 
     Execution {
         id: result.execution_id.clone(),
-        request_id: req.id.clone(),
+        item_id: item.id.clone(),
+        collection_id: item.collection_id.clone(),
         batch_id: None,
         status: result.status.clone(),
-        request_url: req.url.clone(),
-        request_method: req.method.clone(),
-        request_headers: req.headers.clone(),
-        request_body: if req.body_type != "none" {
-            Some(req.body_content.clone())
-        } else {
-            None
-        },
+        request_url: item.url.clone(),
+        request_method: item.method.clone(),
         response_status,
         response_headers,
         response_body,

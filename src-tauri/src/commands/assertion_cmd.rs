@@ -4,22 +4,22 @@ use crate::db::init::DbState;
 use crate::models::assertion::Assertion;
 
 #[tauri::command]
-pub fn list_assertions(db: State<'_, DbState>, request_id: String) -> Result<Vec<Assertion>, String> {
+pub fn list_assertions(db: State<'_, DbState>, item_id: String) -> Result<Vec<Assertion>, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
-    crate::db::assertion::list_by_request(&conn, &request_id).map_err(|e| e.to_string())
+    crate::db::assertion::list_by_item(&conn, &item_id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn create_assertion(
     db: State<'_, DbState>,
-    request_id: String,
+    item_id: String,
     assertion_type: String,
     expression: String,
     operator: String,
     expected: String,
 ) -> Result<Assertion, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
-    crate::db::assertion::create(&conn, &request_id, &assertion_type, &expression, &operator, &expected)
+    crate::db::assertion::create(&conn, &item_id, &assertion_type, &expression, &operator, &expected)
         .map_err(|e| e.to_string())
 }
 

@@ -1,5 +1,5 @@
 use crate::models::assertion::{Assertion, AssertionResult};
-use crate::models::request::HttpResponse;
+use crate::models::item::HttpResponse;
 use regex::Regex;
 use serde_json::Value;
 

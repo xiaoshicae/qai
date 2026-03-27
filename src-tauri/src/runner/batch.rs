@@ -4,14 +4,14 @@ use uuid::Uuid;
 
 use crate::models::assertion::Assertion;
 use crate::models::execution::ExecutionResult;
-use crate::models::request::ApiRequest;
+use crate::models::item::CollectionItem;
 use crate::runner::assertion::evaluate_assertions;
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct TestProgress {
     pub batch_id: String,
-    pub request_id: String,
-    pub request_name: String,
+    pub item_id: String,
+    pub item_name: String,
     pub status: String,
     pub current: u32,
     pub total: u32,
@@ -30,19 +30,19 @@ pub struct BatchResult {
 
 pub async fn run_batch(
     client: &reqwest::Client,
-    requests: Vec<(ApiRequest, Vec<Assertion>)>,
+    items: Vec<(CollectionItem, Vec<Assertion>)>,
     concurrency: usize,
     progress_callback: impl Fn(TestProgress) + Send + Sync + 'static,
 ) -> BatchResult {
     let batch_id = Uuid::new_v4().to_string();
-    let total = requests.len() as u32;
+    let total = items.len() as u32;
     let semaphore = Arc::new(Semaphore::new(concurrency));
     let callback = Arc::new(progress_callback);
     let client = client.clone();
 
     let mut handles = Vec::new();
 
-    for (index, (req, assertions)) in requests.into_iter().enumerate() {
+    for (index, (item, assertions)) in items.into_iter().enumerate() {
         let sem = semaphore.clone();
         let cb = callback.clone();
         let bid = batch_id.clone();
@@ -53,19 +53,19 @@ pub async fn run_batch(
 
             cb(TestProgress {
                 batch_id: bid.clone(),
-                request_id: req.id.clone(),
-                request_name: req.name.clone(),
+                item_id: item.id.clone(),
+                item_name: item.name.clone(),
                 status: "running".to_string(),
                 current: index as u32 + 1,
                 total,
             });
 
-            let mut result = match crate::http::client::execute(&client, &req).await {
+            let mut result = match crate::http::client::execute(&client, &item).await {
                 Ok(r) => r,
                 Err(e) => ExecutionResult {
                     execution_id: Uuid::new_v4().to_string(),
-                    request_id: req.id.clone(),
-                    request_name: req.name.clone(),
+                    item_id: item.id.clone(),
+                    item_name: item.name.clone(),
                     status: "error".to_string(),
                     response: None,
                     assertion_results: vec![],
@@ -87,8 +87,8 @@ pub async fn run_batch(
             let status = result.status.clone();
             cb(TestProgress {
                 batch_id: bid,
-                request_id: req.id.clone(),
-                request_name: req.name.clone(),
+                item_id: item.id.clone(),
+                item_name: item.name.clone(),
                 status,
                 current: index as u32 + 1,
                 total,

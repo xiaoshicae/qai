@@ -1,5 +1,5 @@
 pub mod collection_cmd;
-pub mod request_cmd;
+pub mod item_cmd;
 pub mod assertion_cmd;
 pub mod runner_cmd;
 pub mod ai_cmd;

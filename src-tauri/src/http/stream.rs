@@ -3,11 +3,11 @@ use futures_util::StreamExt;
 use uuid::Uuid;
 
 use crate::models::execution::ExecutionResult;
-use crate::models::request::{ApiRequest, HttpResponse, KeyValuePair};
+use crate::models::item::{CollectionItem, HttpResponse, KeyValuePair};
 
 #[derive(Clone, serde::Serialize)]
 pub struct StreamChunk {
-    pub request_id: String,
+    pub item_id: String,
     pub chunk: String,      // SSE data 内容
     pub chunk_index: u32,
     pub done: bool,
@@ -16,19 +16,19 @@ pub struct StreamChunk {
 /// 流式执行请求，解析 SSE 事件并通过回调逐步推送
 pub async fn execute_stream(
     client: &reqwest::Client,
-    req: &ApiRequest,
+    item: &CollectionItem,
     on_chunk: impl Fn(StreamChunk) + Send + Sync + 'static,
 ) -> Result<ExecutionResult, anyhow::Error> {
-    let headers: Vec<KeyValuePair> = serde_json::from_str(&req.headers).unwrap_or_default();
-    let query_params: Vec<KeyValuePair> = serde_json::from_str(&req.query_params).unwrap_or_default();
+    let headers: Vec<KeyValuePair> = serde_json::from_str(&item.headers).unwrap_or_default();
+    let query_params: Vec<KeyValuePair> = serde_json::from_str(&item.query_params).unwrap_or_default();
 
-    let mut builder = match req.method.to_uppercase().as_str() {
-        "POST" => client.post(&req.url),
-        "PUT" => client.put(&req.url),
-        "DELETE" => client.delete(&req.url),
-        "PATCH" => client.patch(&req.url),
-        "HEAD" => client.head(&req.url),
-        _ => client.get(&req.url),
+    let mut builder = match item.method.to_uppercase().as_str() {
+        "POST" => client.post(&item.url),
+        "PUT" => client.put(&item.url),
+        "DELETE" => client.delete(&item.url),
+        "PATCH" => client.patch(&item.url),
+        "HEAD" => client.head(&item.url),
+        _ => client.get(&item.url),
     };
 
     for kv in headers.iter().filter(|kv| kv.enabled) {
@@ -42,22 +42,22 @@ pub async fn execute_stream(
         .collect();
     builder = builder.query(&enabled_params);
 
-    match req.body_type.as_str() {
+    match item.body_type.as_str() {
         "json" => {
-            if !req.body_content.is_empty() {
-                let json_value: serde_json::Value = serde_json::from_str(&req.body_content)
-                    .unwrap_or(serde_json::Value::String(req.body_content.clone()));
+            if !item.body_content.is_empty() {
+                let json_value: serde_json::Value = serde_json::from_str(&item.body_content)
+                    .unwrap_or(serde_json::Value::String(item.body_content.clone()));
                 builder = builder.json(&json_value);
             }
         }
         "raw" => {
-            if !req.body_content.is_empty() {
-                builder = builder.body(req.body_content.clone());
+            if !item.body_content.is_empty() {
+                builder = builder.body(item.body_content.clone());
             }
         }
         "form" => {
             let form_data: Vec<KeyValuePair> =
-                serde_json::from_str(&req.body_content).unwrap_or_default();
+                serde_json::from_str(&item.body_content).unwrap_or_default();
             let form: Vec<(&str, &str)> = form_data
                 .iter()
                 .filter(|kv| kv.enabled)
@@ -91,8 +91,9 @@ pub async fn execute_stream(
     let mut chunk_index: u32 = 0;
     let mut buf = String::new();
 
-    while let Some(item) = stream.next().await {
-        let bytes = item?;
+    let stream_item_id = item.id.clone();
+    while let Some(chunk_result) = stream.next().await {
+        let bytes = chunk_result?;
         let text = String::from_utf8_lossy(&bytes);
         buf.push_str(&text);
 
@@ -110,7 +111,7 @@ pub async fn execute_stream(
                 let data = data.trim();
                 if data == "[DONE]" {
                     on_chunk(StreamChunk {
-                        request_id: req.id.clone(),
+                        item_id: stream_item_id.clone(),
                         chunk: "[DONE]".to_string(),
                         chunk_index,
                         done: true,
@@ -120,7 +121,7 @@ pub async fn execute_stream(
                     full_body.push_str(data);
                     full_body.push('\n');
                     on_chunk(StreamChunk {
-                        request_id: req.id.clone(),
+                        item_id: stream_item_id.clone(),
                         chunk: data.to_string(),
                         chunk_index,
                         done: false,
@@ -132,7 +133,7 @@ pub async fn execute_stream(
                 full_body.push_str(trimmed);
                 full_body.push('\n');
                 on_chunk(StreamChunk {
-                    request_id: req.id.clone(),
+                    item_id: stream_item_id.clone(),
                     chunk: trimmed.to_string(),
                     chunk_index,
                     done: false,
@@ -162,8 +163,8 @@ pub async fn execute_stream(
 
     Ok(ExecutionResult {
         execution_id,
-        request_id: req.id.clone(),
-        request_name: req.name.clone(),
+        item_id: item.id.clone(),
+        item_name: item.name.clone(),
         status: if status >= 200 && status < 400 {
             "success".to_string()
         } else {

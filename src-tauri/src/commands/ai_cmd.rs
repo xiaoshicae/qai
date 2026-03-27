@@ -43,13 +43,13 @@ pub async fn ai_generate_tests(
     {
         let conn = db.0.lock().map_err(|e| e.to_string())?;
         for tc in &test_cases {
-            let req = crate::db::request::create(
-                &conn, &collection_id, None, &tc.name, &tc.method,
+            let item = crate::db::item::create(
+                &conn, &collection_id, None, "request", &tc.name, &tc.method,
             ).map_err(|e| e.to_string())?;
 
-            crate::db::request::update(
+            crate::db::item::update(
                 &conn,
-                &req.id,
+                &item.id,
                 None,
                 None,
                 Some(&tc.url),
@@ -60,12 +60,13 @@ pub async fn ai_generate_tests(
                 None,
                 None,
                 None,
+                None,
             ).map_err(|e| e.to_string())?;
 
             for assertion in &tc.assertions {
                 crate::db::assertion::create(
                     &conn,
-                    &req.id,
+                    &item.id,
                     &assertion.assertion_type,
                     &assertion.expression,
                     &assertion.operator,

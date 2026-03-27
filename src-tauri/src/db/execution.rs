@@ -6,7 +6,7 @@ use crate::models::execution::Execution;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoryEntry {
     pub id: String,
-    pub request_id: String,
+    pub item_id: String,
     pub status: String,
     pub request_url: String,
     pub request_method: String,
@@ -21,8 +21,6 @@ pub struct RunRecord {
     pub status: String,
     pub request_url: String,
     pub request_method: String,
-    pub request_headers: String,
-    pub request_body: Option<String>,
     pub response_status: Option<u16>,
     pub response_headers: String,
     pub response_body: Option<String>,
@@ -34,8 +32,8 @@ pub struct RunRecord {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RequestLastStatus {
-    pub request_id: String,
+pub struct ItemLastStatus {
+    pub item_id: String,
     pub status: String,
     pub executed_at: String,
     pub response_time_ms: u64,
@@ -45,13 +43,13 @@ pub struct RequestLastStatus {
 
 pub fn list_recent(conn: &Connection, limit: u32) -> Result<Vec<HistoryEntry>, rusqlite::Error> {
     let mut stmt = conn.prepare(
-        "SELECT id, request_id, status, request_url, request_method, response_status, response_time_ms, executed_at
+        "SELECT id, item_id, status, request_url, request_method, response_status, response_time_ms, executed_at
          FROM executions ORDER BY executed_at DESC LIMIT ?1",
     )?;
     let rows = stmt.query_map(params![limit], |row| {
         Ok(HistoryEntry {
             id: row.get(0)?,
-            request_id: row.get(1)?,
+            item_id: row.get(1)?,
             status: row.get(2)?,
             request_url: row.get(3)?,
             request_method: row.get(4)?,
@@ -63,48 +61,46 @@ pub fn list_recent(conn: &Connection, limit: u32) -> Result<Vec<HistoryEntry>, r
     rows.collect()
 }
 
-pub fn list_by_request(conn: &Connection, request_id: &str, limit: u32) -> Result<Vec<RunRecord>, rusqlite::Error> {
+pub fn list_by_item(conn: &Connection, item_id: &str, limit: u32) -> Result<Vec<RunRecord>, rusqlite::Error> {
     let mut stmt = conn.prepare(
-        "SELECT id, status, request_url, request_method, request_headers, request_body, response_status, response_headers, response_body, response_time_ms, response_size, assertion_results, error_message, executed_at
-         FROM executions WHERE request_id = ?1 ORDER BY executed_at DESC LIMIT ?2",
+        "SELECT id, status, request_url, request_method, response_status, response_headers, response_body, response_time_ms, response_size, assertion_results, error_message, executed_at
+         FROM executions WHERE item_id = ?1 ORDER BY executed_at DESC LIMIT ?2",
     )?;
-    let rows = stmt.query_map(params![request_id, limit], |row| {
+    let rows = stmt.query_map(params![item_id, limit], |row| {
         Ok(RunRecord {
             id: row.get(0)?,
             status: row.get(1)?,
             request_url: row.get(2)?,
             request_method: row.get(3)?,
-            request_headers: row.get(4)?,
-            request_body: row.get(5)?,
-            response_status: row.get(6)?,
-            response_headers: row.get(7)?,
-            response_body: row.get(8)?,
-            response_time_ms: row.get::<_, i64>(9)? as u64,
-            response_size: row.get::<_, i64>(10)? as u64,
-            assertion_results: row.get(11)?,
-            error_message: row.get(12)?,
-            executed_at: row.get(13)?,
+            response_status: row.get(4)?,
+            response_headers: row.get(5)?,
+            response_body: row.get(6)?,
+            response_time_ms: row.get::<_, i64>(7)? as u64,
+            response_size: row.get::<_, i64>(8)? as u64,
+            assertion_results: row.get(9)?,
+            error_message: row.get(10)?,
+            executed_at: row.get(11)?,
         })
     })?;
     rows.collect()
 }
 
-pub fn get_last_status_for_collection(conn: &Connection, collection_id: &str) -> Result<Vec<RequestLastStatus>, rusqlite::Error> {
+pub fn get_last_status_for_collection(conn: &Connection, collection_id: &str) -> Result<Vec<ItemLastStatus>, rusqlite::Error> {
     let mut stmt = conn.prepare(
-        "SELECT e.request_id, e.status, e.executed_at, e.response_time_ms, e.assertion_results
+        "SELECT e.item_id, e.status, e.executed_at, e.response_time_ms, e.assertion_results
          FROM executions e
          INNER JOIN (
-             SELECT request_id, MAX(executed_at) as max_at
+             SELECT item_id, MAX(executed_at) as max_at
              FROM executions
-             WHERE request_id IN (SELECT id FROM requests WHERE collection_id = ?1)
-             GROUP BY request_id
-         ) latest ON e.request_id = latest.request_id AND e.executed_at = latest.max_at",
+             WHERE collection_id = ?1
+             GROUP BY item_id
+         ) latest ON e.item_id = latest.item_id AND e.executed_at = latest.max_at",
     )?;
     let rows = stmt.query_map(params![collection_id], |row| {
         let assertion_json: String = row.get(4)?;
         let (total, passed) = count_assertions(&assertion_json);
-        Ok(RequestLastStatus {
-            request_id: row.get(0)?,
+        Ok(ItemLastStatus {
+            item_id: row.get(0)?,
             status: row.get(1)?,
             executed_at: row.get(2)?,
             response_time_ms: row.get::<_, i64>(3)? as u64,
@@ -127,17 +123,16 @@ fn count_assertions(json: &str) -> (u32, u32) {
 
 pub fn save(conn: &Connection, exec: &Execution) -> Result<(), rusqlite::Error> {
     conn.execute(
-        "INSERT INTO executions (id, request_id, batch_id, status, request_url, request_method, request_headers, request_body, response_status, response_headers, response_body, response_time_ms, response_size, assertion_results, error_message)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+        "INSERT INTO executions (id, item_id, collection_id, batch_id, status, request_url, request_method, response_status, response_headers, response_body, response_time_ms, response_size, assertion_results, error_message)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
         params![
             exec.id,
-            exec.request_id,
+            exec.item_id,
+            exec.collection_id,
             exec.batch_id,
             exec.status,
             exec.request_url,
             exec.request_method,
-            exec.request_headers,
-            exec.request_body,
             exec.response_status,
             exec.response_headers,
             exec.response_body,
@@ -148,4 +143,18 @@ pub fn save(conn: &Connection, exec: &Execution) -> Result<(), rusqlite::Error> 
         ],
     )?;
     Ok(())
+}
+
+/// 清理旧历史，保留每个 item 最近 max_per_item 条
+pub fn cleanup(conn: &Connection, max_per_item: u32) -> Result<u64, rusqlite::Error> {
+    let deleted = conn.execute(
+        "DELETE FROM executions WHERE id IN (
+            SELECT id FROM (
+                SELECT id, ROW_NUMBER() OVER (PARTITION BY item_id ORDER BY executed_at DESC) as rn
+                FROM executions
+            ) WHERE rn > ?1
+        )",
+        params![max_per_item],
+    )?;
+    Ok(deleted as u64)
 }

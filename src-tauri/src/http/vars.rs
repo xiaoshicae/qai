@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use regex::Regex;
 
 use crate::models::environment::EnvVariable;
-use crate::models::request::{ApiRequest, ExtractRule, HttpResponse, KeyValuePair};
+use crate::models::item::{CollectionItem, ExtractRule, HttpResponse, KeyValuePair};
 use crate::runner::assertion::{extract_json_path, value_to_string};
 
 pub fn build_var_map(variables: &[EnvVariable]) -> HashMap<String, String> {
@@ -25,7 +25,7 @@ pub fn replace_vars(text: &str, vars: &HashMap<String, String>) -> String {
     .to_string()
 }
 
-pub fn apply_vars(req: &ApiRequest, vars: &HashMap<String, String>) -> ApiRequest {
+pub fn apply_vars(req: &CollectionItem, vars: &HashMap<String, String>) -> CollectionItem {
     if vars.is_empty() {
         return req.clone();
     }

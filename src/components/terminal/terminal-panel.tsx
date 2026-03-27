@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { PlusCircle, X, ArrowUp, Square, Wrench } from 'lucide-react'
+import { Plus, X, ArrowUp, Square, Wrench, Slash, PlusCircle, Paperclip, AtSign, RotateCcw, Cpu, Zap, Brain } from 'lucide-react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -30,6 +30,7 @@ export default function TerminalPanel({ onClose }: Props) {
   const [firstMessage, setFirstMessage] = useState(true)
   const [mcpConfigPath, setMcpConfigPath] = useState<string | null>(null)
   const [thinkingWord, setThinkingWord] = useState('')
+  const [showActions, setShowActions] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const mountedRef = useRef(true)
@@ -160,9 +161,33 @@ export default function TerminalPanel({ onClose }: Props) {
         )}
       </div>
 
+      {/* + 操作菜单 */}
+      {showActions && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setShowActions(false)} />
+          <div className="absolute bottom-16 left-3 right-3 z-50 rounded-xl border border-overlay/[0.1] bg-background shadow-2xl overflow-hidden">
+            <div className="px-3 py-2 border-b border-overlay/[0.06]">
+              <input placeholder="Filter actions..." className="w-full bg-transparent text-xs outline-none placeholder:text-muted-foreground/40" autoFocus />
+            </div>
+            <div className="py-1">
+              <div className="px-3 py-1 text-[10px] font-medium text-muted-foreground/50 uppercase">Context</div>
+              <ActionItem icon={<Paperclip className="h-3.5 w-3.5" />} label="Attach file..." onClick={() => { setShowActions(false); setInput((v) => v + '\n[附加文件上下文]') }} />
+              <ActionItem icon={<AtSign className="h-3.5 w-3.5" />} label="Mention file..." onClick={() => { setShowActions(false); setInput((v) => v + '@') }} />
+              <ActionItem icon={<RotateCcw className="h-3.5 w-3.5" />} label="Clear conversation" onClick={() => { setShowActions(false); handleNewSession() }} />
+
+              <div className="h-px bg-overlay/[0.06] my-1" />
+              <div className="px-3 py-1 text-[10px] font-medium text-muted-foreground/50 uppercase">Model</div>
+              <ActionItem icon={<Cpu className="h-3.5 w-3.5" />} label="Switch model..." onClick={() => { setShowActions(false); setInput('/model ') }} />
+              <ActionItem icon={<Brain className="h-3.5 w-3.5" />} label="Thinking" badge="on" onClick={() => setShowActions(false)} />
+              <ActionItem icon={<Zap className="h-3.5 w-3.5" />} label="Toggle fast mode" onClick={() => { setShowActions(false); setInput('/fast') ; handleSend() }} />
+            </div>
+          </div>
+        </>
+      )}
+
       {/* 输入区域 */}
       <div className="shrink-0 px-3 pb-3 pt-1">
-        <div className="relative rounded-xl border border-overlay/[0.1] bg-overlay/[0.02] focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/20 transition-all">
+        <div className="rounded-xl border border-overlay/[0.1] bg-overlay/[0.02] focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/20 transition-all">
           <textarea
             ref={inputRef}
             value={input}
@@ -171,23 +196,43 @@ export default function TerminalPanel({ onClose }: Props) {
             placeholder="描述你的需求..."
             rows={1}
             disabled={sending}
-            className="w-full px-3 py-2.5 pr-12 bg-transparent text-sm resize-none outline-none placeholder:text-muted-foreground/40 max-h-32 overflow-y-auto disabled:opacity-50"
+            className="w-full px-3 py-2 pr-12 bg-transparent text-sm resize-none outline-none placeholder:text-muted-foreground/40 max-h-32 overflow-y-auto disabled:opacity-50"
           />
-          <div className="absolute right-2 bottom-2">
-            {sending ? (
-              <button onClick={handleStop} className="h-7 w-7 flex items-center justify-center rounded-lg bg-destructive/10 hover:bg-destructive/20 text-destructive cursor-pointer transition-colors" title="停止">
-                <Square className="h-3 w-3" />
+          {/* 底部工具栏 */}
+          <div className="flex items-center justify-between px-2 pb-1.5">
+            <div className="flex items-center gap-0.5">
+              <button onClick={() => setShowActions(!showActions)} className="h-6 w-6 flex items-center justify-center rounded-md hover:bg-overlay/[0.06] cursor-pointer transition-colors" title="操作菜单">
+                <Plus className="h-3.5 w-3.5 text-muted-foreground" />
               </button>
-            ) : (
-              <button onClick={handleSend} disabled={!input.trim()} className="h-7 w-7 flex items-center justify-center rounded-lg btn-gradient text-primary-foreground disabled:opacity-30 cursor-pointer transition-all" title="发送">
-                <ArrowUp className="h-3.5 w-3.5" />
+              <button onClick={() => setInput((v) => v + '/')} className="h-6 w-6 flex items-center justify-center rounded-md hover:bg-overlay/[0.06] cursor-pointer transition-colors" title="斜杠命令">
+                <Slash className="h-3.5 w-3.5 text-muted-foreground" />
               </button>
-            )}
+            </div>
+            <div className="flex items-center gap-1">
+              {sending ? (
+                <button onClick={handleStop} className="h-7 w-7 flex items-center justify-center rounded-lg bg-destructive/10 hover:bg-destructive/20 text-destructive cursor-pointer transition-colors" title="停止">
+                  <Square className="h-3 w-3" />
+                </button>
+              ) : (
+                <button onClick={handleSend} disabled={!input.trim()} className="h-7 w-7 flex items-center justify-center rounded-lg btn-gradient text-primary-foreground disabled:opacity-30 cursor-pointer transition-all" title="发送">
+                  <ArrowUp className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
           </div>
         </div>
-        <p className="text-[10px] text-muted-foreground/40 mt-1 text-center">Enter 发送 · Shift+Enter 换行</p>
       </div>
     </div>
+  )
+}
+
+function ActionItem({ icon, label, badge, onClick }: { icon: React.ReactNode; label: string; badge?: string; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className="flex items-center gap-2.5 w-full px-3 py-1.5 text-xs hover:bg-overlay/[0.04] cursor-pointer transition-colors">
+      <span className="text-muted-foreground">{icon}</span>
+      <span className="flex-1 text-left">{label}</span>
+      {badge && <span className="text-[9px] text-emerald-500 font-medium">{badge}</span>}
+    </button>
   )
 }
 

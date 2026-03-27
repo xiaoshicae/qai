@@ -6,12 +6,12 @@ pub fn list_tools() -> Vec<Value> {
     vec![
         json!({
             "name": "list_collections",
-            "description": "列出所有测试集（集合）。返回 id、name、category、endpoint 等信息。",
+            "description": "列出所有测试集（集合）。返回 id、name、group_id 等信息。",
             "inputSchema": { "type": "object", "properties": {} }
         }),
         json!({
             "name": "get_collection",
-            "description": "获取测试集详情，包括所有测试用例（请求）。",
+            "description": "获取测试集详情，包括所有测试用例（items）。",
             "inputSchema": {
                 "type": "object",
                 "properties": { "collection_id": { "type": "string", "description": "测试集 ID" } },
@@ -25,22 +25,23 @@ pub fn list_tools() -> Vec<Value> {
                 "type": "object",
                 "properties": {
                     "name": { "type": "string", "description": "测试集名称" },
-                    "description": { "type": "string", "description": "描述（通常是 model ID）" },
-                    "category": { "type": "string", "description": "分类如 text/audio/image/video" },
-                    "endpoint": { "type": "string", "description": "默认 API endpoint" }
+                    "description": { "type": "string", "description": "描述" },
+                    "group_id": { "type": "string", "description": "所属分组 ID" }
                 },
                 "required": ["name"]
             }
         }),
         json!({
-            "name": "create_request",
-            "description": "在测试集中创建一个测试用例（API 请求）。",
+            "name": "create_item",
+            "description": "在测试集中创建一个节点（request/folder/chain）。",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "collection_id": { "type": "string" },
+                    "parent_id": { "type": "string", "description": "父节点 ID" },
+                    "item_type": { "type": "string", "description": "类型: request/folder/chain，默认 request" },
                     "name": { "type": "string", "description": "用例名称如 health-check" },
-                    "method": { "type": "string", "description": "HTTP 方法 GET/POST/PUT/DELETE" },
+                    "method": { "type": "string", "description": "HTTP 方法 GET/POST/PUT/DELETE，默认 GET" },
                     "url": { "type": "string", "description": "完整请求 URL" },
                     "headers": { "type": "string", "description": "JSON 数组 [{\"key\":\"Auth\",\"value\":\"Bearer xx\",\"enabled\":true}]" },
                     "body_type": { "type": "string", "description": "none/json/form/raw" },
@@ -48,12 +49,12 @@ pub fn list_tools() -> Vec<Value> {
                     "description": { "type": "string", "description": "用例描述" },
                     "expect_status": { "type": "number", "description": "期望 HTTP 状态码，默认 200" }
                 },
-                "required": ["collection_id", "name", "method"]
+                "required": ["collection_id", "name"]
             }
         }),
         json!({
-            "name": "update_request",
-            "description": "修改已有的测试用例。只需传入要修改的字段。",
+            "name": "update_item",
+            "description": "修改已有的节点。只需传入要修改的字段。",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -71,8 +72,8 @@ pub fn list_tools() -> Vec<Value> {
             }
         }),
         json!({
-            "name": "delete_request",
-            "description": "删除一个测试用例。",
+            "name": "delete_item",
+            "description": "删除一个节点。",
             "inputSchema": {
                 "type": "object",
                 "properties": { "id": { "type": "string" } },
@@ -85,13 +86,13 @@ pub fn list_tools() -> Vec<Value> {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "request_id": { "type": "string" },
+                    "item_id": { "type": "string" },
                     "assertion_type": { "type": "string" },
                     "expression": { "type": "string", "description": "JSONPath 或 header 名称" },
                     "operator": { "type": "string" },
                     "expected": { "type": "string" }
                 },
-                "required": ["request_id", "assertion_type", "operator", "expected"]
+                "required": ["item_id", "assertion_type", "operator", "expected"]
             }
         }),
         json!({
@@ -99,13 +100,13 @@ pub fn list_tools() -> Vec<Value> {
             "description": "列出测试用例的所有断言。",
             "inputSchema": {
                 "type": "object",
-                "properties": { "request_id": { "type": "string" } },
-                "required": ["request_id"]
+                "properties": { "item_id": { "type": "string" } },
+                "required": ["item_id"]
             }
         }),
         json!({
-            "name": "get_request",
-            "description": "获取单个测试用例的完整详情。",
+            "name": "get_item",
+            "description": "获取单个节点的完整详情。",
             "inputSchema": {
                 "type": "object",
                 "properties": { "id": { "type": "string" } },
@@ -135,26 +136,26 @@ pub fn call_tool(conn: &Connection, name: &str, args: &Value) -> Result<String, 
         "get_collection" => {
             let id = get_str(args, "collection_id")?;
             let col = qai_lib::db::collection::get(conn, &id).map_err(|e| e.to_string())?;
-            let requests = qai_lib::db::request::list_by_collection(conn, &id).map_err(|e| e.to_string())?;
-            Ok(serde_json::to_string_pretty(&json!({ "collection": col, "requests": requests })).unwrap())
+            let items = qai_lib::db::item::list_by_collection(conn, &id).map_err(|e| e.to_string())?;
+            Ok(serde_json::to_string_pretty(&json!({ "collection": col, "items": items })).unwrap())
         }
 
         "create_collection" => {
             let name = get_str(args, "name")?;
             let desc = args.get("description").and_then(|v| v.as_str()).unwrap_or("");
-            let category = args.get("category").and_then(|v| v.as_str());
-            let endpoint = args.get("endpoint").and_then(|v| v.as_str());
-            let subcategory = args.get("subcategory").and_then(|v| v.as_str());
-            let col = qai_lib::db::collection::create(conn, &name, desc, category, endpoint, subcategory)
+            let group_id = args.get("group_id").and_then(|v| v.as_str());
+            let col = qai_lib::db::collection::create(conn, &name, desc, group_id)
                 .map_err(|e| e.to_string())?;
             Ok(serde_json::to_string_pretty(&col).unwrap())
         }
 
-        "create_request" => {
+        "create_item" => {
             let collection_id = get_str(args, "collection_id")?;
             let name = get_str(args, "name")?;
+            let item_type = args.get("item_type").and_then(|v| v.as_str()).unwrap_or("request");
             let method = args.get("method").and_then(|v| v.as_str()).unwrap_or("GET");
-            let req = qai_lib::db::request::create(conn, &collection_id, None, &name, method)
+            let parent_id = args.get("parent_id").and_then(|v| v.as_str());
+            let item = qai_lib::db::item::create(conn, &collection_id, parent_id, item_type, &name, method)
                 .map_err(|e| e.to_string())?;
 
             // 如果有额外字段，立即 update
@@ -165,16 +166,16 @@ pub fn call_tool(conn: &Connection, name: &str, args: &Value) -> Result<String, 
             let description = args.get("description").and_then(|v| v.as_str());
             let expect_status = args.get("expect_status").and_then(|v| v.as_u64()).map(|v| v as u16);
 
-            let updated = qai_lib::db::request::update(
-                conn, &req.id, None, None, url, headers, None, body_type, body_content, None, description, expect_status,
+            let updated = qai_lib::db::item::update(
+                conn, &item.id, None, None, url, headers, None, body_type, body_content, None, description, expect_status, None,
             ).map_err(|e| e.to_string())?;
 
             Ok(serde_json::to_string_pretty(&updated).unwrap())
         }
 
-        "update_request" => {
+        "update_item" => {
             let id = get_str(args, "id")?;
-            let updated = qai_lib::db::request::update(
+            let updated = qai_lib::db::item::update(
                 conn, &id,
                 args.get("name").and_then(|v| v.as_str()),
                 args.get("method").and_then(|v| v.as_str()),
@@ -186,37 +187,38 @@ pub fn call_tool(conn: &Connection, name: &str, args: &Value) -> Result<String, 
                 None,
                 args.get("description").and_then(|v| v.as_str()),
                 args.get("expect_status").and_then(|v| v.as_u64()).map(|v| v as u16),
+                None,
             ).map_err(|e| e.to_string())?;
             Ok(serde_json::to_string_pretty(&updated).unwrap())
         }
 
-        "delete_request" => {
+        "delete_item" => {
             let id = get_str(args, "id")?;
-            qai_lib::db::request::delete(conn, &id).map_err(|e| e.to_string())?;
-            Ok(format!("Deleted request {id}"))
+            qai_lib::db::item::delete(conn, &id).map_err(|e| e.to_string())?;
+            Ok(format!("Deleted item {id}"))
         }
 
         "create_assertion" => {
-            let request_id = get_str(args, "request_id")?;
+            let item_id = get_str(args, "item_id")?;
             let atype = get_str(args, "assertion_type")?;
             let expression = args.get("expression").and_then(|v| v.as_str()).unwrap_or("");
             let operator = get_str(args, "operator")?;
             let expected = get_str(args, "expected")?;
-            let assertion = qai_lib::db::assertion::create(conn, &request_id, &atype, expression, &operator, &expected)
+            let assertion = qai_lib::db::assertion::create(conn, &item_id, &atype, expression, &operator, &expected)
                 .map_err(|e| e.to_string())?;
             Ok(serde_json::to_string_pretty(&assertion).unwrap())
         }
 
         "list_assertions" => {
-            let request_id = get_str(args, "request_id")?;
-            let list = qai_lib::db::assertion::list_by_request(conn, &request_id).map_err(|e| e.to_string())?;
+            let item_id = get_str(args, "item_id")?;
+            let list = qai_lib::db::assertion::list_by_item(conn, &item_id).map_err(|e| e.to_string())?;
             Ok(serde_json::to_string_pretty(&list).unwrap())
         }
 
-        "get_request" => {
+        "get_item" => {
             let id = get_str(args, "id")?;
-            let req = qai_lib::db::request::get(conn, &id).map_err(|e| e.to_string())?;
-            Ok(serde_json::to_string_pretty(&req).unwrap())
+            let item = qai_lib::db::item::get(conn, &id).map_err(|e| e.to_string())?;
+            Ok(serde_json::to_string_pretty(&item).unwrap())
         }
 
         "delete_collection" => {

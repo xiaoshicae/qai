@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Assertion {
     pub id: String,
-    pub request_id: String,
+    pub item_id: String,
     #[serde(rename = "type")]
     pub assertion_type: String,
     pub expression: String,

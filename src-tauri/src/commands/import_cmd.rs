@@ -62,7 +62,7 @@ pub fn import_yaml_cases(
     // 清空所有现有数据
     if clear_first.unwrap_or(false) {
         conn.execute_batch(
-            "DELETE FROM executions; DELETE FROM assertions; DELETE FROM requests; DELETE FROM folders; DELETE FROM collections;"
+            "DELETE FROM executions; DELETE FROM assertions; DELETE FROM collection_items; DELETE FROM collections; DELETE FROM groups;"
         ).map_err(|e| e.to_string())?;
     }
 
@@ -114,35 +114,35 @@ fn import_single_case(
     result: &mut ImportResult,
 ) -> Result<(), String> {
     let category = case.category.as_deref().unwrap_or("text");
-    let subcategory = case.subcategory.as_deref();
     let endpoint = case.endpoint.as_deref().unwrap_or("");
 
-    // 查找或创建 collection（按 model 名匹配）
+    // 先创建或查找 group（按 category 名称）
+    let group_id = find_or_create_group(conn, category)?;
+
+    // 查找或创建 collection（按 name 匹配）
     let collection_id = match find_collection_by_name(conn, &case.name) {
         Some(id) => {
-            // 更新 category/subcategory/endpoint
-            crate::db::collection::update_meta(
+            // 更新 group_id
+            crate::db::collection::update(
                 conn,
                 &id,
                 None,
                 None,
-                Some(category),
-                Some(endpoint),
-                subcategory,
+                Some(Some(&group_id)),
             ).map_err(|e| e.to_string())?;
             result.collections_updated += 1;
             id
         }
         None => {
-            let col = crate::db::collection::create(conn, &case.name, "", Some(category), Some(endpoint), subcategory)
+            let col = crate::db::collection::create(conn, &case.name, "", Some(&group_id))
                 .map_err(|e| e.to_string())?;
             result.collections_created += 1;
             col.id
         }
     };
 
-    // 获取现有请求列表
-    let existing_requests = crate::db::request::list_by_collection(conn, &collection_id)
+    // 获取现有 items 列表
+    let existing_items = crate::db::item::list_by_collection(conn, &collection_id)
         .map_err(|e| e.to_string())?;
 
     for (idx, scenario) in case.scenarios.iter().enumerate() {
@@ -154,15 +154,15 @@ fn import_single_case(
         // 构建 headers
         let headers = build_headers(scenario);
 
-        // 查找现有同名请求
-        let existing = existing_requests.iter().find(|r| r.name == scenario.id);
+        // 查找现有同名 item
+        let existing = existing_items.iter().find(|i| i.name == scenario.id);
 
         match existing {
-            Some(req) => {
-                // 更新现有请求
-                crate::db::request::update(
+            Some(item) => {
+                // 更新现有 item
+                crate::db::item::update(
                     conn,
-                    &req.id,
+                    &item.id,
                     Some(&scenario.id),
                     Some("POST"),
                     Some(endpoint),
@@ -173,22 +173,24 @@ fn import_single_case(
                     None, // extract_rules
                     scenario.description.as_deref(),
                     Some(expect_status),
+                    None, // parent_id
                 ).map_err(|e| e.to_string())?;
                 result.requests_updated += 1;
             }
             None => {
-                // 创建新请求
-                let req = crate::db::request::create(
+                // 创建新 item
+                let item = crate::db::item::create(
                     conn,
                     &collection_id,
                     None,
+                    "request",
                     &scenario.id,
                     "POST",
                 ).map_err(|e| e.to_string())?;
 
-                crate::db::request::update(
+                crate::db::item::update(
                     conn,
-                    &req.id,
+                    &item.id,
                     None, // name 已设
                     None, // method 已设
                     Some(endpoint),
@@ -199,10 +201,11 @@ fn import_single_case(
                     None,
                     scenario.description.as_deref(),
                     Some(expect_status),
+                    None, // parent_id
                 ).map_err(|e| e.to_string())?;
 
                 // 为 status_code 断言自动创建
-                create_status_assertion(conn, &req.id, expect_status)
+                create_status_assertion(conn, &item.id, expect_status)
                     .map_err(|e| e.to_string())?;
 
                 result.requests_created += 1;
@@ -210,10 +213,10 @@ fn import_single_case(
         }
 
         // 更新 sort_order
-        if let Some(req) = existing {
+        if let Some(item) = existing {
             conn.execute(
-                "UPDATE requests SET sort_order = ?1 WHERE id = ?2",
-                rusqlite::params![idx as i32, req.id],
+                "UPDATE collection_items SET sort_order = ?1 WHERE id = ?2",
+                rusqlite::params![idx as i32, item.id],
             ).ok();
         }
     }
@@ -229,6 +232,21 @@ fn find_collection_by_name(conn: &rusqlite::Connection, name: &str) -> Option<St
     ).ok()
 }
 
+fn find_or_create_group(conn: &rusqlite::Connection, name: &str) -> Result<String, String> {
+    // 查找现有 group
+    if let Ok(id) = conn.query_row(
+        "SELECT id FROM groups WHERE name = ?1",
+        rusqlite::params![name],
+        |row| row.get::<_, String>(0),
+    ) {
+        return Ok(id);
+    }
+    // 创建新 group
+    let group = crate::db::group::create(conn, name, None)
+        .map_err(|e| e.to_string())?;
+    Ok(group.id)
+}
+
 fn build_body(scenario: &YamlScenario) -> (String, String) {
     let ct = scenario.content_type.as_deref().unwrap_or("");
 
@@ -238,7 +256,6 @@ fn build_body(scenario: &YamlScenario) -> (String, String) {
 
     if ct == "form-data" || ct == "application/x-www-form-urlencoded" {
         if let Some(ref fd) = scenario.form_data {
-            // 转为 KV 数组格式
             let kvs: Vec<serde_json::Value> = fd.as_object()
                 .map(|obj| {
                     obj.iter().map(|(k, v)| {
@@ -316,12 +333,12 @@ fn build_headers(scenario: &YamlScenario) -> String {
 
 fn create_status_assertion(
     conn: &rusqlite::Connection,
-    request_id: &str,
+    item_id: &str,
     expect_status: u16,
 ) -> Result<(), String> {
     crate::db::assertion::create(
         conn,
-        request_id,
+        item_id,
         "status_code",
         "",
         "eq",

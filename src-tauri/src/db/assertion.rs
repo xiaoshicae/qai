@@ -3,12 +3,12 @@ use uuid::Uuid;
 
 use crate::models::assertion::Assertion;
 
-const ASSERTION_COLS: &str = "id, request_id, type, expression, operator, expected, enabled, sort_order, created_at";
+const ASSERTION_COLS: &str = "id, item_id, type, expression, operator, expected, enabled, sort_order, created_at";
 
 fn assertion_from_row(row: &Row) -> Result<Assertion, rusqlite::Error> {
     Ok(Assertion {
         id: row.get(0)?,
-        request_id: row.get(1)?,
+        item_id: row.get(1)?,
         assertion_type: row.get(2)?,
         expression: row.get(3)?,
         operator: row.get(4)?,
@@ -19,17 +19,17 @@ fn assertion_from_row(row: &Row) -> Result<Assertion, rusqlite::Error> {
     })
 }
 
-pub fn list_by_request(conn: &Connection, request_id: &str) -> Result<Vec<Assertion>, rusqlite::Error> {
+pub fn list_by_item(conn: &Connection, item_id: &str) -> Result<Vec<Assertion>, rusqlite::Error> {
     let mut stmt = conn.prepare(
-        &format!("SELECT {} FROM assertions WHERE request_id = ?1 ORDER BY sort_order", ASSERTION_COLS),
+        &format!("SELECT {} FROM assertions WHERE item_id = ?1 ORDER BY sort_order", ASSERTION_COLS),
     )?;
-    let rows = stmt.query_map(params![request_id], assertion_from_row)?;
+    let rows = stmt.query_map(params![item_id], assertion_from_row)?;
     rows.collect()
 }
 
 pub fn create(
     conn: &Connection,
-    request_id: &str,
+    item_id: &str,
     assertion_type: &str,
     expression: &str,
     operator: &str,
@@ -37,17 +37,18 @@ pub fn create(
 ) -> Result<Assertion, rusqlite::Error> {
     let id = Uuid::new_v4().to_string();
     conn.execute(
-        "INSERT INTO assertions (id, request_id, type, expression, operator, expected) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![id, request_id, assertion_type, expression, operator, expected],
+        "INSERT INTO assertions (id, item_id, type, expression, operator, expected) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![id, item_id, assertion_type, expression, operator, expected],
     )?;
     get(conn, &id)
 }
 
 pub fn get(conn: &Connection, id: &str) -> Result<Assertion, rusqlite::Error> {
-    let mut stmt = conn.prepare(
+    conn.query_row(
         &format!("SELECT {} FROM assertions WHERE id = ?1", ASSERTION_COLS),
-    )?;
-    stmt.query_row(params![id], assertion_from_row)
+        params![id],
+        assertion_from_row,
+    )
 }
 
 pub fn update(

@@ -15,6 +15,25 @@ pub struct ApiRequest {
     pub sort_order: i32,
     pub created_at: String,
     pub updated_at: String,
+    pub extract_rules: String,
+    pub description: String,
+    pub expect_status: u16,
+    pub poll_config: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PollConfig {
+    pub field: String,          // JSON 字段名，如 "status"
+    pub target: String,         // 目标值，如 "completed"
+    pub interval_seconds: u64,  // 轮询间隔
+    pub max_seconds: u64,       // 最大等待时间
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExtractRule {
+    pub var_name: String,
+    pub source: String,     // "json_body", "header", "status_code"
+    pub expression: String, // JSONPath 或 header 名称
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

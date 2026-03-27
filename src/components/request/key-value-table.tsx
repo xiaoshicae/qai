@@ -35,19 +35,19 @@ export default function KeyValueTable({ value, onChange }: KeyValueTableProps) {
             type="checkbox"
             checked={item.enabled}
             onChange={(e) => updateRow(index, 'enabled', e.target.checked)}
-            className="h-3.5 w-3.5 rounded border-border accent-brand cursor-pointer"
+            className="h-3.5 w-3.5 rounded border-white/[0.06] accent-brand cursor-pointer"
           />
           <Input
             value={item.key}
             onChange={(e) => updateRow(index, 'key', e.target.value)}
             placeholder="Key"
-            className="h-7 text-xs flex-1 bg-surface-1 border-transparent focus-visible:border-border"
+            className="h-7 text-xs flex-1 bg-white/[0.03] border-transparent focus-visible:border-white/[0.12]"
           />
           <Input
             value={item.value}
             onChange={(e) => updateRow(index, 'value', e.target.value)}
             placeholder="Value"
-            className="h-7 text-xs flex-1 bg-surface-1 border-transparent focus-visible:border-border"
+            className="h-7 text-xs flex-1 bg-white/[0.03] border-transparent focus-visible:border-white/[0.12]"
           />
           <Button
             variant="ghost"
@@ -62,7 +62,7 @@ export default function KeyValueTable({ value, onChange }: KeyValueTableProps) {
       <Button
         variant="ghost"
         size="sm"
-        className="w-full h-7 text-xs text-muted-foreground hover:text-foreground border border-dashed border-border/50 hover:border-border"
+        className="w-full h-7 text-xs text-muted-foreground hover:text-foreground border border-dashed border-white/[0.06] hover:border-white/[0.1]"
         onClick={addRow}
       >
         <Plus className="h-3 w-3 mr-1" /> 添加

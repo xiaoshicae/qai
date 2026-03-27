@@ -156,7 +156,7 @@ export default function EnvironmentsView() {
         {/* 右侧：变量编辑 */}
         <div className="flex-1 min-w-0">
           {selectedEnv ? (
-            <div className="rounded-xl bg-card ring-1 ring-foreground/10 p-4 space-y-3">
+            <div className="rounded-xl bg-card border border-white/[0.06] p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">{selectedEnv.name}</span>
@@ -196,13 +196,13 @@ export default function EnvironmentsView() {
                     value={v.key}
                     onChange={(e) => updateVariable(i, 'key', e.target.value)}
                     placeholder="KEY"
-                    className="flex-1 h-7 text-xs font-mono dark:bg-input/30"
+                    className="flex-1 h-7 text-xs font-mono"
                   />
                   <Input
                     value={v.value}
                     onChange={(e) => updateVariable(i, 'value', e.target.value)}
                     placeholder="value"
-                    className="flex-1 h-7 text-xs font-mono dark:bg-input/30"
+                    className="flex-1 h-7 text-xs font-mono"
                   />
                   <button
                     className="h-7 w-7 flex items-center justify-center opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive cursor-pointer transition-opacity"

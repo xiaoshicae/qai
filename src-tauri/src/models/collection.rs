@@ -5,6 +5,9 @@ pub struct Collection {
     pub id: String,
     pub name: String,
     pub description: String,
+    pub category: String,
+    pub endpoint: String,
+    pub subcategory: String,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -18,6 +21,7 @@ pub struct Folder {
     pub sort_order: i32,
     pub created_at: String,
     pub updated_at: String,
+    pub is_chain: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -26,6 +30,7 @@ pub struct CollectionTreeNode {
     pub name: String,
     pub node_type: TreeNodeType,
     pub method: Option<String>,
+    pub is_chain: Option<bool>,
     pub children: Vec<CollectionTreeNode>,
 }
 

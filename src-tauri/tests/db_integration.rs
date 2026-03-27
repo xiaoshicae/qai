@@ -13,7 +13,7 @@ fn setup_db() -> Connection {
 fn test_collection_crud() {
     let conn = setup_db();
 
-    let col = qai_lib::db::collection::create(&conn, "Test API", "desc").unwrap();
+    let col = qai_lib::db::collection::create(&conn, "Test API", "desc", None, None, None).unwrap();
     assert_eq!(col.name, "Test API");
     assert_eq!(col.description, "desc");
 
@@ -33,7 +33,7 @@ fn test_collection_crud() {
 #[test]
 fn test_request_crud() {
     let conn = setup_db();
-    let col = qai_lib::db::collection::create(&conn, "Col", "").unwrap();
+    let col = qai_lib::db::collection::create(&conn, "Col", "", None, None, None).unwrap();
 
     let req = qai_lib::db::request::create(&conn, &col.id, None, "Get Users", "GET").unwrap();
     assert_eq!(req.method, "GET");
@@ -42,7 +42,7 @@ fn test_request_crud() {
     let updated = qai_lib::db::request::update(
         &conn, &req.id,
         Some("List Users"), Some("POST"), Some("http://example.com/users"),
-        None, None, Some("json"), Some(r#"{"page":1}"#),
+        None, None, Some("json"), Some(r#"{"page":1}"#), None, None, None,
     ).unwrap();
     assert_eq!(updated.name, "List Users");
     assert_eq!(updated.method, "POST");
@@ -62,7 +62,7 @@ fn test_request_crud() {
 #[test]
 fn test_assertion_crud() {
     let conn = setup_db();
-    let col = qai_lib::db::collection::create(&conn, "Col", "").unwrap();
+    let col = qai_lib::db::collection::create(&conn, "Col", "", None, None, None).unwrap();
     let req = qai_lib::db::request::create(&conn, &col.id, None, "Req", "GET").unwrap();
 
     let a = qai_lib::db::assertion::create(&conn, &req.id, "status_code", "", "eq", "200").unwrap();
@@ -87,10 +87,10 @@ fn test_assertion_crud() {
 #[test]
 fn test_cascade_delete_collection() {
     let conn = setup_db();
-    let col = qai_lib::db::collection::create(&conn, "Col", "").unwrap();
+    let col = qai_lib::db::collection::create(&conn, "Col", "", None, None, None).unwrap();
     let req = qai_lib::db::request::create(&conn, &col.id, None, "Req", "GET").unwrap();
     qai_lib::db::assertion::create(&conn, &req.id, "status_code", "", "eq", "200").unwrap();
-    let folder = qai_lib::db::collection::create_folder(&conn, &col.id, None, "Folder").unwrap();
+    let folder = qai_lib::db::collection::create_folder(&conn, &col.id, None, "Folder", false).unwrap();
     qai_lib::db::request::create(&conn, &col.id, Some(&folder.id), "Req2", "POST").unwrap();
 
     // 删除 collection 应该级联删除所有关联数据
@@ -111,7 +111,7 @@ fn test_cascade_delete_collection() {
 #[test]
 fn test_cascade_delete_request_deletes_assertions() {
     let conn = setup_db();
-    let col = qai_lib::db::collection::create(&conn, "Col", "").unwrap();
+    let col = qai_lib::db::collection::create(&conn, "Col", "", None, None, None).unwrap();
     let req = qai_lib::db::request::create(&conn, &col.id, None, "Req", "GET").unwrap();
     qai_lib::db::assertion::create(&conn, &req.id, "status_code", "", "eq", "200").unwrap();
     qai_lib::db::assertion::create(&conn, &req.id, "json_path", "$.id", "exists", "").unwrap();
@@ -127,8 +127,8 @@ fn test_cascade_delete_request_deletes_assertions() {
 #[test]
 fn test_collection_tree_structure() {
     let conn = setup_db();
-    let col = qai_lib::db::collection::create(&conn, "My API", "").unwrap();
-    let folder = qai_lib::db::collection::create_folder(&conn, &col.id, None, "Auth").unwrap();
+    let col = qai_lib::db::collection::create(&conn, "My API", "", None, None, None).unwrap();
+    let folder = qai_lib::db::collection::create_folder(&conn, &col.id, None, "Auth", false).unwrap();
     qai_lib::db::request::create(&conn, &col.id, Some(&folder.id), "Login", "POST").unwrap();
     qai_lib::db::request::create(&conn, &col.id, None, "Health Check", "GET").unwrap();
 
@@ -151,11 +151,11 @@ fn test_collection_tree_structure() {
 #[test]
 fn test_request_partial_update() {
     let conn = setup_db();
-    let col = qai_lib::db::collection::create(&conn, "Col", "").unwrap();
+    let col = qai_lib::db::collection::create(&conn, "Col", "", None, None, None).unwrap();
     let req = qai_lib::db::request::create(&conn, &col.id, None, "Req", "GET").unwrap();
 
     // 只更新 url，其它不变
-    let updated = qai_lib::db::request::update(&conn, &req.id, None, None, Some("http://test.com"), None, None, None, None).unwrap();
+    let updated = qai_lib::db::request::update(&conn, &req.id, None, None, Some("http://test.com"), None, None, None, None, None, None, None).unwrap();
     assert_eq!(updated.name, "Req");     // 没变
     assert_eq!(updated.method, "GET");   // 没变
     assert_eq!(updated.url, "http://test.com"); // 变了

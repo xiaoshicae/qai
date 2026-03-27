@@ -17,7 +17,7 @@ function formatTime(ms: number): string {
 }
 
 export default function ResponsePanel() {
-  const { currentResponse } = useRequestStore()
+  const { currentResponse, streaming, streamContent, streamChunks } = useRequestStore()
   const [activeTab, setActiveTab] = useState('body')
 
   const response = currentResponse?.response
@@ -37,6 +37,28 @@ export default function ResponsePanel() {
     if (s >= 400) return 'destructive' as const
     return 'warning' as const
   }, [response?.status])
+
+  // 流式传输中：实时显示内容
+  if (streaming && streamContent) {
+    return (
+      <div>
+        <div className="flex items-center gap-2 mb-4">
+          <Badge variant="secondary">Streaming...</Badge>
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <Clock className="h-3 w-3" />
+            <span>Chunks: {streamChunks}</span>
+          </div>
+          <div className="ml-auto">
+            <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+          </div>
+        </div>
+        <pre className="font-mono text-xs leading-relaxed whitespace-pre-wrap break-all max-h-[400px] overflow-y-auto bg-card p-4 rounded-xl border border-white/[0.06]">
+          {streamContent}
+          <span className="animate-pulse">|</span>
+        </pre>
+      </div>
+    )
+  }
 
   if (!currentResponse) {
     return (
@@ -89,12 +111,12 @@ export default function ResponsePanel() {
           )}
         </TabsList>
         <TabsContent value="body">
-          <pre className="font-mono text-xs leading-relaxed whitespace-pre-wrap break-all max-h-[400px] overflow-y-auto bg-card p-4 rounded-xl ring-1 ring-foreground/10">
+          <pre className="font-mono text-xs leading-relaxed whitespace-pre-wrap break-all max-h-[400px] overflow-y-auto bg-card p-4 rounded-xl border border-white/[0.06]">
             {prettyBody}
           </pre>
         </TabsContent>
         <TabsContent value="headers">
-          <div className="rounded-xl ring-1 ring-foreground/10 overflow-hidden">
+          <div className="rounded-xl border border-white/[0.06] overflow-hidden">
             {response.headers.map((h, i) => (
               <div key={h.key} className={`flex gap-3 px-4 py-2 text-xs font-mono ${i % 2 === 0 ? 'bg-card' : 'bg-transparent'}`}>
                 <span className="text-primary font-medium min-w-[180px] shrink-0">{h.key}</span>

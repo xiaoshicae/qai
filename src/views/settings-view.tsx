@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
-import { Eye, EyeOff, Check, Loader2, Wifi, WifiOff, ExternalLink, Save } from 'lucide-react'
+import { Eye, EyeOff, Check, Loader2, Wifi, WifiOff, ExternalLink, Save, Sparkles, Moon, Sun, Monitor } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { useThemeStore } from '@/stores/theme-store'
 
 const PROVIDERS = [
   { id: 'claude', label: 'Claude', icon: 'A' },
@@ -111,7 +112,6 @@ export default function SettingsView() {
   const modelOptions = MODEL_OPTIONS[provider] ?? []
   const effectiveModel = model || customModel.trim()
 
-  // 判断是否有未保存的修改
   const hasChanges =
     provider !== savedProvider ||
     apiKey !== (savedKeys[provider] ?? '') ||
@@ -181,31 +181,36 @@ export default function SettingsView() {
   if (!loaded) return null
 
   return (
-    <div className="mx-auto max-w-lg px-6 py-6">
-      <h1 className="text-lg font-semibold mb-6">设置</h1>
+    <div className="mx-auto max-w-lg px-8 py-8">
+      <div className="flex items-center gap-3 mb-8">
+        <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/[0.06]">
+          <Sparkles className="h-4 w-4 text-gradient text-primary" />
+        </div>
+        <h1 className="text-xl font-semibold tracking-tight">设置</h1>
+      </div>
 
-      <div className="space-y-3">
+      <div className="space-y-4">
         {/* 提供商 */}
-        <div className="rounded-xl bg-card ring-1 ring-foreground/10 p-4 space-y-3">
-          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">AI 提供商</label>
-          <div className="grid grid-cols-4 gap-2">
+        <div className="glass-card rounded-2xl p-5 space-y-4">
+          <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">AI 提供商</label>
+          <div className="grid grid-cols-4 gap-2.5">
             {PROVIDERS.map((p) => {
               const active = provider === p.id
               const isSaved = savedProvider === p.id
               return (
                 <button
                   key={p.id}
-                  className={`relative flex flex-col items-center gap-1 py-3 rounded-lg cursor-pointer transition-all ${
+                  className={`relative flex flex-col items-center gap-1.5 py-3.5 rounded-xl cursor-pointer transition-all duration-200 ${
                     active
-                      ? 'bg-primary text-primary-foreground ring-2 ring-primary/50'
-                      : 'bg-muted/50 text-foreground hover:bg-muted ring-1 ring-transparent'
+                      ? 'btn-gradient text-primary-foreground shadow-lg'
+                      : 'bg-white/[0.04] text-foreground/70 hover:bg-white/[0.08] border border-white/[0.06] hover:border-white/[0.1]'
                   }`}
                   onClick={() => handleProviderChange(p.id)}
                 >
                   <span className={`text-base font-bold leading-none ${active ? '' : 'text-muted-foreground'}`}>{p.icon}</span>
                   <span className="text-[11px] font-medium">{p.label}</span>
                   {isSaved && (
-                    <span className={`absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full ${active ? 'bg-white' : 'bg-emerald-500'}`} title="当前使用" />
+                    <span className={`absolute top-2 right-2 w-1.5 h-1.5 rounded-full ${active ? 'bg-white' : 'bg-emerald-400'}`} title="当前使用" />
                   )}
                 </button>
               )
@@ -214,13 +219,13 @@ export default function SettingsView() {
         </div>
 
         {/* API Key */}
-        <div className="rounded-xl bg-card ring-1 ring-foreground/10 p-4 space-y-3">
+        <div className="glass-card rounded-2xl p-5 space-y-4">
           <div className="flex items-center justify-between">
-            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">API Key</label>
+            <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">API Key</label>
             {apiKey && effectiveModel && (
               <button
-                className={`flex items-center gap-1 text-[11px] cursor-pointer transition-colors ${
-                  testStatus === 'success' ? 'text-emerald-500' :
+                className={`flex items-center gap-1.5 text-[11px] cursor-pointer transition-all duration-200 ${
+                  testStatus === 'success' ? 'text-emerald-400' :
                   testStatus === 'error' ? 'text-destructive' :
                   testStatus === 'testing' ? 'text-muted-foreground' :
                   'text-muted-foreground hover:text-foreground'
@@ -244,11 +249,11 @@ export default function SettingsView() {
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               placeholder={KEY_HINTS[provider] ?? 'API Key'}
-              className="pr-10 font-mono text-xs dark:bg-input/30"
+              className="pr-10 font-mono text-xs"
             />
             <button
               type="button"
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer p-0.5 rounded"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer p-0.5 rounded-md transition-colors"
               onClick={() => setShowKey(!showKey)}
               tabIndex={-1}
             >
@@ -256,36 +261,36 @@ export default function SettingsView() {
             </button>
           </div>
           {testStatus === 'error' && (
-            <p className="text-[11px] text-destructive leading-relaxed break-all">{testError}</p>
+            <p className="text-[11px] text-destructive/80 leading-relaxed break-all bg-destructive/5 rounded-lg px-3 py-2">{testError}</p>
           )}
         </div>
 
         {/* 模型 */}
-        <div className="rounded-xl bg-card ring-1 ring-foreground/10 p-4 space-y-3">
-          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">模型</label>
+        <div className="glass-card rounded-2xl p-5 space-y-4">
+          <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">模型</label>
           {modelOptions.length > 0 ? (
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               {modelOptions.map((m) => {
                 const active = model === m.value
                 return (
                   <div
                     key={m.value}
-                    className={`flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer transition-all ${
-                      active ? 'bg-primary/10 ring-1 ring-primary/30' : 'hover:bg-muted/70'
+                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl cursor-pointer transition-all duration-200 ${
+                      active ? 'bg-primary/10 glow-ring' : 'hover:bg-white/[0.04]'
                     }`}
                     onClick={() => handleModelChange(m.value)}
                   >
-                    <div className={`w-3.5 h-3.5 rounded-full border-[1.5px] flex items-center justify-center shrink-0 transition-all ${
-                      active ? 'border-primary bg-primary scale-110' : 'border-muted-foreground/25'
+                    <div className={`w-4 h-4 rounded-full border-[1.5px] flex items-center justify-center shrink-0 transition-all duration-200 ${
+                      active ? 'border-primary bg-primary scale-110' : 'border-white/[0.15]'
                     }`}>
-                      {active && <Check className="h-2 w-2 text-white" strokeWidth={3} />}
+                      {active && <Check className="h-2.5 w-2.5 text-white" strokeWidth={3} />}
                     </div>
-                    <span className={`text-[13px] flex-1 ${active ? 'font-medium text-foreground' : 'text-foreground/80'}`}>
+                    <span className={`text-[13px] flex-1 ${active ? 'font-medium text-foreground' : 'text-foreground/70'}`}>
                       {m.label}
                     </span>
                     {m.badge && (
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                        active ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground/60'
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium transition-colors ${
+                        active ? 'bg-primary/15 text-primary' : 'bg-white/[0.06] text-muted-foreground'
                       }`}>{m.badge}</span>
                     )}
                   </div>
@@ -296,20 +301,20 @@ export default function SettingsView() {
                 onChange={(e) => setCustomModel(e.target.value)}
                 onBlur={handleCustomModelBlur}
                 placeholder="自定义模型 ID..."
-                className="mt-1.5 text-xs font-mono dark:bg-input/30"
+                className="mt-2 text-xs font-mono"
               />
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-3">
               <Input
                 value={model}
                 onChange={(e) => setModels((prev) => ({ ...prev, [provider]: e.target.value }))}
                 placeholder="输入模型 ID，如 deepseek-chat"
-                className="text-xs font-mono dark:bg-input/30"
+                className="text-xs font-mono"
               />
               {provider === 'other' && (
                 <>
-                  <label className="text-xs text-muted-foreground flex items-center gap-1">
+                  <label className="text-[11px] text-muted-foreground flex items-center gap-1">
                     Base URL
                     <ExternalLink className="h-3 w-3" />
                   </label>
@@ -317,7 +322,7 @@ export default function SettingsView() {
                     value={baseUrl}
                     onChange={(e) => setBaseUrl(e.target.value)}
                     placeholder="https://api.example.com"
-                    className="text-xs font-mono dark:bg-input/30"
+                    className="text-xs font-mono"
                   />
                 </>
               )}
@@ -329,7 +334,7 @@ export default function SettingsView() {
         <Button
           onClick={handleSave}
           disabled={saving || (!hasChanges && !justSaved)}
-          className="w-full gap-2"
+          className="w-full gap-2 h-10"
         >
           {saving ? (
             <Loader2 className="h-4 w-4 animate-spin" />

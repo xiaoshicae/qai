@@ -3,6 +3,7 @@ import { Plus, Trash2 } from 'lucide-react'
 import { invoke } from '@tauri-apps/api/core'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
 import type { Assertion } from '@/types'
 
 const TYPE_OPTIONS = [
@@ -79,37 +80,34 @@ export default function AssertionEditor({ requestId }: { requestId: string }) {
             onChange={(e) => update(a.id, 'enabled', e.target.checked)}
             className="h-3.5 w-3.5 rounded accent-brand cursor-pointer"
           />
-          <select
+          <Select
             value={a.type}
-            onChange={(e) => {
-              const newType = e.target.value
-              update(a.id, 'type', newType)
-              setAssertions((prev) => prev.map((item) => item.id === a.id ? { ...item, type: newType } : item))
+            onChange={(v) => {
+              update(a.id, 'type', v)
+              setAssertions((prev) => prev.map((item) => item.id === a.id ? { ...item, type: v } : item))
             }}
-            className="h-7 rounded-md border border-input bg-surface-1 px-1.5 text-xs cursor-pointer w-[100px] focus:outline-none focus:ring-1 focus:ring-brand/50"
-          >
-            {TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
+            options={TYPE_OPTIONS}
+            className="w-[100px]"
+          />
           {needsExpression(a.type) && (
             <Input
               defaultValue={a.expression}
               onBlur={(e) => update(a.id, 'expression', e.target.value)}
               placeholder={a.type === 'json_path' ? '$.data.id' : 'content-type'}
-              className="h-7 text-xs w-[120px] bg-surface-1 border-transparent focus-visible:border-border"
+              className="h-7 text-xs w-[120px] bg-white/[0.03] border-transparent focus-visible:border-white/[0.12]"
             />
           )}
-          <select
+          <Select
             value={a.operator}
-            onChange={(e) => update(a.id, 'operator', e.target.value)}
-            className="h-7 rounded-md border border-input bg-surface-1 px-1.5 text-xs cursor-pointer w-[80px] focus:outline-none focus:ring-1 focus:ring-brand/50"
-          >
-            {OPERATOR_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
+            onChange={(v) => update(a.id, 'operator', v)}
+            options={OPERATOR_OPTIONS}
+            className="w-[80px]"
+          />
           <Input
             defaultValue={a.expected}
             onBlur={(e) => update(a.id, 'expected', e.target.value)}
             placeholder="预期值"
-            className="h-7 text-xs flex-1 min-w-[60px] bg-surface-1 border-transparent focus-visible:border-border"
+            className="h-7 text-xs flex-1 min-w-[60px] bg-white/[0.03] border-transparent focus-visible:border-white/[0.12]"
           />
           <Button
             variant="ghost"
@@ -124,7 +122,7 @@ export default function AssertionEditor({ requestId }: { requestId: string }) {
       <Button
         variant="ghost"
         size="sm"
-        className="w-full h-7 text-xs text-muted-foreground hover:text-foreground border border-dashed border-border/50 hover:border-border"
+        className="w-full h-7 text-xs text-muted-foreground hover:text-foreground border border-dashed border-white/[0.06] hover:border-white/[0.1]"
         onClick={add}
       >
         <Plus className="h-3 w-3 mr-1" /> 添加断言

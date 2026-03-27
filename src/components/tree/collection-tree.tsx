@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronRight, ChevronDown, Folder, FolderOpen, Play, Plus, FolderPlus, Trash2, Pencil, MoreHorizontal } from 'lucide-react'
+import { ChevronRight, ChevronDown, Folder, FolderOpen, Play, Plus, FolderPlus, Trash2, Pencil, MoreHorizontal, Link2, Unlink } from 'lucide-react'
 import { invoke } from '@tauri-apps/api/core'
 import { cn } from '@/lib/utils'
 import type { Collection, CollectionTreeNode } from '@/types'
@@ -31,6 +31,7 @@ interface ContextMenu {
   id: string
   collectionId: string
   name: string
+  isChain?: boolean
 }
 
 export default function CollectionTree({ collections, trees, selectedNodeId, onSelect }: CollectionTreeProps) {
@@ -67,9 +68,9 @@ export default function CollectionTree({ collections, trees, selectedNodeId, onS
     setExpanded((prev) => new Set(prev).add(id))
   }, [])
 
-  const handleContextMenu = (e: React.MouseEvent, type: ContextMenu['type'], id: string, collectionId: string, name: string) => {
+  const handleContextMenu = (e: React.MouseEvent, type: ContextMenu['type'], id: string, collectionId: string, name: string, isChain?: boolean) => {
     e.preventDefault()
-    setMenu({ x: e.clientX, y: e.clientY, type, id, collectionId, name })
+    setMenu({ x: e.clientX, y: e.clientY, type, id, collectionId, name, isChain })
   }
 
   const startRename = (id: string, currentName: string) => {
@@ -113,6 +114,28 @@ export default function CollectionTree({ collections, trees, selectedNodeId, onS
       case 'add-folder':
         expand(type === 'collection' ? collectionId : id)
         await createFolder(collectionId, type === 'folder' ? id : null, '新文件夹')
+        break
+      case 'add-chain':
+        expand(type === 'collection' ? collectionId : id)
+        await invoke('create_folder', {
+          collectionId,
+          parentFolderId: type === 'folder' ? id : null,
+          name: '新请求链',
+          isChain: true,
+        })
+        await loadTree(collectionId)
+        break
+      case 'toggle-chain':
+        try {
+          await invoke('update_folder', { id, isChain: true })
+          await loadTree(collectionId)
+        } catch {}
+        break
+      case 'toggle-folder':
+        try {
+          await invoke('update_folder', { id, isChain: false })
+          await loadTree(collectionId)
+        } catch {}
         break
       case 'rename':
         startRename(id, name)
@@ -182,10 +205,10 @@ export default function CollectionTree({ collections, trees, selectedNodeId, onS
       {menu && (
         <div
           ref={menuRef}
-          className="fixed z-50 min-w-[160px] rounded-lg bg-popover ring-1 ring-foreground/10 p-1 shadow-md text-sm"
+          className="fixed z-50 min-w-[160px] rounded-lg glass-card p-1 shadow-md text-sm"
           style={{ left: menu.x, top: menu.y }}
         >
-          {getMenuItems(menu.type).map((item) =>
+          {getMenuItems(menu.type, menu.isChain).map((item) =>
             item.separator ? (
               <div key={item.key} className="h-px bg-border my-1" />
             ) : (
@@ -208,12 +231,23 @@ export default function CollectionTree({ collections, trees, selectedNodeId, onS
   )
 }
 
-function getMenuItems(type: ContextMenu['type']) {
+function getMenuItems(type: ContextMenu['type'], isChain?: boolean) {
   const items: { key: string; label?: string; icon?: React.ReactNode; danger?: boolean; separator?: boolean }[] = []
   if (type === 'collection' || type === 'folder') {
     items.push({ key: 'add-request', label: '添加请求', icon: <Plus className="h-3.5 w-3.5" /> })
     items.push({ key: 'add-folder', label: '添加文件夹', icon: <FolderPlus className="h-3.5 w-3.5" /> })
+    if (type === 'collection') {
+      items.push({ key: 'add-chain', label: '添加请求链', icon: <Link2 className="h-3.5 w-3.5" /> })
+    }
     items.push({ key: 'run', label: '运行全部', icon: <Play className="h-3.5 w-3.5" /> })
+    if (type === 'folder') {
+      items.push({ key: 'sep-chain', separator: true })
+      if (isChain) {
+        items.push({ key: 'toggle-folder', label: '转为普通文件夹', icon: <Unlink className="h-3.5 w-3.5" /> })
+      } else {
+        items.push({ key: 'toggle-chain', label: '转为请求链', icon: <Link2 className="h-3.5 w-3.5" /> })
+      }
+    }
     items.push({ key: 'sep1', separator: true })
   }
   items.push({ key: 'rename', label: '重命名', icon: <Pencil className="h-3.5 w-3.5" /> })
@@ -234,7 +268,7 @@ interface TreeNodeProps {
   onStartRename: (id: string, name: string) => void
   onToggle: (id: string) => void
   onSelect: (id: string) => void
-  onContextMenu: (e: React.MouseEvent, type: ContextMenu['type'], id: string, collectionId: string, name: string) => void
+  onContextMenu: (e: React.MouseEvent, type: ContextMenu['type'], id: string, collectionId: string, name: string, isChain?: boolean) => void
 }
 
 function TreeNode({ node, collectionId, level, expanded, selectedNodeId, renamingId, renameValue, onRenameChange, onRenameCommit, onStartRename, onToggle, onSelect, onContextMenu }: TreeNodeProps) {
@@ -271,11 +305,15 @@ function TreeNode({ node, collectionId, level, expanded, selectedNodeId, renamin
     )
   }
 
+  const isChain = node.is_chain === true
+
   return (
     <div>
       <TreeRow
         id={node.id}
-        icon={isExpanded ? <FolderOpen className="h-3.5 w-3.5 text-primary/60" /> : <Folder className="h-3.5 w-3.5 text-muted-foreground" />}
+        icon={isChain
+          ? <Link2 className="h-3.5 w-3.5 text-amber-500" />
+          : isExpanded ? <FolderOpen className="h-3.5 w-3.5 text-primary/60" /> : <Folder className="h-3.5 w-3.5 text-muted-foreground" />}
         chevron={isExpanded ? <ChevronDown className="h-3 w-3 text-muted-foreground" /> : <ChevronRight className="h-3 w-3 text-muted-foreground/50" />}
         label={node.name}
         level={level}
@@ -285,10 +323,10 @@ function TreeNode({ node, collectionId, level, expanded, selectedNodeId, renamin
         showMore
         onRenameChange={onRenameChange}
         onRenameCommit={() => onRenameCommit('folder', node.id, collectionId)}
-        onClick={() => onToggle(node.id)}
+        onClick={() => { if (isChain) onSelect(node.id); onToggle(node.id) }}
         onDoubleClick={() => onStartRename(node.id, node.name)}
-        onContextMenu={(e) => onContextMenu(e, 'folder', node.id, collectionId, node.name)}
-        onMoreClick={(e) => onContextMenu(e, 'folder', node.id, collectionId, node.name)}
+        onContextMenu={(e) => onContextMenu(e, 'folder', node.id, collectionId, node.name, isChain)}
+        onMoreClick={(e) => onContextMenu(e, 'folder', node.id, collectionId, node.name, isChain)}
       />
       {isExpanded && node.children.map((child) => (
         <TreeNode

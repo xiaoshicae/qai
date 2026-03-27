@@ -158,7 +158,7 @@ fn evaluate_header_contains(assertion: &Assertion, response: &HttpResponse) -> A
 }
 
 /// 简易 JSON Path 提取（支持 $.a.b.c 和 $.a[0].b 语法）
-fn extract_json_path(value: &Value, path: &str) -> Option<Value> {
+pub fn extract_json_path(value: &Value, path: &str) -> Option<Value> {
     let path = path.trim();
     let path = if path.starts_with("$.") {
         &path[2..]
@@ -230,7 +230,7 @@ fn split_path(path: &str) -> Vec<PathSegment> {
     segments
 }
 
-fn value_to_string(val: &Value) -> String {
+pub fn value_to_string(val: &Value) -> String {
     match val {
         Value::String(s) => s.clone(),
         Value::Null => "null".to_string(),

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,4 +30,34 @@ pub struct ExecutionResult {
     pub response: Option<super::request::HttpResponse>,
     pub assertion_results: Vec<super::assertion::AssertionResult>,
     pub error_message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChainResult {
+    pub chain_id: String,
+    pub folder_id: String,
+    pub folder_name: String,
+    pub total_steps: u32,
+    pub completed_steps: u32,
+    pub status: String,
+    pub total_time_ms: u64,
+    pub steps: Vec<ChainStepResult>,
+    pub final_variables: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChainStepResult {
+    pub step_index: u32,
+    pub execution_result: ExecutionResult,
+    pub extracted_variables: HashMap<String, String>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct ChainProgress {
+    pub chain_id: String,
+    pub folder_id: String,
+    pub step_index: u32,
+    pub step_name: String,
+    pub status: String,
+    pub total_steps: u32,
 }

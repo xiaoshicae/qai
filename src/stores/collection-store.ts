@@ -9,7 +9,7 @@ interface CollectionState {
   selectedRequestId: string | null
   loadCollections: () => Promise<void>
   loadTree: (collectionId: string) => Promise<void>
-  createCollection: (name: string, description: string) => Promise<void>
+  createCollection: (name: string, description: string, category?: string) => Promise<void>
   deleteCollection: (id: string) => Promise<void>
   renameCollection: (id: string, name: string) => Promise<void>
   createRequest: (collectionId: string, folderId: string | null, name: string, method: string) => Promise<string>
@@ -40,18 +40,26 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
   selectedRequestId: null,
 
   loadCollections: async () => {
-    const collections = await invoke<Collection[]>('list_collections')
-    set({ collections })
-    await Promise.all(collections.map((col) => get().loadTree(col.id)))
+    try {
+      const collections = await invoke<Collection[]>('list_collections')
+      set({ collections })
+      await Promise.allSettled(collections.map((col) => get().loadTree(col.id)))
+    } catch (e) {
+      console.error('loadCollections failed:', e)
+    }
   },
 
   loadTree: async (collectionId: string) => {
-    const tree = await invoke<CollectionTreeNode>('get_collection_tree', { collectionId })
-    set((state) => ({ trees: { ...state.trees, [collectionId]: tree } }))
+    try {
+      const tree = await invoke<CollectionTreeNode>('get_collection_tree', { collectionId })
+      set((state) => ({ trees: { ...state.trees, [collectionId]: tree } }))
+    } catch (e) {
+      console.error('loadTree failed:', collectionId, e)
+    }
   },
 
-  createCollection: async (name: string, description: string) => {
-    const col = await invoke<Collection>('create_collection', { name, description })
+  createCollection: async (name: string, description: string, category?: string) => {
+    const col = await invoke<Collection>('create_collection', { name, description, category })
     set((state) => ({ collections: [col, ...state.collections] }))
     await get().loadTree(col.id)
   },

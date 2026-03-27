@@ -125,5 +125,21 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
         CREATE INDEX IF NOT EXISTS idx_executions_batch ON executions(batch_id);
         ",
     )?;
+
+    // 增量迁移：新增列（忽略"duplicate column"错误）
+    let migrations = [
+        "ALTER TABLE requests ADD COLUMN extract_rules TEXT NOT NULL DEFAULT '[]'",
+        "ALTER TABLE folders ADD COLUMN is_chain INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE requests ADD COLUMN description TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE requests ADD COLUMN expect_status INTEGER NOT NULL DEFAULT 200",
+        "ALTER TABLE collections ADD COLUMN category TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE collections ADD COLUMN endpoint TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE collections ADD COLUMN subcategory TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE requests ADD COLUMN poll_config TEXT NOT NULL DEFAULT ''",
+    ];
+    for sql in &migrations {
+        let _ = conn.execute(sql, []);
+    }
+
     Ok(())
 }

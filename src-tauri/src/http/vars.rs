@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use regex::Regex;
 
 use crate::models::environment::EnvVariable;
-use crate::models::request::{ApiRequest, KeyValuePair};
+use crate::models::request::{ApiRequest, ExtractRule, HttpResponse, KeyValuePair};
+use crate::runner::assertion::{extract_json_path, value_to_string};
 
 pub fn build_var_map(variables: &[EnvVariable]) -> HashMap<String, String> {
     variables
@@ -60,6 +61,43 @@ pub fn apply_vars(req: &ApiRequest, vars: &HashMap<String, String>) -> ApiReques
     }
 
     result
+}
+
+/// 从响应中按规则提取变量
+pub fn extract_variables(rules: &[ExtractRule], response: &HttpResponse) -> HashMap<String, String> {
+    let mut vars = HashMap::new();
+
+    for rule in rules {
+        let value = match rule.source.as_str() {
+            "json_body" => {
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&response.body) {
+                    let path = if rule.expression.starts_with('$') {
+                        rule.expression.clone()
+                    } else {
+                        format!("$.{}", rule.expression)
+                    };
+                    extract_json_path(&json, &path).map(|v| value_to_string(&v))
+                } else {
+                    None
+                }
+            }
+            "header" => {
+                response.headers.iter()
+                    .find(|h| h.key.eq_ignore_ascii_case(&rule.expression))
+                    .map(|h| h.value.clone())
+            }
+            "status_code" => {
+                Some(response.status.to_string())
+            }
+            _ => None,
+        };
+
+        if let Some(v) = value {
+            vars.insert(rule.var_name.clone(), v);
+        }
+    }
+
+    vars
 }
 
 #[cfg(test)]

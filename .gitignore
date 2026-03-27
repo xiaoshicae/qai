@@ -37,3 +37,9 @@ coverage/
 .env.test
 .env.production
 .vercel
+
+# Debug screenshots
+*.png
+*.jpg
+*.jpeg
+.playwright-mcp/

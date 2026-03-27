@@ -84,16 +84,20 @@ export default function AppLayout() {
       </aside>
       {/* 左拖拽条 */}
       <div
-        className="w-px bg-border hover:bg-primary/50 cursor-col-resize shrink-0 transition-colors"
+        className="relative w-px cursor-col-resize shrink-0 group/resize divider-glow hover:w-0.5 transition-all"
         onMouseDown={sidebar.onMouseDown}
       />
 
       {/* 主内容区 */}
-      <main className="flex-1 overflow-hidden bg-muted/30 relative min-w-[300px]">
-        <Outlet />
+      <main className="flex-1 overflow-hidden bg-background relative min-w-[300px]">
+        {/* 顶部拖拽区域（macOS 标题栏） */}
+        <div className="h-8 shrink-0" data-tauri-drag-region="" />
+        <div className="h-[calc(100%-2rem)] overflow-hidden">
+          <Outlet />
+        </div>
         {!open && (
           <button
-            className="absolute bottom-5 right-5 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 cursor-pointer transition-all active:translate-y-px"
+            className="absolute bottom-5 right-5 flex items-center gap-2 px-4 py-2.5 rounded-xl btn-gradient text-primary-foreground shadow-lg cursor-pointer transition-all duration-200 active:translate-y-px hover:shadow-xl"
             onClick={toggleOpen}
           >
             <Sparkles className="h-4 w-4" />
@@ -105,7 +109,7 @@ export default function AppLayout() {
       {/* 右拖拽条 */}
       {open && (
         <div
-          className="w-px bg-border hover:bg-primary/50 cursor-col-resize shrink-0 transition-colors"
+          className="relative w-px cursor-col-resize shrink-0 group/resize divider-glow hover:w-0.5 transition-all"
           onMouseDown={aiPanel.onMouseDown}
         />
       )}

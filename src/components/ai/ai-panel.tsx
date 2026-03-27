@@ -45,9 +45,12 @@ export default function AIPanel() {
   }
 
   return (
-    <div className="flex flex-col bg-background h-full">
+    <div className="flex flex-col bg-sidebar h-full">
+      {/* 顶部拖拽区域 */}
+      <div className="h-8 shrink-0" data-tauri-drag-region="" />
+
       {/* 头部 */}
-      <div className="flex items-center gap-2 h-12 px-4 border-b border-border shrink-0">
+      <div className="flex items-center gap-2 h-10 px-4 border-b border-white/[0.06] shrink-0">
         <Sparkles className="h-4 w-4 text-primary" />
         <span className="text-sm font-medium flex-1">AI 助手</span>
         {messages.length > 0 && (
@@ -63,19 +66,19 @@ export default function AIPanel() {
       {/* 消息区 */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 ? (
-          <div className="space-y-4 pt-8">
+          <div className="space-y-5 pt-6">
             <div className="text-center">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted mx-auto mb-3">
-                <Sparkles className="h-5 w-5 text-muted-foreground" />
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/[0.04] border border-white/[0.06] mx-auto mb-3">
+                <Sparkles className="h-5 w-5 text-primary" />
               </div>
               <p className="text-sm font-medium text-foreground">AI 助手</p>
               <p className="text-xs text-muted-foreground mt-1">帮你生成、管理和执行测试用例</p>
             </div>
-            <div className="space-y-1.5 pt-2">
+            <div className="space-y-1.5 pt-1">
               {QUICK_ACTIONS.map((action) => (
                 <button
                   key={action.label}
-                  className="flex items-center gap-2.5 w-full px-3 py-2.5 rounded-lg text-left text-[13px] text-foreground/70 hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
+                  className="flex items-center gap-3 w-full px-3.5 py-2.5 rounded-xl text-left text-[13px] text-foreground/60 hover:bg-white/[0.04] hover:text-foreground border border-transparent hover:border-white/[0.06] transition-all duration-200 cursor-pointer"
                   onClick={() => handleQuickAction(action.prompt)}
                 >
                   <action.icon className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -92,7 +95,7 @@ export default function AIPanel() {
       </div>
 
       {/* 输入区 */}
-      <div className="border-t border-border p-3 shrink-0">
+      <div className="border-t border-white/[0.06] p-3 shrink-0">
         <div className="relative">
           <textarea
             ref={inputRef}
@@ -101,13 +104,13 @@ export default function AIPanel() {
             onKeyDown={handleKeyDown}
             placeholder="描述你的需求..."
             rows={2}
-            className="w-full resize-none rounded-lg border border-input bg-transparent px-3 py-2 pr-10 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+            className="w-full resize-none rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 py-2.5 pr-10 text-sm outline-none placeholder:text-muted-foreground/50 focus-visible:border-primary/40 focus-visible:ring-2 focus-visible:ring-primary/15 transition-all duration-200"
           />
           <button
-            className={`absolute right-2.5 bottom-2.5 p-1 rounded-md cursor-pointer transition-colors ${
+            className={`absolute right-2.5 bottom-2.5 p-1.5 rounded-lg cursor-pointer transition-all duration-200 ${
               input.trim() && !sending
                 ? 'text-primary hover:bg-primary/10'
-                : 'text-muted-foreground/30'
+                : 'text-muted-foreground/20'
             }`}
             onClick={handleSend}
             disabled={!input.trim() || sending}
@@ -115,7 +118,7 @@ export default function AIPanel() {
             {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           </button>
         </div>
-        <p className="text-[10px] text-muted-foreground/40 mt-1.5 px-1">Enter 发送，Shift+Enter 换行</p>
+        <p className="text-[10px] text-muted-foreground/30 mt-1.5 px-1">Enter 发送，Shift+Enter 换行</p>
       </div>
     </div>
   )
@@ -126,10 +129,10 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div className={`max-w-[85%] rounded-xl px-3 py-2 text-[13px] leading-relaxed ${
+      <div className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-[13px] leading-relaxed ${
         isUser
-          ? 'bg-primary text-primary-foreground'
-          : 'bg-card ring-1 ring-foreground/10'
+          ? 'btn-gradient text-primary-foreground'
+          : 'glass-card'
       }`}>
         {message.loading ? (
           <div className="flex items-center gap-2 text-muted-foreground">

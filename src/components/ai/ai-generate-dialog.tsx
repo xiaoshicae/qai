@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCollectionStore } from '@/stores/collection-store'
 
@@ -53,16 +54,12 @@ export default function AIGenerateDialog({ open, onOpenChange }: AIGenerateDialo
         <div className="space-y-3">
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground">目标集合</label>
-            <select
+            <Select
               value={selectedId}
-              onChange={(e) => setSelectedId(e.target.value)}
-              className="flex h-8 w-full rounded-lg border border-input bg-transparent px-3 text-sm cursor-pointer outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
-            >
-              <option value="">选择目标集合</option>
-              {collections.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
+              onChange={setSelectedId}
+              options={[{ value: '', label: '选择目标集合' }, ...collections.map((c) => ({ value: c.id, label: c.name }))]}
+              placeholder="选择目标集合"
+            />
           </div>
 
           <div className="space-y-1.5">

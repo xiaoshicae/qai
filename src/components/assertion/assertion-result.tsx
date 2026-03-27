@@ -7,7 +7,7 @@ export default function AssertionResult({ results }: { results: AssertionResultI
   }
 
   return (
-    <div className="rounded-xl ring-1 ring-foreground/10 overflow-hidden">
+    <div className="rounded-xl border border-white/[0.06] overflow-hidden">
       {results.map((r, i) => (
         <div
           key={r.assertion_id}

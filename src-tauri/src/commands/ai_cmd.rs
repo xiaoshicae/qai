@@ -57,6 +57,9 @@ pub async fn ai_generate_tests(
                 Some(&serde_json::to_string(&tc.query_params).unwrap_or_default()),
                 Some(&tc.body_type),
                 Some(&tc.body_content),
+                None,
+                None,
+                None,
             ).map_err(|e| e.to_string())?;
 
             for assertion in &tc.assertions {

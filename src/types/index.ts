@@ -2,6 +2,9 @@ export interface Collection {
   id: string
   name: string
   description: string
+  category: string
+  endpoint: string
+  subcategory: string
   created_at: string
   updated_at: string
 }
@@ -11,6 +14,7 @@ export interface CollectionTreeNode {
   name: string
   node_type: 'collection' | 'folder' | 'request'
   method?: string
+  is_chain?: boolean
   children: CollectionTreeNode[]
 }
 
@@ -28,6 +32,10 @@ export interface ApiRequest {
   sort_order: number
   created_at: string
   updated_at: string
+  extract_rules: string
+  description: string
+  expect_status: number
+  poll_config: string
 }
 
 export interface KeyValuePair {
@@ -145,4 +153,44 @@ export interface EnvVariable {
   value: string
   enabled: boolean
   sort_order: number
+}
+
+export interface StreamChunk {
+  request_id: string
+  chunk: string
+  chunk_index: number
+  done: boolean
+}
+
+export interface ExtractRule {
+  var_name: string
+  source: 'json_body' | 'header' | 'status_code'
+  expression: string
+}
+
+export interface ChainStepResult {
+  step_index: number
+  execution_result: ExecutionResult
+  extracted_variables: Record<string, string>
+}
+
+export interface ChainResult {
+  chain_id: string
+  folder_id: string
+  folder_name: string
+  total_steps: number
+  completed_steps: number
+  status: string
+  total_time_ms: number
+  steps: ChainStepResult[]
+  final_variables: Record<string, string>
+}
+
+export interface ChainProgress {
+  chain_id: string
+  folder_id: string
+  step_index: number
+  step_name: string
+  status: string
+  total_steps: number
 }

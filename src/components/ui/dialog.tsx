@@ -23,7 +23,7 @@ function Dialog({ open, onOpenChange, children }: DialogProps) {
 function DialogContent({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
     <div className={cn(
-      "relative z-50 w-full max-w-lg rounded-xl bg-background p-4 text-sm ring-1 ring-foreground/10 shadow-lg",
+      "relative z-50 w-full max-w-lg rounded-2xl p-5 text-sm glass-card shadow-2xl",
       className
     )}>
       {children}

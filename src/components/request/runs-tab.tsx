@@ -33,10 +33,10 @@ export default function RunsTab({ requestId }: { requestId: string }) {
         const isError = run.status === 'error'
 
         return (
-          <div key={run.id} className="rounded-lg ring-1 ring-foreground/10 overflow-hidden">
+          <div key={run.id} className="rounded-lg border border-white/[0.06] overflow-hidden">
             {/* 摘要行 */}
             <div
-              className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-muted/50 transition-colors"
+              className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-white/[0.04] transition-colors"
               onClick={() => setExpandedId(open ? null : run.id)}
             >
               {open ? <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0" /> : <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />}
@@ -64,11 +64,11 @@ export default function RunsTab({ requestId }: { requestId: string }) {
 
             {/* 展开详情 */}
             {open && (
-              <div className="border-t border-border px-3 py-2 space-y-2 bg-card text-xs">
+              <div className="border-t border-white/[0.06] px-3 py-2 space-y-2 bg-card text-xs">
                 {/* 请求 */}
                 <div>
                   <div className="text-muted-foreground mb-1 font-medium">请求</div>
-                  <pre className="font-mono bg-muted/50 rounded p-2 whitespace-pre-wrap break-all max-h-[120px] overflow-y-auto">
+                  <pre className="font-mono bg-white/[0.04] rounded p-2 whitespace-pre-wrap break-all max-h-[120px] overflow-y-auto">
                     {run.request_method} {run.request_url}
                     {run.request_body ? `\n\n${tryPrettyJson(run.request_body)}` : ''}
                   </pre>
@@ -78,7 +78,7 @@ export default function RunsTab({ requestId }: { requestId: string }) {
                 {run.response_body && (
                   <div>
                     <div className="text-muted-foreground mb-1 font-medium">响应</div>
-                    <pre className="font-mono bg-muted/50 rounded p-2 whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto">
+                    <pre className="font-mono bg-white/[0.04] rounded p-2 whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto">
                       {tryPrettyJson(run.response_body)}
                     </pre>
                   </div>

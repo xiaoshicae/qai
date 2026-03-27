@@ -1,9 +1,18 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { useTabsStore } from './tabs-store'
 
 describe('tabs-store', () => {
+  let timeCounter = 1000
+
   beforeEach(() => {
     useTabsStore.setState({ tabs: [], activeTabId: null })
+    // 确保每次 Date.now() 返回不同值，避免 ID 冲突
+    timeCounter = 1000
+    vi.spyOn(Date, 'now').mockImplementation(() => ++timeCounter)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   // ─── openTab ──────────────────────────────────────────────

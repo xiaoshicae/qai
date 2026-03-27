@@ -50,7 +50,7 @@ pub fn get(conn: &Connection, id: &str) -> Result<Environment, rusqlite::Error> 
 
 pub fn update(conn: &Connection, id: &str, name: &str) -> Result<Environment, rusqlite::Error> {
     conn.execute(
-        "UPDATE environments SET name = ?2, updated_at = datetime('now') WHERE id = ?1",
+        "UPDATE environments SET name = ?2, updated_at = datetime('now', 'localtime') WHERE id = ?1",
         params![id, name],
     )?;
     get(conn, id)

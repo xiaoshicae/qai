@@ -31,8 +31,8 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
             id          TEXT PRIMARY KEY,
             name        TEXT NOT NULL,
             description TEXT NOT NULL DEFAULT '',
-            created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+            created_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+            updated_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
         );
 
         CREATE TABLE IF NOT EXISTS folders (
@@ -41,8 +41,8 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
             parent_folder_id TEXT REFERENCES folders(id) ON DELETE CASCADE,
             name             TEXT NOT NULL,
             sort_order       INTEGER NOT NULL DEFAULT 0,
-            created_at       TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
+            created_at       TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+            updated_at       TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
         );
 
         CREATE TABLE IF NOT EXISTS requests (
@@ -57,8 +57,8 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
             body_type     TEXT NOT NULL DEFAULT 'none',
             body_content  TEXT NOT NULL DEFAULT '',
             sort_order    INTEGER NOT NULL DEFAULT 0,
-            created_at    TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+            created_at    TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+            updated_at    TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
         );
 
         CREATE TABLE IF NOT EXISTS assertions (
@@ -70,7 +70,7 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
             expected    TEXT NOT NULL DEFAULT '',
             enabled     INTEGER NOT NULL DEFAULT 1,
             sort_order  INTEGER NOT NULL DEFAULT 0,
-            created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+            created_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
         );
 
         CREATE TABLE IF NOT EXISTS executions (
@@ -89,15 +89,15 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
             response_size    INTEGER NOT NULL DEFAULT 0,
             assertion_results TEXT NOT NULL DEFAULT '[]',
             error_message    TEXT,
-            executed_at      TEXT NOT NULL DEFAULT (datetime('now'))
+            executed_at      TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
         );
 
         CREATE TABLE IF NOT EXISTS environments (
             id          TEXT PRIMARY KEY,
             name        TEXT NOT NULL,
             is_active   INTEGER NOT NULL DEFAULT 0,
-            created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+            created_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+            updated_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
         );
 
         CREATE TABLE IF NOT EXISTS env_variables (
@@ -114,7 +114,7 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
         CREATE TABLE IF NOT EXISTS settings (
             key        TEXT PRIMARY KEY,
             value      TEXT NOT NULL,
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
         );
 
         CREATE INDEX IF NOT EXISTS idx_folders_collection ON folders(collection_id);

@@ -60,17 +60,17 @@ export default function CollectionOverview({ collection, tree }: Props) {
   }
 
   // 扁平化请求，chain folder 的 steps 包成 group
-  interface FlatReq { id: string; name: string; method: string; folder?: string }
+  interface FlatReq { id: string; name: string; method: string; folder?: string; expect_status?: number }
   interface StepGroup { groupName: string; isChain: true; steps: FlatReq[] }
   type TableItem = FlatReq | StepGroup
   const tableItems: TableItem[] = []
   function flatten(node: CollectionTreeNode) {
     if (node.node_type === 'request') {
-      tableItems.push({ id: node.id, name: node.name, method: node.method ?? 'GET' })
+      tableItems.push({ id: node.id, name: node.name, method: node.method ?? 'GET', expect_status: node.expect_status })
     } else if (node.node_type === 'folder' && node.is_chain) {
       const steps: FlatReq[] = []
       for (const child of node.children) {
-        if (child.node_type === 'request') steps.push({ id: child.id, name: child.name, method: child.method ?? 'GET' })
+        if (child.node_type === 'request') steps.push({ id: child.id, name: child.name, method: child.method ?? 'GET', expect_status: child.expect_status })
       }
       if (steps.length > 0) tableItems.push({ groupName: node.name, isChain: true, steps })
     } else {
@@ -83,10 +83,10 @@ export default function CollectionOverview({ collection, tree }: Props) {
   const allRequests: FlatReq[] = tableItems.flatMap((item) => 'isChain' in item ? item.steps : [item])
 
   const getStatus = (id: string) => {
-    const br = batchResult?.results.find((x) => x.request_id === id)
-    if (br) return br.status
     const sr = singleResults[id]
     if (sr) return sr.status
+    const br = batchResult?.results.find((x) => x.request_id === id)
+    if (br) return br.status
     return statuses[id]?.status
   }
   const total = allRequests.length
@@ -94,7 +94,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
   const failed = allRequests.filter((r) => { const s = getStatus(r.id); return s && s !== 'success' }).length
   const passRate = (passed + failed) > 0 ? Math.round((passed / (passed + failed)) * 100) : 0
   const progressPercent = batchResult ? 100 : progress.length > 0 ? Math.round((progress.filter((p) => p.status !== 'running').length / (progress[0]?.total ?? 1)) * 100) : 0
-  const getResult = (id: string): ExecutionResult | undefined => batchResult?.results.find((x) => x.request_id === id) ?? singleResults[id]
+  const getResult = (id: string): ExecutionResult | undefined => singleResults[id] ?? batchResult?.results.find((x) => x.request_id === id)
 
   // 批量运行
   const abortRef = useRef(false)
@@ -123,6 +123,8 @@ export default function CollectionOverview({ collection, tree }: Props) {
 
   // 单个运行
   const runSingle = async (requestId: string) => {
+    // 清除旧结果，让 UI 立即显示 Running 状态
+    setSingleResults((prev) => { const n = { ...prev }; delete n[requestId]; return n })
     setRunningIds((prev) => new Set(prev).add(requestId))
     try {
       const result = await invoke<ExecutionResult>('send_request', { id: requestId })
@@ -162,21 +164,28 @@ export default function CollectionOverview({ collection, tree }: Props) {
   // 保存编辑
   const saveEdit = async () => {
     if (!editReq) return
-    await invoke('update_request', {
-      id: editReq.id,
-      name: editReq.name,
-      method: editReq.method,
-      url: editReq.url,
-      headers: editReq.headers,
-      queryParams: editReq.query_params,
-      bodyType: editReq.body_type,
-      bodyContent: editReq.body_content,
-      description: editReq.description,
-      expectStatus: editReq.expect_status,
-    })
-    await loadTree(collection.id)
-    setDetailData((prev) => ({ ...prev, [editReq.id]: editReq }))
-    setEditReq(null)
+    try {
+      const updated = await invoke<ApiRequest>('update_request', {
+        id: editReq.id,
+        name: editReq.name,
+        method: editReq.method,
+        url: editReq.url,
+        headers: editReq.headers,
+        queryParams: editReq.query_params,
+        bodyType: editReq.body_type,
+        bodyContent: editReq.body_content,
+        extractRules: editReq.extract_rules,
+        description: editReq.description,
+        expectStatus: editReq.expect_status,
+      })
+      await loadTree(collection.id)
+      setDetailData((prev) => ({ ...prev, [editReq.id]: updated }))
+      setEditReq(null)
+      setIsNewReq(false)
+    } catch (e: any) {
+      console.error('保存失败:', e)
+      setError(typeof e === 'string' ? e : e.message || '保存失败')
+    }
   }
 
   // 展开行
@@ -278,7 +287,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
                       <span className="text-[10px] text-amber-500/50 ml-1">{item.steps.length} steps</span>
                     </span>
                     <span className="text-muted-foreground truncate text-xs self-center">multi-step</span>
-                    <span className="font-mono text-xs self-center">200</span>
+                    <span className="font-mono text-xs self-center">-</span>
                     <span className={`flex items-center gap-1 font-bold text-xs ${groupColor}`}>{groupLabel}</span>
                     <span />
                     <span />
@@ -521,7 +530,7 @@ function ScenarioRow({ r, stepLabel, indent, getResult, getStatus: _getStatus, s
           <span className="font-medium truncate">{r.name}</span>
         </span>
         <span className="text-muted-foreground truncate text-xs self-center">{r.folder || '-'}</span>
-        <span className="font-mono text-xs self-center">200</span>
+        <span className="font-mono text-xs self-center">{r.expect_status || 200}</span>
         <span className={`flex items-center gap-1 font-bold text-xs ${sd.color}`}>{sd.icon}{sd.label}</span>
         <span className="font-mono text-xs self-center">
           {resp ? <span className={resp.status < 300 ? 'text-emerald-500' : resp.status < 400 ? 'text-amber-500' : 'text-red-500'}>{resp.status}</span> : '-'}
@@ -567,7 +576,7 @@ function ScenarioRow({ r, stepLabel, indent, getResult, getStatus: _getStatus, s
             </div>
           )}
           {result?.error_message && <div className="flex items-start gap-1.5 text-xs text-red-500"><AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />{result.error_message}</div>}
-          <div className="flex items-center gap-4 text-[10px] text-muted-foreground/50 pt-1">
+          <div className="flex items-center gap-4 text-[10px] text-muted-foreground/80 pt-1">
             {detail?.created_at && <span>创建: {detail.created_at}</span>}
             {detail?.updated_at && <span>更新: {detail.updated_at}</span>}
             {old?.executed_at && <span>最近运行: {old.executed_at}</span>}

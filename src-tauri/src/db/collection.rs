@@ -66,7 +66,7 @@ pub fn get(conn: &Connection, id: &str) -> Result<Collection, rusqlite::Error> {
 
 pub fn update(conn: &Connection, id: &str, name: &str, description: &str) -> Result<Collection, rusqlite::Error> {
     conn.execute(
-        "UPDATE collections SET name = ?2, description = ?3, updated_at = datetime('now') WHERE id = ?1",
+        "UPDATE collections SET name = ?2, description = ?3, updated_at = datetime('now', 'localtime') WHERE id = ?1",
         params![id, name, description],
     )?;
     get(conn, id)
@@ -97,7 +97,7 @@ pub fn update_meta(
     push!(endpoint, "endpoint");
     push!(subcategory, "subcategory");
     if !sets.is_empty() {
-        sets.push("updated_at = datetime('now')".to_string());
+        sets.push("updated_at = datetime('now', 'localtime')".to_string());
         let idx = values.len() + 1;
         let sql = format!("UPDATE collections SET {} WHERE id = ?{}", sets.join(", "), idx);
         values.push(Box::new(id.to_string()));
@@ -156,7 +156,7 @@ pub fn update_folder(
     }
 
     if !sets.is_empty() {
-        sets.push("updated_at = datetime('now')".to_string());
+        sets.push("updated_at = datetime('now', 'localtime')".to_string());
         let idx = values.len() + 1;
         let sql = format!("UPDATE folders SET {} WHERE id = ?{}", sets.join(", "), idx);
         values.push(Box::new(id.to_string()));
@@ -203,6 +203,7 @@ pub fn get_tree(conn: &Connection, collection_id: &str) -> Result<CollectionTree
                 node_type: TreeNodeType::Request,
                 method: Some(req.method.clone()),
                 is_chain: None,
+                expect_status: Some(req.expect_status),
                 children: vec![],
             });
         }
@@ -213,6 +214,7 @@ pub fn get_tree(conn: &Connection, collection_id: &str) -> Result<CollectionTree
             node_type: TreeNodeType::Folder,
             method: None,
             is_chain: Some(folder.is_chain),
+            expect_status: None,
             children,
         }
     }
@@ -230,6 +232,7 @@ pub fn get_tree(conn: &Connection, collection_id: &str) -> Result<CollectionTree
             node_type: TreeNodeType::Request,
             method: Some(req.method.clone()),
             is_chain: None,
+            expect_status: Some(req.expect_status),
             children: vec![],
         });
     }
@@ -240,6 +243,7 @@ pub fn get_tree(conn: &Connection, collection_id: &str) -> Result<CollectionTree
         node_type: TreeNodeType::Collection,
         method: None,
         is_chain: None,
+        expect_status: None,
         children,
     })
 }

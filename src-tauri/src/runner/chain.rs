@@ -80,6 +80,8 @@ pub async fn run_chain(
                 result.assertion_results = evaluate_assertions(&assertions, response);
                 if result.assertion_results.iter().any(|a| !a.passed) {
                     result.status = "failed".to_string();
+                } else {
+                    result.status = "success".to_string();
                 }
             }
         }

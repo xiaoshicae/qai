@@ -159,7 +159,7 @@ pub async fn run_collection(
                 response_size: result.response.as_ref().map(|r| r.size_bytes).unwrap_or(0),
                 assertion_results: serde_json::to_string(&result.assertion_results).unwrap_or_default(),
                 error_message: result.error_message.clone(),
-                executed_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+                executed_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
             };
             let _ = crate::db::execution::save(&conn, &exec);
         }
@@ -241,7 +241,7 @@ pub async fn run_chain(
                 response_size: result.response.as_ref().map(|r| r.size_bytes).unwrap_or(0),
                 assertion_results: serde_json::to_string(&result.assertion_results).unwrap_or_default(),
                 error_message: result.error_message.clone(),
-                executed_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+                executed_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
             };
             let _ = crate::db::execution::save(&conn, &exec);
         }

@@ -106,7 +106,7 @@ pub fn update(
     }
 
     if !sets.is_empty() {
-        sets.push(format!("updated_at = datetime('now')"));
+        sets.push(format!("updated_at = datetime('now', 'localtime')"));
         let idx = values.len() + 1;
         let sql = format!("UPDATE requests SET {} WHERE id = ?{}", sets.join(", "), idx);
         values.push(Box::new(id.to_string()));

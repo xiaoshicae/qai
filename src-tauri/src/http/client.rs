@@ -84,15 +84,18 @@ pub async fn execute(client: &reqwest::Client, req: &ApiRequest) -> Result<Execu
 
     let execution_id = Uuid::new_v4().to_string();
 
+    let expected = req.expect_status;
+    let is_success = if expected > 0 {
+        status == expected
+    } else {
+        status >= 200 && status < 400
+    };
+
     Ok(ExecutionResult {
         execution_id,
         request_id: req.id.clone(),
         request_name: req.name.clone(),
-        status: if status >= 200 && status < 400 {
-            "success".to_string()
-        } else {
-            "failed".to_string()
-        },
+        status: if is_success { "success".to_string() } else { "failed".to_string() },
         response: Some(HttpResponse {
             status,
             status_text,
@@ -140,6 +143,6 @@ pub fn to_execution(req: &ApiRequest, result: &ExecutionResult) -> Execution {
         response_size,
         assertion_results: serde_json::to_string(&result.assertion_results).unwrap_or_default(),
         error_message: result.error_message.clone(),
-        executed_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+        executed_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
     }
 }

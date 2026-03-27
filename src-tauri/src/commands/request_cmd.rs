@@ -94,6 +94,8 @@ pub async fn send_request_stream(
             result.assertion_results = evaluate_assertions(&assertions, response);
             if result.assertion_results.iter().any(|a| !a.passed) {
                 result.status = "failed".to_string();
+            } else {
+                result.status = "success".to_string();
             }
         }
     }
@@ -134,9 +136,10 @@ pub async fn send_request(
     if let Some(ref response) = result.response {
         if !assertions.is_empty() {
             result.assertion_results = evaluate_assertions(&assertions, response);
-            // 如果有断言失败，更新状态
             if result.assertion_results.iter().any(|a| !a.passed) {
                 result.status = "failed".to_string();
+            } else {
+                result.status = "success".to_string();
             }
         }
     }

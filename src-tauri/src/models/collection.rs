@@ -31,6 +31,7 @@ pub struct CollectionTreeNode {
     pub node_type: TreeNodeType,
     pub method: Option<String>,
     pub is_chain: Option<bool>,
+    pub expect_status: Option<u16>,
     pub children: Vec<CollectionTreeNode>,
 }
 

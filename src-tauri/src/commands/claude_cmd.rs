@@ -39,10 +39,12 @@ pub async fn claude_send(
         "--output-format".into(), "stream-json".into(),
         "--verbose".into(),
         "--include-partial-messages".into(),
+        "--no-session-persistence".into(), // 不写 session 文件，加速启动
     ];
 
     if let Some(ref config) = mcp_config_path {
         args.push(format!("--mcp-config={config}"));
+        args.push("--strict-mcp-config".into()); // 只加载 QAI MCP，跳过全局慢的 servers
     }
 
     if let Some(ref sid) = session_id {
@@ -63,7 +65,8 @@ pub async fn claude_send(
         cmd.env("HOME", &home);
     }
 
-    cmd.stdout(Stdio::piped())
+    cmd.stdin(Stdio::null()) // 避免 "no stdin data" 3s 等待
+        .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
     let mut child = cmd.spawn().map_err(|e| format!("启动 claude 失败: {e}"))?;

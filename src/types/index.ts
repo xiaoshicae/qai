@@ -15,6 +15,7 @@ export interface CollectionTreeNode {
   node_type: 'collection' | 'folder' | 'request'
   method?: string
   is_chain?: boolean
+  expect_status?: number
   children: CollectionTreeNode[]
 }
 

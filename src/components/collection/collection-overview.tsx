@@ -61,7 +61,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
 
   // 扁平化请求，chain folder 的 steps 包成 group
   interface FlatReq { id: string; name: string; method: string; folder?: string; expect_status?: number }
-  interface StepGroup { groupName: string; isChain: true; steps: FlatReq[] }
+  interface StepGroup { groupName: string; groupId: string; isChain: true; steps: FlatReq[] }
   type TableItem = FlatReq | StepGroup
   const tableItems: TableItem[] = []
   function flatten(node: CollectionTreeNode) {
@@ -72,7 +72,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
       for (const child of node.children) {
         if (child.node_type === 'request') steps.push({ id: child.id, name: child.name, method: child.method ?? 'GET', expect_status: child.expect_status })
       }
-      if (steps.length > 0) tableItems.push({ groupName: node.name, isChain: true, steps })
+      tableItems.push({ groupName: node.name, groupId: node.id, isChain: true, steps })
     } else {
       for (const child of node.children) flatten(child)
     }
@@ -139,6 +139,36 @@ export default function CollectionOverview({ collection, tree }: Props) {
     await loadTree(collection.id)
     setIsNewReq(true)
     setEditReq(updated)
+  }
+
+  // 添加链
+  const addChain = async () => {
+    await invoke<CollectionItem>('create_item', { collectionId: collection.id, parentId: null, itemType: 'chain', name: '新链式请求', method: 'GET' })
+    await loadTree(collection.id)
+  }
+
+  // 添加链步骤
+  const addChainStep = async (chainId: string) => {
+    const item = await invoke<CollectionItem>('create_item', { collectionId: collection.id, parentId: chainId, itemType: 'request', name: '新步骤', method: 'POST' })
+    await loadTree(collection.id)
+    setExpandedRows((prev) => {
+      const n = new Set(prev)
+      // 展开 chain group
+      const idx = tableItems.findIndex((t) => 'isChain' in t && (t as StepGroup).groupId === chainId)
+      if (idx >= 0) n.add(`group-${idx}`)
+      return n
+    })
+    setIsNewReq(true)
+    setEditReq(item)
+  }
+
+  // 删除链
+  const deleteChain = async (id: string, name: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    const ok = await confirm(`确定删除链式请求「${name}」及其所有步骤？`, { title: '删除链', kind: 'warning' })
+    if (!ok) return
+    await invoke('delete_item', { id })
+    await loadTree(collection.id)
   }
 
   // 删除测试用例
@@ -249,6 +279,9 @@ export default function CollectionOverview({ collection, tree }: Props) {
         <Button variant="outline" size="sm" className="gap-1.5" onClick={addTestCase}>
           <Plus className="h-3.5 w-3.5" /> 添加用例
         </Button>
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={addChain}>
+          <Link2 className="h-3.5 w-3.5" /> 添加链
+        </Button>
         {batchResult && <Button variant="outline" size="sm" onClick={exportHtml} className="gap-1.5"><Download className="h-3.5 w-3.5" /> 导出报告</Button>}
       </div>
 
@@ -276,7 +309,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
                 <div key={`group-${itemIdx}`}>
                   {/* Group 头 */}
                   <div
-                    className="grid grid-cols-[minmax(0,1.5fr)_minmax(0,2fr)_56px_68px_56px_64px_64px] gap-2 px-4 py-2.5 text-sm bg-amber-500/5 hover:bg-amber-500/10 cursor-pointer transition-colors"
+                    className="grid grid-cols-[minmax(0,1.5fr)_minmax(0,2fr)_56px_68px_56px_64px_64px] gap-2 px-4 py-2.5 text-sm bg-amber-500/5 hover:bg-amber-500/10 cursor-pointer transition-colors group"
                     onClick={() => { const key = `group-${itemIdx}`; setExpandedRows((p) => { const n = new Set(p); n.has(key) ? n.delete(key) : n.add(key); return n }) }}
                   >
                     <span className="flex items-center gap-1.5 min-w-0">
@@ -290,7 +323,14 @@ export default function CollectionOverview({ collection, tree }: Props) {
                     <span className={`flex items-center gap-1 font-bold text-xs ${groupColor}`}>{groupLabel}</span>
                     <span />
                     <span />
-                    <span />
+                    <span className="flex items-center justify-end gap-0.5" onClick={(e) => e.stopPropagation()}>
+                      <button className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 hover:bg-muted transition-all cursor-pointer" onClick={() => addChainStep(item.groupId)} title="添加步骤">
+                        <Plus className="h-3 w-3 text-amber-500" />
+                      </button>
+                      <button className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 hover:bg-destructive/10 transition-all cursor-pointer" onClick={(e) => deleteChain(item.groupId, item.groupName, e)} title="删除链">
+                        <Trash2 className="h-3 w-3 text-destructive" />
+                      </button>
+                    </span>
                   </div>
                   {/* Group 内的 Steps */}
                   {groupExpanded && item.steps.map((r, stepIdx) => (
@@ -433,6 +473,15 @@ function EditForm({ req, onChange, onSave, onCancel }: {
         />
       </div>
 
+      {/* Extract Rules（变量提取） */}
+      <div>
+        <label className="text-xs text-muted-foreground mb-1.5 block">变量提取规则（用于链式请求传递）</label>
+        <ExtractRulesEditor
+          value={(() => { try { const p = JSON.parse(req.extract_rules || '[]'); return Array.isArray(p) ? p : [] } catch { return [] } })()}
+          onChange={(rules) => set('extract_rules', JSON.stringify(rules))}
+        />
+      </div>
+
       {/* 按钮 */}
       <div className="flex justify-end gap-2 pt-2">
         <Button variant="outline" size="sm" onClick={onCancel}>取消</Button>
@@ -558,6 +607,21 @@ function ScenarioRow({ r, stepLabel, indent, getResult, getStatus: _getStatus, s
             </div>
             <div className="rounded-lg border border-overlay/[0.06] overflow-hidden">
               <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 border-b border-overlay/[0.04] flex items-center gap-2">USER RESPONSE {resp && <span className="text-[9px] font-normal normal-case">{resp.status} | {resp.size_bytes}B</span>}</div>
+              {resp && resp.headers.length > 0 && (
+                <details className="border-b border-overlay/[0.04]">
+                  <summary className="px-3 py-1.5 text-[10px] text-muted-foreground/60 cursor-pointer hover:text-muted-foreground transition-colors">
+                    Response Headers ({resp.headers.length})
+                  </summary>
+                  <div className="px-3 py-1.5 text-[10px] font-mono space-y-0.5 max-h-32 overflow-y-auto">
+                    {resp.headers.map((h: { key: string; value: string }, hi: number) => (
+                      <div key={hi} className="flex gap-2">
+                        <span className="text-primary/70 shrink-0">{h.key}:</span>
+                        <span className="text-muted-foreground break-all">{h.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
               <pre className="px-3 py-2.5 text-xs font-mono whitespace-pre-wrap break-all max-h-52 overflow-y-auto">
                 {resp ? (() => { try { return JSON.stringify(JSON.parse(resp.body), null, 2) } catch { return resp.body } })() : '尚未运行'}
               </pre>
@@ -581,6 +645,45 @@ function ScenarioRow({ r, stepLabel, indent, getResult, getStatus: _getStatus, s
             {old?.executed_at && <span>最近运行: {old.executed_at}</span>}
           </div>
         </div>
+      )}
+    </div>
+  )
+}
+
+// ─── 变量提取规则编辑器 ──────────────────────────
+function ExtractRulesEditor({ value, onChange }: {
+  value: { var_name: string; source: string; expression: string }[]
+  onChange: (rules: { var_name: string; source: string; expression: string }[]) => void
+}) {
+  const addRule = () => onChange([...value, { var_name: '', source: 'json_body', expression: '' }])
+  const removeRule = (idx: number) => onChange(value.filter((_, i) => i !== idx))
+  const updateRule = (idx: number, field: string, val: string) => {
+    const updated = [...value]
+    updated[idx] = { ...updated[idx], [field]: val }
+    onChange(updated)
+  }
+
+  return (
+    <div className="space-y-2">
+      {value.map((rule, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <Input value={rule.var_name} onChange={(e) => updateRule(i, 'var_name', e.target.value)} className="h-7 text-xs flex-1" placeholder="变量名 (如 task_id)" />
+          <Select value={rule.source} onChange={(v) => updateRule(i, 'source', v)} options={[
+            { value: 'json_body', label: 'JSON Body' },
+            { value: 'header', label: 'Header' },
+            { value: 'status_code', label: 'Status Code' },
+          ]} className="w-32" />
+          <Input value={rule.expression} onChange={(e) => updateRule(i, 'expression', e.target.value)} className="h-7 text-xs flex-1" placeholder="表达式 (如 $.data.id)" />
+          <button onClick={() => removeRule(i)} className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-destructive/10 cursor-pointer transition-colors shrink-0">
+            <Trash2 className="h-3 w-3 text-destructive" />
+          </button>
+        </div>
+      ))}
+      <button onClick={addRule} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground cursor-pointer transition-colors">
+        <Plus className="h-3 w-3" /> 添加提取规则
+      </button>
+      {value.length > 0 && (
+        <p className="text-[10px] text-muted-foreground/60">提取的变量可在后续步骤中通过 {'{{变量名}}'} 引用</p>
       )}
     </div>
   )

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { Plus, X, ArrowUp, Square, Wrench, Slash, PlusCircle, Paperclip, AtSign, RotateCcw, Cpu, Zap, Brain } from 'lucide-react'
+import { Plus, X, ArrowUp, Square, Wrench, Slash, PlusCircle, RotateCcw, Cpu, Zap, Brain } from 'lucide-react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -31,6 +31,7 @@ export default function TerminalPanel({ onClose }: Props) {
   const [mcpConfigPath, setMcpConfigPath] = useState<string | null>(null)
   const [thinkingWord, setThinkingWord] = useState('')
   const [showActions, setShowActions] = useState(false)
+  const [showSlash, setShowSlash] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const mountedRef = useRef(true)
@@ -99,6 +100,18 @@ export default function TerminalPanel({ onClose }: Props) {
   }
 
   const handleStop = () => { invoke('claude_stop').catch(() => {}); setSending(false) }
+
+  const sendSlashCommand = async (cmd: string) => {
+    if (sending) return
+    setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: 'user', content: cmd }])
+    setSending(true)
+    try {
+      await invoke('claude_send', { message: cmd, mcpConfigPath })
+    } catch (e: any) {
+      setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: 'system', content: `${e}` }])
+      setSending(false)
+    }
+  }
 
   const handleNewSession = () => {
     invoke('claude_stop').catch(() => {})
@@ -172,20 +185,44 @@ export default function TerminalPanel({ onClose }: Props) {
         <>
           <div className="fixed inset-0 z-40" onClick={() => setShowActions(false)} />
           <div className="relative z-50 mx-3 mb-1 rounded-xl border border-overlay/[0.1] bg-background shadow-2xl overflow-hidden">
-            <div className="px-3 py-2 border-b border-overlay/[0.06]">
-              <input placeholder="Filter actions..." className="w-full bg-transparent text-xs outline-none placeholder:text-muted-foreground/40" autoFocus />
-            </div>
             <div className="py-1">
               <div className="px-3 py-1 text-[10px] font-medium text-muted-foreground/50 uppercase">Context</div>
-              <ActionItem icon={<Paperclip className="h-3.5 w-3.5" />} label="Attach file..." onClick={() => { setShowActions(false); setInput((v) => v + '\n[附加文件上下文]') }} />
-              <ActionItem icon={<AtSign className="h-3.5 w-3.5" />} label="Mention file..." onClick={() => { setShowActions(false); setInput((v) => v + '@') }} />
-              <ActionItem icon={<RotateCcw className="h-3.5 w-3.5" />} label="Clear conversation" onClick={() => { setShowActions(false); handleNewSession() }} />
+              <ActionItem icon={<RotateCcw className="h-3.5 w-3.5" />} label="清空对话" onClick={() => { setShowActions(false); handleNewSession() }} />
 
               <div className="h-px bg-overlay/[0.06] my-1" />
               <div className="px-3 py-1 text-[10px] font-medium text-muted-foreground/50 uppercase">Model</div>
-              <ActionItem icon={<Cpu className="h-3.5 w-3.5" />} label="Switch model..." onClick={() => { setShowActions(false); setInput('/model ') }} />
-              <ActionItem icon={<Brain className="h-3.5 w-3.5" />} label="Thinking" badge="on" onClick={() => setShowActions(false)} />
-              <ActionItem icon={<Zap className="h-3.5 w-3.5" />} label="Toggle fast mode" onClick={() => { setShowActions(false); setInput('/fast') ; handleSend() }} />
+              <ActionItem icon={<Cpu className="h-3.5 w-3.5" />} label="切换模型..." onClick={() => { setShowActions(false); setInput('/model '); inputRef.current?.focus() }} />
+              <ActionItem icon={<Zap className="h-3.5 w-3.5" />} label="切换快速模式" onClick={() => { setShowActions(false); sendSlashCommand('/fast') }} />
+              <ActionItem icon={<Brain className="h-3.5 w-3.5" />} label="花费统计" onClick={() => { setShowActions(false); sendSlashCommand('/cost') }} />
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* / 斜杠命令菜单 */}
+      {showSlash && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setShowSlash(false)} />
+          <div className="relative z-50 mx-3 mb-1 rounded-xl border border-overlay/[0.1] bg-background shadow-2xl overflow-hidden max-h-60 overflow-y-auto">
+            <div className="py-1">
+              {[
+                { cmd: '/compact', desc: '压缩上下文' },
+                { cmd: '/cost', desc: '查看花费统计' },
+                { cmd: '/model sonnet', desc: '切换到 Sonnet' },
+                { cmd: '/model opus', desc: '切换到 Opus' },
+                { cmd: '/model haiku', desc: '切换到 Haiku' },
+                { cmd: '/fast', desc: '切换快速模式' },
+                { cmd: '/help', desc: '帮助' },
+              ].map((item) => (
+                <button
+                  key={item.cmd}
+                  onClick={() => { setShowSlash(false); sendSlashCommand(item.cmd) }}
+                  className="flex items-center gap-3 w-full px-3 py-1.5 text-xs hover:bg-overlay/[0.04] cursor-pointer transition-colors"
+                >
+                  <span className="font-mono text-primary/80">{item.cmd}</span>
+                  <span className="text-muted-foreground">{item.desc}</span>
+                </button>
+              ))}
             </div>
           </div>
         </>
@@ -207,10 +244,10 @@ export default function TerminalPanel({ onClose }: Props) {
           {/* 底部工具栏 */}
           <div className="flex items-center justify-between px-2 pb-1.5">
             <div className="flex items-center gap-0.5">
-              <button onClick={() => setShowActions(!showActions)} className="h-6 w-6 flex items-center justify-center rounded-md hover:bg-overlay/[0.06] cursor-pointer transition-colors" title="操作菜单">
+              <button onClick={() => { setShowActions(!showActions); setShowSlash(false) }} className="h-6 w-6 flex items-center justify-center rounded-md hover:bg-overlay/[0.06] cursor-pointer transition-colors" title="操作菜单">
                 <Plus className="h-3.5 w-3.5 text-muted-foreground" />
               </button>
-              <button onClick={() => setInput((v) => v + '/')} className="h-6 w-6 flex items-center justify-center rounded-md hover:bg-overlay/[0.06] cursor-pointer transition-colors" title="斜杠命令">
+              <button onClick={() => { setShowSlash(!showSlash); setShowActions(false) }} className="h-6 w-6 flex items-center justify-center rounded-md hover:bg-overlay/[0.06] cursor-pointer transition-colors" title="斜杠命令">
                 <Slash className="h-3.5 w-3.5 text-muted-foreground" />
               </button>
             </div>

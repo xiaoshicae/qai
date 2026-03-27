@@ -1,9 +1,9 @@
 import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
-import type { RequestLastStatus } from '@/types'
+import type { ItemLastStatus } from '@/types'
 
 interface StatusState {
-  statuses: Record<string, RequestLastStatus>
+  statuses: Record<string, ItemLastStatus>
   loadForCollection: (collectionId: string) => Promise<void>
 }
 
@@ -12,11 +12,11 @@ export const useStatusStore = create<StatusState>((set) => ({
 
   loadForCollection: async (collectionId: string) => {
     try {
-      const list = await invoke<RequestLastStatus[]>('get_collection_status', { collectionId })
+      const list = await invoke<ItemLastStatus[]>('get_collection_status', { collectionId })
       set((s) => {
         const next = { ...s.statuses }
         for (const item of list) {
-          next[item.request_id] = item
+          next[item.item_id] = item
         }
         return { statuses: next }
       })

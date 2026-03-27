@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronRight, ChevronDown, Folder, FolderOpen, Play, Plus, FolderPlus, Trash2, Pencil, MoreHorizontal, Link2, Unlink } from 'lucide-react'
+import { ChevronRight, ChevronDown, Folder, FolderOpen, Play, Plus, FolderPlus, Trash2, Pencil, MoreHorizontal, Link2 } from 'lucide-react'
 import { invoke } from '@tauri-apps/api/core'
 import { cn } from '@/lib/utils'
 import type { Collection, CollectionTreeNode } from '@/types'
@@ -37,7 +37,7 @@ interface ContextMenu {
 export default function CollectionTree({ collections, trees, selectedNodeId, onSelect }: CollectionTreeProps) {
   const navigate = useNavigate()
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  const { loadTree, createRequest, createFolder, deleteCollection, renameCollection, selectNode } = useCollectionStore()
+  const { loadTree, createItem, createFolder, deleteCollection, renameCollection, selectNode } = useCollectionStore()
   const loadForCollection = useStatusStore((s) => s.loadForCollection)
   const [menu, setMenu] = useState<ContextMenu | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
@@ -87,11 +87,9 @@ export default function CollectionTree({ collections, trees, selectedNodeId, onS
     try {
       if (type === 'collection') {
         await renameCollection(id, name)
-      } else if (type === 'request') {
-        await invoke('update_request', { id, name })
+      } else if (type === 'request' || type === 'folder') {
+        await invoke('update_item', { id, name })
         await loadTree(collectionId)
-      } else if (type === 'folder') {
-        // folder 没有 update 命令，先跳过
       }
     } catch {}
   }
@@ -104,7 +102,7 @@ export default function CollectionTree({ collections, trees, selectedNodeId, onS
     switch (action) {
       case 'add-request': {
         expand(type === 'collection' ? collectionId : id)
-        const reqId = await createRequest(collectionId, type === 'folder' ? id : null, '新请求', 'GET')
+        const reqId = await createItem(collectionId, type === 'folder' ? id : null, '新请求', 'GET')
         if (reqId) {
           selectNode(reqId)
           onSelect(reqId)
@@ -117,39 +115,19 @@ export default function CollectionTree({ collections, trees, selectedNodeId, onS
         break
       case 'add-chain':
         expand(type === 'collection' ? collectionId : id)
-        await invoke('create_folder', {
-          collectionId,
-          parentFolderId: type === 'folder' ? id : null,
-          name: '新请求链',
-          isChain: true,
-        })
-        await loadTree(collectionId)
-        break
-      case 'toggle-chain':
-        try {
-          await invoke('update_folder', { id, isChain: true })
-          await loadTree(collectionId)
-        } catch {}
-        break
-      case 'toggle-folder':
-        try {
-          await invoke('update_folder', { id, isChain: false })
-          await loadTree(collectionId)
-        } catch {}
+        await createItem(collectionId, type === 'folder' ? id : null, '新请求链', 'GET', 'chain')
         break
       case 'rename':
         startRename(id, name)
         break
       case 'run':
-        navigate('/runner', { state: { collectionId, folderId: type === 'folder' ? id : undefined } })
+        navigate('/runner', { state: { collectionId, itemId: type === 'folder' ? id : undefined } })
         break
       case 'delete':
         if (type === 'collection') {
           await deleteCollection(id)
-        } else if (type === 'request') {
-          try { await invoke('delete_request', { id }); await loadTree(collectionId) } catch {}
-        } else if (type === 'folder') {
-          try { await invoke('delete_folder', { id }); await loadTree(collectionId) } catch {}
+        } else if (type === 'request' || type === 'folder') {
+          try { await invoke('delete_item', { id }); await loadTree(collectionId) } catch {}
         }
         break
     }
@@ -231,23 +209,13 @@ export default function CollectionTree({ collections, trees, selectedNodeId, onS
   )
 }
 
-function getMenuItems(type: ContextMenu['type'], isChain?: boolean) {
+function getMenuItems(type: ContextMenu['type'], _isChain?: boolean) {
   const items: { key: string; label?: string; icon?: React.ReactNode; danger?: boolean; separator?: boolean }[] = []
   if (type === 'collection' || type === 'folder') {
     items.push({ key: 'add-request', label: '添加请求', icon: <Plus className="h-3.5 w-3.5" /> })
     items.push({ key: 'add-folder', label: '添加文件夹', icon: <FolderPlus className="h-3.5 w-3.5" /> })
-    if (type === 'collection') {
-      items.push({ key: 'add-chain', label: '添加请求链', icon: <Link2 className="h-3.5 w-3.5" /> })
-    }
+    items.push({ key: 'add-chain', label: '添加请求链', icon: <Link2 className="h-3.5 w-3.5" /> })
     items.push({ key: 'run', label: '运行全部', icon: <Play className="h-3.5 w-3.5" /> })
-    if (type === 'folder') {
-      items.push({ key: 'sep-chain', separator: true })
-      if (isChain) {
-        items.push({ key: 'toggle-folder', label: '转为普通文件夹', icon: <Unlink className="h-3.5 w-3.5" /> })
-      } else {
-        items.push({ key: 'toggle-chain', label: '转为请求链', icon: <Link2 className="h-3.5 w-3.5" /> })
-      }
-    }
     items.push({ key: 'sep1', separator: true })
   }
   items.push({ key: 'rename', label: '重命名', icon: <Pencil className="h-3.5 w-3.5" /> })
@@ -305,7 +273,7 @@ function TreeNode({ node, collectionId, level, expanded, selectedNodeId, renamin
     )
   }
 
-  const isChain = node.is_chain === true
+  const isChain = nodeType === 'chain'
 
   return (
     <div>

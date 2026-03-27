@@ -14,8 +14,8 @@ import { useConfirmStore } from '@/components/ui/confirm-dialog'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from '@/components/ui/dialog'
 import { useCollectionStore } from '@/stores/collection-store'
 import type {
-  Collection, CollectionTreeNode, RequestLastStatus,
-  BatchResult, TestProgress, ExecutionResult, ApiRequest,
+  Collection, CollectionTreeNode, ItemLastStatus,
+  BatchResult, TestProgress, ExecutionResult, CollectionItem,
 } from '@/types'
 
 const BODY_TYPES = [
@@ -34,7 +34,7 @@ interface Props {
 export default function CollectionOverview({ collection, tree }: Props) {
   const confirm = useConfirmStore((s) => s.confirm)
   const { loadTree } = useCollectionStore()
-  const [statuses, setStatuses] = useState<Record<string, RequestLastStatus>>({})
+  const [statuses, setStatuses] = useState<Record<string, ItemLastStatus>>({})
   const [running, setRunning] = useState(false)
   const [runningIds, setRunningIds] = useState<Set<string>>(new Set())
   const [progress, setProgress] = useState<TestProgress[]>([])
@@ -42,8 +42,8 @@ export default function CollectionOverview({ collection, tree }: Props) {
   const [singleResults, setSingleResults] = useState<Record<string, ExecutionResult>>({})
   const [error, setError] = useState<string | null>(null)
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
-  const [detailData, setDetailData] = useState<Record<string, ApiRequest>>({})
-  const [editReq, setEditReq] = useState<ApiRequest | null>(null)
+  const [detailData, setDetailData] = useState<Record<string, CollectionItem>>({})
+  const [editReq, setEditReq] = useState<CollectionItem | null>(null)
   const [isNewReq, setIsNewReq] = useState(false)
   const unlistenRef = useRef<(() => void) | null>(null)
 
@@ -52,9 +52,9 @@ export default function CollectionOverview({ collection, tree }: Props) {
 
   const loadStatuses = async () => {
     try {
-      const list = await invoke<RequestLastStatus[]>('get_collection_status', { collectionId: collection.id })
-      const map: Record<string, RequestLastStatus> = {}
-      for (const s of list) map[s.request_id] = s
+      const list = await invoke<ItemLastStatus[]>('get_collection_status', { collectionId: collection.id })
+      const map: Record<string, ItemLastStatus> = {}
+      for (const s of list) map[s.item_id] = s
       setStatuses(map)
     } catch {}
   }
@@ -67,7 +67,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
   function flatten(node: CollectionTreeNode) {
     if (node.node_type === 'request') {
       tableItems.push({ id: node.id, name: node.name, method: node.method ?? 'GET', expect_status: node.expect_status })
-    } else if (node.node_type === 'folder' && node.is_chain) {
+    } else if (node.node_type === 'chain') {
       const steps: FlatReq[] = []
       for (const child of node.children) {
         if (child.node_type === 'request') steps.push({ id: child.id, name: child.name, method: child.method ?? 'GET', expect_status: child.expect_status })
@@ -85,7 +85,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
   const getStatus = (id: string) => {
     const sr = singleResults[id]
     if (sr) return sr.status
-    const br = batchResult?.results.find((x) => x.request_id === id)
+    const br = batchResult?.results.find((x) => x.item_id === id)
     if (br) return br.status
     return statuses[id]?.status
   }
@@ -94,7 +94,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
   const failed = allRequests.filter((r) => { const s = getStatus(r.id); return s && s !== 'success' }).length
   const passRate = (passed + failed) > 0 ? Math.round((passed / (passed + failed)) * 100) : 0
   const progressPercent = batchResult ? 100 : progress.length > 0 ? Math.round((progress.filter((p) => p.status !== 'running').length / (progress[0]?.total ?? 1)) * 100) : 0
-  const getResult = (id: string): ExecutionResult | undefined => singleResults[id] ?? batchResult?.results.find((x) => x.request_id === id)
+  const getResult = (id: string): ExecutionResult | undefined => singleResults[id] ?? batchResult?.results.find((x) => x.item_id === id)
 
   // 批量运行
   const abortRef = useRef(false)
@@ -103,7 +103,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
     setRunning(true); setProgress([]); setBatchResult(null); setSingleResults({}); setError(null); setExpandedRows(new Set())
     unlistenRef.current = await listen<TestProgress>('test-progress', (e) => {
       if (abortRef.current) return
-      setProgress((prev) => { const idx = prev.findIndex((x) => x.request_id === e.payload.request_id); if (idx >= 0) { const n = [...prev]; n[idx] = e.payload; return n } return [...prev, e.payload] })
+      setProgress((prev) => { const idx = prev.findIndex((x) => x.item_id === e.payload.item_id); if (idx >= 0) { const n = [...prev]; n[idx] = e.payload; return n } return [...prev, e.payload] })
     })
     try {
       const result = await invoke<BatchResult>('run_collection', { collectionId: collection.id, concurrency: 5 })
@@ -134,9 +134,8 @@ export default function CollectionOverview({ collection, tree }: Props) {
 
   // 添加测试用例：创建后弹出编辑弹窗
   const addTestCase = async () => {
-    const req = await invoke<ApiRequest>('create_request', { collectionId: collection.id, folderId: null, name: '新测试用例', method: 'POST' })
-    // 设置 sort_order = -1 排到最前面
-    const updated = await invoke<ApiRequest>('update_request', { id: req.id, url: collection.endpoint || '' })
+    const req = await invoke<CollectionItem>('create_item', { collectionId: collection.id, parentId: null, itemType: 'request', name: '新测试用例', method: 'POST' })
+    const updated = await invoke<CollectionItem>('update_item', { id: req.id })
     await loadTree(collection.id)
     setIsNewReq(true)
     setEditReq(updated)
@@ -147,7 +146,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
     e.stopPropagation()
     const ok = await confirm(`确定删除测试用例「${name}」？此操作不可撤销。`, { title: '删除测试用例', kind: 'warning' })
     if (!ok) return
-    await invoke('delete_request', { id })
+    await invoke('delete_item', { id })
     await loadTree(collection.id)
     setExpandedRows((prev) => { const n = new Set(prev); n.delete(id); return n })
   }
@@ -155,7 +154,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
   // 打开编辑弹窗
   const openEdit = async (id: string) => {
     try {
-      const req = await invoke<ApiRequest>('get_request', { id })
+      const req = await invoke<CollectionItem>('get_item', { id })
       setIsNewReq(false)
       setEditReq(req)
     } catch {}
@@ -165,7 +164,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
   const saveEdit = async () => {
     if (!editReq) return
     try {
-      const updated = await invoke<ApiRequest>('update_request', {
+      const updated = await invoke<CollectionItem>('update_item', {
         id: editReq.id,
         name: editReq.name,
         method: editReq.method,
@@ -193,7 +192,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
     const next = new Set(expandedRows)
     if (next.has(id)) { next.delete(id) } else {
       next.add(id)
-      if (!detailData[id]) { try { const req = await invoke<ApiRequest>('get_request', { id }); setDetailData((prev) => ({ ...prev, [id]: req })) } catch {} }
+      if (!detailData[id]) { try { const req = await invoke<CollectionItem>('get_item', { id }); setDetailData((prev) => ({ ...prev, [id]: req })) } catch {} }
     }
     setExpandedRows(next)
   }
@@ -216,7 +215,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
           value={collection.description}
           placeholder="双击添加描述..."
           onSave={async (v) => {
-            await invoke('update_collection_meta', { id: collection.id, description: v })
+            await invoke('update_collection', { id: collection.id, description: v })
             await loadTree(collection.id)
           }}
         />
@@ -320,8 +319,8 @@ export default function CollectionOverview({ collection, tree }: Props) {
 
 // ─── 编辑表单 ──────────────────────────────────
 function EditForm({ req, onChange, onSave, onCancel }: {
-  req: ApiRequest
-  onChange: (r: ApiRequest) => void
+  req: CollectionItem
+  onChange: (r: CollectionItem) => void
   onSave: () => void
   onCancel: () => void
 }) {
@@ -496,11 +495,11 @@ function ScenarioRow({ r, stepLabel, indent, getResult, getStatus: _getStatus, s
   indent?: boolean
   getResult: (id: string) => ExecutionResult | undefined
   getStatus: (id: string) => string | undefined
-  statuses: Record<string, RequestLastStatus>
+  statuses: Record<string, ItemLastStatus>
   progress: TestProgress[]
   runningIds: Set<string>
   expandedRows: Set<string>
-  detailData: Record<string, ApiRequest>
+  detailData: Record<string, CollectionItem>
   toggleRow: (id: string) => void
   runSingle: (id: string) => void
   openEdit: (id: string) => void
@@ -508,7 +507,7 @@ function ScenarioRow({ r, stepLabel, indent, getResult, getStatus: _getStatus, s
   formatTime: (ms: number) => string
 }) {
   const result = getResult(r.id)
-  const prog = progress.find((p) => p.request_id === r.id)
+  const prog = progress.find((p) => p.item_id === r.id)
   const old = statuses[r.id]
   const resp = result?.response
   const status = result?.status ?? prog?.status ?? old?.status

@@ -1,19 +1,24 @@
 import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
-import type { Collection, CollectionTreeNode } from '@/types'
+import type { Collection, CollectionTreeNode, Group } from '@/types'
 
 interface CollectionState {
   collections: Collection[]
   trees: Record<string, CollectionTreeNode>
+  groups: Group[]
   selectedNodeId: string | null
   selectedRequestId: string | null
   loadCollections: () => Promise<void>
   loadTree: (collectionId: string) => Promise<void>
-  createCollection: (name: string, description: string, category?: string) => Promise<void>
+  loadGroups: () => Promise<void>
+  createCollection: (name: string, description: string, groupId?: string | null) => Promise<void>
   deleteCollection: (id: string) => Promise<void>
   renameCollection: (id: string, name: string) => Promise<void>
-  createRequest: (collectionId: string, folderId: string | null, name: string, method: string) => Promise<string>
-  createFolder: (collectionId: string, parentFolderId: string | null, name: string) => Promise<void>
+  createItem: (collectionId: string, parentId: string | null, name: string, method: string, itemType?: string) => Promise<string>
+  createFolder: (collectionId: string, parentId: string | null, name: string) => Promise<void>
+  createGroup: (name: string, parentId?: string | null) => Promise<Group>
+  updateGroup: (id: string, name: string) => Promise<void>
+  deleteGroup: (id: string) => Promise<void>
   selectNode: (nodeId: string) => void
 }
 
@@ -36,6 +41,7 @@ function findCollectionForNode(trees: Record<string, CollectionTreeNode>, nodeId
 export const useCollectionStore = create<CollectionState>((set, get) => ({
   collections: [],
   trees: {},
+  groups: [],
   selectedNodeId: null,
   selectedRequestId: null,
 
@@ -58,8 +64,17 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     }
   },
 
-  createCollection: async (name: string, description: string, category?: string) => {
-    const col = await invoke<Collection>('create_collection', { name, description, category })
+  loadGroups: async () => {
+    try {
+      const groups = await invoke<Group[]>('list_groups')
+      set({ groups })
+    } catch (e) {
+      console.error('loadGroups failed:', e)
+    }
+  },
+
+  createCollection: async (name: string, description: string, groupId?: string | null) => {
+    const col = await invoke<Collection>('create_collection', { name, description, groupId: groupId ?? null })
     set((state) => ({ collections: [col, ...state.collections] }))
     await get().loadTree(col.id)
   },
@@ -78,22 +93,42 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
   },
 
   renameCollection: async (id: string, name: string) => {
-    const updated = await invoke<Collection>('update_collection', { id, name, description: '' })
+    const updated = await invoke<Collection>('update_collection', { id, name })
     set((state) => ({
       collections: state.collections.map((c) => c.id === id ? updated : c),
     }))
     await get().loadTree(id)
   },
 
-  createRequest: async (collectionId, folderId, name, method) => {
-    const req = await invoke<{ id: string }>('create_request', { collectionId, folderId, name, method })
+  createItem: async (collectionId, parentId, name, method, itemType) => {
+    const req = await invoke<{ id: string }>('create_item', { collectionId, parentId, itemType: itemType ?? 'request', name, method })
     await get().loadTree(collectionId)
     return req.id
   },
 
-  createFolder: async (collectionId, parentFolderId, name) => {
-    await invoke('create_folder', { collectionId, parentFolderId, name })
+  createFolder: async (collectionId, parentId, name) => {
+    await invoke('create_item', { collectionId, parentId, itemType: 'folder', name, method: 'GET' })
     await get().loadTree(collectionId)
+  },
+
+  createGroup: async (name: string, parentId?: string | null) => {
+    const group = await invoke<Group>('create_group', { name, parentId: parentId ?? null })
+    set((state) => ({ groups: [...state.groups, group] }))
+    return group
+  },
+
+  updateGroup: async (id: string, name: string) => {
+    await invoke('update_group', { id, name })
+    set((state) => ({
+      groups: state.groups.map((g) => g.id === id ? { ...g, name } : g),
+    }))
+  },
+
+  deleteGroup: async (id: string) => {
+    await invoke('delete_group', { id })
+    set((state) => ({
+      groups: state.groups.filter((g) => g.id !== id),
+    }))
   },
 
   selectNode: (nodeId: string) => {

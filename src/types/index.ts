@@ -1,10 +1,17 @@
+// ─── Groups ──────────────────────────
+export interface Group {
+  id: string
+  name: string
+  parent_id: string | null
+  sort_order: number
+}
+
+// ─── Collections ─────────────────────
 export interface Collection {
   id: string
   name: string
   description: string
-  category: string
-  endpoint: string
-  subcategory: string
+  group_id: string | null
   created_at: string
   updated_at: string
 }
@@ -12,31 +19,32 @@ export interface Collection {
 export interface CollectionTreeNode {
   id: string
   name: string
-  node_type: 'collection' | 'folder' | 'request'
+  node_type: 'collection' | 'folder' | 'chain' | 'request'
   method?: string
-  is_chain?: boolean
   expect_status?: number
   children: CollectionTreeNode[]
 }
 
-export interface ApiRequest {
+// ─── Collection Items ────────────────
+export interface CollectionItem {
   id: string
   collection_id: string
-  folder_id: string | null
+  parent_id: string | null
+  type: 'folder' | 'chain' | 'request'
   name: string
+  sort_order: number
   method: string
   url: string
   headers: string
   query_params: string
   body_type: string
   body_content: string
-  sort_order: number
-  created_at: string
-  updated_at: string
   extract_rules: string
   description: string
   expect_status: number
   poll_config: string
+  created_at: string
+  updated_at: string
 }
 
 export interface KeyValuePair {
@@ -54,19 +62,10 @@ export interface HttpResponse {
   size_bytes: number
 }
 
-export interface ExecutionResult {
-  execution_id: string
-  request_id: string
-  request_name: string
-  status: string
-  response: HttpResponse | null
-  assertion_results: AssertionResultItem[]
-  error_message: string | null
-}
-
+// ─── Assertions ──────────────────────
 export interface Assertion {
   id: string
-  request_id: string
+  item_id: string
   type: string
   expression: string
   operator: string
@@ -83,10 +82,21 @@ export interface AssertionResultItem {
   message: string
 }
 
+// ─── Execution ───────────────────────
+export interface ExecutionResult {
+  execution_id: string
+  item_id: string
+  item_name: string
+  status: string
+  response: HttpResponse | null
+  assertion_results: AssertionResultItem[]
+  error_message: string | null
+}
+
 export interface TestProgress {
   batch_id: string
-  request_id: string
-  request_name: string
+  item_id: string
+  item_name: string
   status: string
   current: number
   total: number
@@ -102,21 +112,11 @@ export interface BatchResult {
   results: ExecutionResult[]
 }
 
-export interface Environment {
-  id: string
-  name: string
-  is_active: boolean
-  created_at: string
-  updated_at: string
-}
-
 export interface RunRecord {
   id: string
   status: string
   request_url: string
   request_method: string
-  request_headers: string
-  request_body: string | null
   response_status: number | null
   response_headers: string
   response_body: string | null
@@ -127,8 +127,8 @@ export interface RunRecord {
   executed_at: string
 }
 
-export interface RequestLastStatus {
-  request_id: string
+export interface ItemLastStatus {
+  item_id: string
   status: string
   executed_at: string
   response_time_ms: number
@@ -138,13 +138,22 @@ export interface RequestLastStatus {
 
 export interface HistoryEntry {
   id: string
-  request_id: string
+  item_id: string
   status: string
   request_url: string
   request_method: string
   response_status: number | null
   response_time_ms: number
   executed_at: string
+}
+
+// ─── Environment ─────────────────────
+export interface Environment {
+  id: string
+  name: string
+  is_active: boolean
+  created_at: string
+  updated_at: string
 }
 
 export interface EnvVariable {
@@ -156,19 +165,22 @@ export interface EnvVariable {
   sort_order: number
 }
 
+// ─── Streaming ───────────────────────
 export interface StreamChunk {
-  request_id: string
+  item_id: string
   chunk: string
   chunk_index: number
   done: boolean
 }
 
+// ─── Extract Rules ───────────────────
 export interface ExtractRule {
   var_name: string
   source: 'json_body' | 'header' | 'status_code'
   expression: string
 }
 
+// ─── Chain ───────────────────────────
 export interface ChainStepResult {
   step_index: number
   execution_result: ExecutionResult
@@ -177,8 +189,8 @@ export interface ChainStepResult {
 
 export interface ChainResult {
   chain_id: string
-  folder_id: string
-  folder_name: string
+  item_id: string
+  item_name: string
   total_steps: number
   completed_steps: number
   status: string
@@ -189,7 +201,7 @@ export interface ChainResult {
 
 export interface ChainProgress {
   chain_id: string
-  folder_id: string
+  item_id: string
   step_index: number
   step_name: string
   status: string

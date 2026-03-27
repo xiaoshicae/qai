@@ -34,7 +34,7 @@ export default function ExtractRulesEditor({ requestId }: Props) {
 
   const save = async (updated: ExtractRule[]) => {
     setRules(updated)
-    await invoke('update_request', {
+    await invoke('update_item', {
       id: requestId,
       extractRules: JSON.stringify(updated),
     })

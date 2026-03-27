@@ -11,7 +11,7 @@ export default function RunsTab({ requestId }: { requestId: string }) {
   useEffect(() => {
     (async () => {
       try {
-        const list = await invoke<RunRecord[]>('list_request_runs', { requestId, limit: 20 })
+        const list = await invoke<RunRecord[]>('list_item_runs', { itemId: requestId, limit: 20 })
         setRuns(list)
       } catch {}
     })()
@@ -70,7 +70,6 @@ export default function RunsTab({ requestId }: { requestId: string }) {
                   <div className="text-muted-foreground mb-1 font-medium">请求</div>
                   <pre className="font-mono bg-overlay/[0.04] rounded p-2 whitespace-pre-wrap break-all max-h-[120px] overflow-y-auto">
                     {run.request_method} {run.request_url}
-                    {run.request_body ? `\n\n${tryPrettyJson(run.request_body)}` : ''}
                   </pre>
                 </div>
 

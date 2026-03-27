@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { useCollectionStore } from '@/stores/collection-store'
 import { Input } from '@/components/ui/input'
-import type { Collection } from '@/types'
+import type { Collection, Group } from '@/types'
 
 const NAV_ITEMS = [
   { path: '/history', label: '历史', icon: History },
@@ -18,92 +18,67 @@ const NAV_ITEMS = [
 ]
 
 // ─── 分组树节点 ─────────────────
-interface CatNode {
-  name: string
-  fullPath: string
-  children: CatNode[]
+interface GroupNode {
+  group: Group
+  children: GroupNode[]
   collections: Collection[]
 }
 
-function buildCategoryTree(collections: Collection[], categoryOrder: string[] | null): CatNode[] {
-  const order = categoryOrder ?? []
-  const nodeMap = new Map<string, CatNode>()
-
-  function ensureNode(path: string): CatNode {
-    if (nodeMap.has(path)) return nodeMap.get(path)!
-    const parts = path.split('/')
-    const name = parts[parts.length - 1] || 'other'
-    const node: CatNode = { name, fullPath: path, children: [], collections: [] }
-    nodeMap.set(path, node)
-    if (parts.length > 1) {
-      const parent = ensureNode(parts.slice(0, -1).join('/'))
-      if (!parent.children.find((c) => c.fullPath === path)) parent.children.push(node)
+function buildGroupTree(groups: Group[], collections: Collection[]): { roots: GroupNode[]; ungrouped: Collection[] } {
+  const nodeMap = new Map<string, GroupNode>()
+  for (const g of groups) {
+    nodeMap.set(g.id, { group: g, children: [], collections: [] })
+  }
+  // 构建父子关系
+  const roots: GroupNode[] = []
+  for (const g of groups) {
+    const node = nodeMap.get(g.id)!
+    if (g.parent_id && nodeMap.has(g.parent_id)) {
+      nodeMap.get(g.parent_id)!.children.push(node)
+    } else {
+      roots.push(node)
     }
-    return node
   }
-
-  // 先按 order 创建节点（保证顺序）
-  for (const path of order) ensureNode(path)
-  // 再处理 collections 里的 category（可能有不在 order 里的）
-  for (const col of collections) ensureNode((col.category || 'other').toLowerCase())
   // 挂载 collections
+  const ungrouped: Collection[] = []
   for (const col of collections) {
-    const cat = (col.category || 'other').toLowerCase()
-    nodeMap.get(cat)!.collections.push(col)
+    if (col.group_id && nodeMap.has(col.group_id)) {
+      nodeMap.get(col.group_id)!.collections.push(col)
+    } else {
+      ungrouped.push(col)
+    }
   }
-
-  // 按 categoryOrder 排序根节点
-  const rootPaths = [...new Set([...order.map((p) => p.split('/')[0]), ...[...nodeMap.keys()].filter((k) => !k.includes('/'))])]
-  const seen = new Set<string>()
-  const root: CatNode[] = []
-  for (const p of rootPaths) {
-    if (seen.has(p)) continue
-    seen.add(p)
-    const node = nodeMap.get(p)
-    if (node) root.push(node)
+  // 按 sort_order 排序
+  roots.sort((a, b) => a.group.sort_order - b.group.sort_order)
+  for (const node of nodeMap.values()) {
+    node.children.sort((a, b) => a.group.sort_order - b.group.sort_order)
   }
-  return root
+  return { roots, ungrouped }
 }
 
-function countAll(node: CatNode): number {
+function countAll(node: GroupNode): number {
   return node.collections.length + node.children.reduce((s, c) => s + countAll(c), 0)
-}
-
-// ─── 分组顺序持久化 ─────────────────
-async function loadCategoryOrder(): Promise<string[]> {
-  try {
-    const val = await invoke<string | null>('get_setting_cmd', { key: 'category_order' })
-    if (!val) return []
-    const parsed = JSON.parse(val)
-    return Array.isArray(parsed) ? parsed : []
-  } catch { return [] }
-}
-
-async function saveCategoryOrder(order: string[]) {
-  await invoke('save_setting', { key: 'category_order', value: JSON.stringify(order) })
 }
 
 export default function Sidebar() {
   const navigate = useNavigate()
   const location = useLocation()
   const confirm = useConfirmStore((s) => s.confirm)
-  const { collections, selectedNodeId, loadCollections, createCollection, deleteCollection, renameCollection, selectNode, loadTree } = useCollectionStore()
+  const { collections, groups, selectedNodeId, loadCollections, loadGroups, createCollection, deleteCollection, renameCollection, createGroup, updateGroup, deleteGroup, selectNode, loadTree } = useCollectionStore()
   const [search, setSearch] = useState('')
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  const [categoryOrder, setCategoryOrder] = useState<string[]>([])
-  const [menu, setMenu] = useState<{ x: number; y: number; target: 'cat' | 'col'; catPath?: string; col?: Collection } | null>(null)
+  const [menu, setMenu] = useState<{ x: number; y: number; target: 'group' | 'col'; groupId?: string; col?: Collection } | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
-  const [inlineInput, setInlineInput] = useState<{ parentPath: string; type: 'group' | 'suite' } | null>(null)
+  const [inlineInput, setInlineInput] = useState<{ parentGroupId: string; type: 'group' | 'suite' } | null>(null)
   const [inlineValue, setInlineValue] = useState('')
   const [newTopGroup, setNewTopGroup] = useState(false)
   const [newTopValue, setNewTopValue] = useState('')
   const menuRef = useRef<HTMLDivElement>(null)
 
-  const [orderLoaded, setOrderLoaded] = useState(false)
   useEffect(() => {
     loadCollections()
-    loadCategoryOrder().then((o) => { setCategoryOrder(o); setOrderLoaded(true) })
+    loadGroups()
   }, [])
 
   useEffect(() => {
@@ -114,56 +89,43 @@ export default function Sidebar() {
   }, [menu])
 
   const initializedRef = useRef(false)
-  // 初始展开所有一级（仅首次） + 同步 categoryOrder
+  // 初始展开所有一级（仅首次）
   useEffect(() => {
-    if (!orderLoaded) return
-    // 仅首次加载时展开所有一级
-    if (!initializedRef.current && collections.length > 0) {
+    if (!initializedRef.current && groups.length > 0) {
       initializedRef.current = true
-      const cats = new Set(collections.map((c) => (c.category || 'other').toLowerCase().split('/')[0]))
-      setExpanded((prev) => new Set([...prev, ...cats]))
+      const groupIds = new Set(groups.filter((g) => !g.parent_id).map((g) => g.id))
+      setExpanded((prev) => new Set([...prev, ...groupIds]))
     }
-    // 补充数据库中新出现的 category 到 order 末尾
-    const allCats: string[] = []
-    const seen = new Set<string>()
-    for (const c of [...collections].reverse()) {
-      const cat = (c.category || 'other').toLowerCase()
-      if (!seen.has(cat)) { seen.add(cat); allCats.push(cat) }
-    }
-    setCategoryOrder((prev) => {
-      const merged = [...(prev ?? [])]
-      let changed = false
-      for (const c of allCats) {
-        if (!merged.includes(c)) { merged.push(c); changed = true }
-      }
-      // 持久化到 DB，这样重启后顺序一致
-      if (changed) saveCategoryOrder(merged)
-      return merged
-    })
-  }, [collections, orderLoaded])
+  }, [groups])
 
-  const tree = useMemo(() => buildCategoryTree(collections, categoryOrder), [collections, categoryOrder])
+  const { roots, ungrouped } = useMemo(() => buildGroupTree(groups, collections), [groups, collections])
 
-  const filteredTree = useMemo(() => {
-    if (!search.trim()) return tree
+  const filteredRoots = useMemo(() => {
+    if (!search.trim()) return roots
     const q = search.toLowerCase()
-    function filterNode(node: CatNode): CatNode | null {
+    function filterNode(node: GroupNode): GroupNode | null {
       const filteredCols = node.collections.filter((c) => c.name.toLowerCase().includes(q))
-      const filteredChildren = node.children.map(filterNode).filter(Boolean) as CatNode[]
+      const filteredChildren = node.children.map(filterNode).filter(Boolean) as GroupNode[]
       if (filteredCols.length === 0 && filteredChildren.length === 0) return null
       return { ...node, collections: filteredCols, children: filteredChildren }
     }
-    return tree.map(filterNode).filter(Boolean) as CatNode[]
-  }, [tree, search])
+    return roots.map(filterNode).filter(Boolean) as GroupNode[]
+  }, [roots, search])
 
-  const toggle = (path: string) => setExpanded((prev) => { const n = new Set(prev); n.has(path) ? n.delete(path) : n.add(path); return n })
+  const filteredUngrouped = useMemo(() => {
+    if (!search.trim()) return ungrouped
+    const q = search.toLowerCase()
+    return ungrouped.filter((c) => c.name.toLowerCase().includes(q))
+  }, [ungrouped, search])
+
+  const toggle = (id: string) => setExpanded((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
   const handleSelect = (col: Collection) => { selectNode(col.id); if (location.pathname !== '/') navigate('/') }
 
   // ─── 菜单操作 ───
-  const openCatMenu = (e: React.MouseEvent, catPath: string) => {
+  const openGroupMenu = (e: React.MouseEvent, groupId: string) => {
     e.stopPropagation()
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    setMenu({ x: rect.right + 4, y: rect.top, target: 'cat', catPath })
+    setMenu({ x: rect.right + 4, y: rect.top, target: 'group', groupId })
   }
   const openColMenu = (e: React.MouseEvent, col: Collection) => {
     e.stopPropagation()
@@ -171,18 +133,18 @@ export default function Sidebar() {
     setMenu({ x: rect.right + 4, y: rect.top, target: 'col', col })
   }
 
-  const handleCatAddSuite = () => {
-    if (!menu?.catPath) return
-    setInlineInput({ parentPath: menu.catPath, type: 'suite' })
+  const handleGroupAddSuite = () => {
+    if (!menu?.groupId) return
+    setInlineInput({ parentGroupId: menu.groupId, type: 'suite' })
     setInlineValue('新测试集')
-    setExpanded((prev) => new Set(prev).add(menu.catPath!))
+    setExpanded((prev) => new Set(prev).add(menu.groupId!))
     setMenu(null)
   }
-  const handleCatAddGroup = () => {
-    if (!menu?.catPath) return
-    setInlineInput({ parentPath: menu.catPath, type: 'group' })
+  const handleGroupAddSubGroup = () => {
+    if (!menu?.groupId) return
+    setInlineInput({ parentGroupId: menu.groupId, type: 'group' })
     setInlineValue('')
-    setExpanded((prev) => new Set(prev).add(menu.catPath!))
+    setExpanded((prev) => new Set(prev).add(menu.groupId!))
     setMenu(null)
   }
 
@@ -193,51 +155,54 @@ export default function Sidebar() {
     if (!name) return
 
     if (inlineInput.type === 'suite') {
-      await createCollection(name, '', inlineInput.parentPath)
+      await createCollection(name, '', inlineInput.parentGroupId)
       const updated = useCollectionStore.getState().collections
-      const created = updated.find((c) => c.name === name && (c.category || '').toLowerCase() === inlineInput.parentPath)
+      const created = updated.find((c) => c.name === name && c.group_id === inlineInput.parentGroupId)
       if (created) { setRenamingId(created.id); setRenameValue(created.name) }
     } else {
-      // 子分组：只注册路径，不创建集合
-      const subPath = `${inlineInput.parentPath}/${name.toLowerCase()}`
-      const newOrder = [...categoryOrder, subPath]
-      setCategoryOrder(newOrder)
-      await saveCategoryOrder(newOrder)
-      setExpanded((prev) => new Set(prev).add(subPath))
+      // 子分组
+      const newGroup = await createGroup(name, inlineInput.parentGroupId)
+      setExpanded((prev) => new Set(prev).add(newGroup.id))
     }
   }
 
   // 运行分组下所有测试集
-  const handleCatRunAll = async () => {
-    if (!menu?.catPath) return
-    const catPath = menu.catPath; setMenu(null)
-    // 找到该分组下的所有集合，逐个运行
-    const cols = collections.filter((c) => (c.category || '').toLowerCase().startsWith(catPath))
+  const handleGroupRunAll = async () => {
+    if (!menu?.groupId) return
+    const groupId = menu.groupId; setMenu(null)
+    const cols = collections.filter((c) => c.group_id === groupId)
     for (const col of cols) {
       try { await invoke('run_collection', { collectionId: col.id, concurrency: 5 }) } catch {}
     }
-    // 选中第一个看结果
     if (cols.length > 0) handleSelect(cols[0])
   }
 
-  // 删除分组及其下所有测试集
-  const handleCatDelete = async () => {
-    if (!menu?.catPath) return
-    const catPath = menu.catPath; setMenu(null)
-    const cols = collections.filter((c) => (c.category || '').toLowerCase().startsWith(catPath))
-    const ok = await confirm(`确定删除分组「${catPath.toUpperCase()}」及其下 ${cols.length} 个测试集？此操作不可撤销。`, { title: '删除分组', kind: 'warning' })
+  // 重命名分组
+  const handleGroupRename = () => {
+    if (!menu?.groupId) return
+    const group = groups.find((g) => g.id === menu.groupId)
+    if (!group) return
+    setRenamingId(menu.groupId)
+    setRenameValue(group.name)
+    setMenu(null)
+  }
+
+  // 删除分组
+  const handleGroupDelete = async () => {
+    if (!menu?.groupId) return
+    const groupId = menu.groupId; setMenu(null)
+    const group = groups.find((g) => g.id === groupId)
+    const cols = collections.filter((c) => c.group_id === groupId)
+    const ok = await confirm(`确定删除分组「${group?.name ?? ''}」及其下 ${cols.length} 个测试集？此操作不可撤销。`, { title: '删除分组', kind: 'warning' })
     if (!ok) return
     for (const col of cols) { await deleteCollection(col.id) }
-    // 从 order 中移除
-    const newOrder = categoryOrder.filter((p) => !p.startsWith(catPath))
-    setCategoryOrder(newOrder)
-    await saveCategoryOrder(newOrder)
+    await deleteGroup(groupId)
   }
 
   const handleColAddCase = async () => {
     if (!menu?.col) return
     const col = menu.col; setMenu(null)
-    await invoke('create_request', { collectionId: col.id, folderId: null, name: '新测试用例', method: 'POST' })
+    await invoke('create_item', { collectionId: col.id, parentId: null, itemType: 'request', name: '新测试用例', method: 'POST' })
     await loadTree(col.id); handleSelect(col)
   }
   const handleColRename = () => { if (!menu?.col) return; setRenamingId(menu.col.id); setRenameValue(menu.col.name); setMenu(null) }
@@ -248,7 +213,17 @@ export default function Sidebar() {
     if (!ok) return
     await deleteCollection(menu.col.id)
   }
-  const commitRename = async () => { if (renamingId && renameValue.trim()) await renameCollection(renamingId, renameValue.trim()); setRenamingId(null) }
+  const commitRename = async () => {
+    if (!renamingId || !renameValue.trim()) { setRenamingId(null); return }
+    // 判断是 group 还是 collection
+    const group = groups.find((g) => g.id === renamingId)
+    if (group) {
+      await updateGroup(renamingId, renameValue.trim())
+    } else {
+      await renameCollection(renamingId, renameValue.trim())
+    }
+    setRenamingId(null)
+  }
 
   // 新建顶级分组
   const handleNewTopGroup = () => { setNewTopGroup(true); setNewTopValue('') }
@@ -256,11 +231,8 @@ export default function Sidebar() {
     const name = newTopValue.trim()
     setNewTopGroup(false)
     if (!name) return
-    const key = name.toLowerCase()
-    const newOrder = [...categoryOrder, key]
-    setCategoryOrder(newOrder)
-    await saveCategoryOrder(newOrder)
-    setExpanded((prev) => new Set(prev).add(key))
+    const newGroup = await createGroup(name)
+    setExpanded((prev) => new Set(prev).add(newGroup.id))
   }
 
   return (
@@ -293,9 +265,30 @@ export default function Sidebar() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-1.5">
-        {filteredTree.map((node) => (
-          <CategoryNode key={node.fullPath} node={node} level={0} expanded={expanded} selectedNodeId={selectedNodeId} renamingId={renamingId} renameValue={renameValue} inlineInput={inlineInput} inlineValue={inlineValue} onToggle={toggle} onSelect={handleSelect} onCatMenu={openCatMenu} onColMenu={openColMenu} onRenameChange={setRenameValue} onRenameCommit={commitRename} onRenameCancel={() => setRenamingId(null)} onInlineChange={setInlineValue} onInlineCommit={commitInline} onInlineCancel={() => setInlineInput(null)} />
+        {filteredRoots.map((node) => (
+          <GroupTreeNode key={node.group.id} node={node} level={0} expanded={expanded} selectedNodeId={selectedNodeId} renamingId={renamingId} renameValue={renameValue} inlineInput={inlineInput} inlineValue={inlineValue} onToggle={toggle} onSelect={handleSelect} onGroupMenu={openGroupMenu} onColMenu={openColMenu} onRenameChange={setRenameValue} onRenameCommit={commitRename} onRenameCancel={() => setRenamingId(null)} onInlineChange={setInlineValue} onInlineCommit={commitInline} onInlineCancel={() => setInlineInput(null)} />
         ))}
+
+        {/* 未分组的 collections */}
+        {filteredUngrouped.map((col) => {
+          const isSelected = selectedNodeId === col.id
+          const isRenaming = renamingId === col.id
+          return (
+            <div key={col.id} className={`group/item flex items-center gap-1 py-1.5 pr-1 text-xs rounded-lg cursor-pointer transition-all duration-150 ${isSelected ? 'bg-overlay/[0.08] text-foreground glow-ring' : 'text-muted-foreground hover:bg-overlay/[0.04] hover:text-foreground'}`} style={{ paddingLeft: '20px' }} onClick={() => !isRenaming && handleSelect(col)}>
+              {isRenaming ? (
+                <Input value={renameValue} onChange={(e) => setRenameValue(e.target.value)} onBlur={commitRename} onKeyDown={(e) => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') setRenamingId(null) }} className="h-5 text-xs flex-1 py-0 px-1" autoFocus onClick={(e) => e.stopPropagation()} />
+              ) : (
+                <>
+                  <span className="flex-1 text-left truncate">{col.name}</span>
+                  <button className="shrink-0 p-0.5 rounded opacity-0 group-hover/item:opacity-100 text-muted-foreground hover:text-foreground hover:bg-muted-foreground/10 cursor-pointer transition-opacity" onClick={(e) => openColMenu(e, col)}>
+                    <MoreHorizontal className="h-3.5 w-3.5" />
+                  </button>
+                  <Circle className="h-2 w-2 shrink-0 fill-muted-foreground/20 text-muted-foreground/20" />
+                </>
+              )}
+            </div>
+          )
+        })}
 
         {newTopGroup && (
           <div className="px-2 py-1">
@@ -303,7 +296,7 @@ export default function Sidebar() {
           </div>
         )}
 
-        {tree.length === 0 && !newTopGroup && (
+        {roots.length === 0 && ungrouped.length === 0 && !newTopGroup && (
           <div className="flex flex-col items-center justify-center text-center py-16 px-4">
             <p className="text-sm text-muted-foreground">暂无测试集</p>
             <p className="text-xs text-muted-foreground/60 mt-1">点击 + 创建分组</p>
@@ -314,13 +307,14 @@ export default function Sidebar() {
       {/* 弹出菜单 */}
       {menu && (
         <div ref={menuRef} className="fixed z-50 min-w-[160px] rounded-xl glass-card p-1.5 shadow-2xl" style={{ left: menu.x, top: menu.y }}>
-          {menu.target === 'cat' && (
+          {menu.target === 'group' && (
             <>
-              <button className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs hover:bg-overlay/[0.06] cursor-pointer transition-colors" onClick={handleCatAddSuite}><FilePlus className="h-3.5 w-3.5 text-muted-foreground" /> 新建测试集</button>
-              <button className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs hover:bg-overlay/[0.06] cursor-pointer transition-colors" onClick={handleCatAddGroup}><FolderPlus className="h-3.5 w-3.5 text-muted-foreground" /> 新建子分组</button>
-              <button className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs hover:bg-overlay/[0.06] cursor-pointer transition-colors" onClick={handleCatRunAll}><Play className="h-3.5 w-3.5 text-muted-foreground" /> 运行全部</button>
+              <button className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs hover:bg-overlay/[0.06] cursor-pointer transition-colors" onClick={handleGroupAddSuite}><FilePlus className="h-3.5 w-3.5 text-muted-foreground" /> 新建测试集</button>
+              <button className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs hover:bg-overlay/[0.06] cursor-pointer transition-colors" onClick={handleGroupAddSubGroup}><FolderPlus className="h-3.5 w-3.5 text-muted-foreground" /> 新建子分组</button>
+              <button className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs hover:bg-overlay/[0.06] cursor-pointer transition-colors" onClick={handleGroupRunAll}><Play className="h-3.5 w-3.5 text-muted-foreground" /> 运行全部</button>
               <div className="h-px bg-overlay/[0.06] my-1" />
-              <button className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs text-destructive hover:bg-destructive/10 cursor-pointer transition-colors" onClick={handleCatDelete}><Trash2 className="h-3.5 w-3.5" /> 删除分组</button>
+              <button className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs hover:bg-overlay/[0.06] cursor-pointer transition-colors" onClick={handleGroupRename}><Pencil className="h-3.5 w-3.5 text-muted-foreground" /> 重命名</button>
+              <button className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs text-destructive hover:bg-destructive/10 cursor-pointer transition-colors" onClick={handleGroupDelete}><Trash2 className="h-3.5 w-3.5" /> 删除分组</button>
             </>
           )}
           {menu.target === 'col' && (
@@ -347,27 +341,32 @@ export default function Sidebar() {
 }
 
 // ─── 递归分组节点 ──────────────────────
-interface CategoryNodeProps {
-  node: CatNode; level: number; expanded: Set<string>; selectedNodeId: string | null
+interface GroupTreeNodeProps {
+  node: GroupNode; level: number; expanded: Set<string>; selectedNodeId: string | null
   renamingId: string | null; renameValue: string
-  inlineInput: { parentPath: string; type: 'group' | 'suite' } | null; inlineValue: string
-  onToggle: (path: string) => void; onSelect: (col: Collection) => void
-  onCatMenu: (e: React.MouseEvent, path: string) => void; onColMenu: (e: React.MouseEvent, col: Collection) => void
+  inlineInput: { parentGroupId: string; type: 'group' | 'suite' } | null; inlineValue: string
+  onToggle: (id: string) => void; onSelect: (col: Collection) => void
+  onGroupMenu: (e: React.MouseEvent, groupId: string) => void; onColMenu: (e: React.MouseEvent, col: Collection) => void
   onRenameChange: (v: string) => void; onRenameCommit: () => void; onRenameCancel: () => void
   onInlineChange: (v: string) => void; onInlineCommit: () => void; onInlineCancel: () => void
 }
 
-function CategoryNode(props: CategoryNodeProps) {
-  const { node, level, expanded, selectedNodeId, renamingId, renameValue, inlineInput, inlineValue, onToggle, onSelect, onCatMenu, onColMenu, onRenameChange, onRenameCommit, onRenameCancel, onInlineChange, onInlineCommit, onInlineCancel } = props
-  const isExpanded = expanded.has(node.fullPath)
+function GroupTreeNode(props: GroupTreeNodeProps) {
+  const { node, level, expanded, selectedNodeId, renamingId, renameValue, inlineInput, inlineValue, onToggle, onSelect, onGroupMenu, onColMenu, onRenameChange, onRenameCommit, onRenameCancel, onInlineChange, onInlineCommit, onInlineCancel } = props
+  const isExpanded = expanded.has(node.group.id)
   const total = countAll(node)
+  const isRenaming = renamingId === node.group.id
 
   return (
     <div className="mb-0.5">
-      <div className="group/cat flex items-center gap-1.5 w-full px-2 py-1.5 hover:bg-overlay/[0.04] rounded-lg cursor-pointer transition-all duration-150" style={{ paddingLeft: `${level * 12 + 8}px` }} onClick={() => onToggle(node.fullPath)}>
+      <div className="group/cat flex items-center gap-1.5 w-full px-2 py-1.5 hover:bg-overlay/[0.04] rounded-lg cursor-pointer transition-all duration-150" style={{ paddingLeft: `${level * 12 + 8}px` }} onClick={() => onToggle(node.group.id)}>
         {isExpanded ? <ChevronDown className="h-3 w-3 text-muted-foreground/50 shrink-0" /> : <ChevronRight className="h-3 w-3 text-muted-foreground/50 shrink-0" />}
-        <span className="text-[10px] font-semibold tracking-wider text-muted-foreground/50 uppercase flex-1">{node.name}</span>
-        <button className="shrink-0 p-0.5 rounded-md opacity-0 group-hover/cat:opacity-100 text-muted-foreground hover:text-foreground cursor-pointer transition-opacity" onClick={(e) => onCatMenu(e, node.fullPath)}>
+        {isRenaming ? (
+          <Input value={renameValue} onChange={(e) => onRenameChange(e.target.value)} onBlur={onRenameCommit} onKeyDown={(e) => { if (e.key === 'Enter') onRenameCommit(); if (e.key === 'Escape') onRenameCancel() }} className="h-5 text-[10px] font-bold uppercase tracking-wider flex-1 py-0 px-1" autoFocus onClick={(e) => e.stopPropagation()} />
+        ) : (
+          <span className="text-[10px] font-semibold tracking-wider text-muted-foreground/50 uppercase flex-1">{node.group.name}</span>
+        )}
+        <button className="shrink-0 p-0.5 rounded-md opacity-0 group-hover/cat:opacity-100 text-muted-foreground hover:text-foreground cursor-pointer transition-opacity" onClick={(e) => onGroupMenu(e, node.group.id)}>
           <MoreHorizontal className="h-3.5 w-3.5" />
         </button>
         <span className="bg-overlay/[0.06] text-muted-foreground text-[9px] px-1.5 py-0.5 rounded-full shrink-0 font-medium">{total}</span>
@@ -375,14 +374,14 @@ function CategoryNode(props: CategoryNodeProps) {
 
       {isExpanded && (
         <>
-          {node.children.map((child) => <CategoryNode key={child.fullPath} {...props} node={child} level={level + 1} />)}
+          {node.children.map((child) => <GroupTreeNode key={child.group.id} {...props} node={child} level={level + 1} />)}
 
           {node.collections.map((col) => {
             const isSelected = selectedNodeId === col.id
-            const isRenaming = renamingId === col.id
+            const isColRenaming = renamingId === col.id
             return (
-              <div key={col.id} className={`group/item flex items-center gap-1 py-1.5 pr-1 text-xs rounded-lg cursor-pointer transition-all duration-150 ${isSelected ? 'bg-overlay/[0.08] text-foreground glow-ring' : 'text-muted-foreground hover:bg-overlay/[0.04] hover:text-foreground'}`} style={{ paddingLeft: `${(level + 1) * 12 + 8}px` }} onClick={() => !isRenaming && onSelect(col)}>
-                {isRenaming ? (
+              <div key={col.id} className={`group/item flex items-center gap-1 py-1.5 pr-1 text-xs rounded-lg cursor-pointer transition-all duration-150 ${isSelected ? 'bg-overlay/[0.08] text-foreground glow-ring' : 'text-muted-foreground hover:bg-overlay/[0.04] hover:text-foreground'}`} style={{ paddingLeft: `${(level + 1) * 12 + 8}px` }} onClick={() => !isColRenaming && onSelect(col)}>
+                {isColRenaming ? (
                   <Input value={renameValue} onChange={(e) => onRenameChange(e.target.value)} onBlur={onRenameCommit} onKeyDown={(e) => { if (e.key === 'Enter') onRenameCommit(); if (e.key === 'Escape') onRenameCancel() }} className="h-5 text-xs flex-1 py-0 px-1" autoFocus onClick={(e) => e.stopPropagation()} />
                 ) : (
                   <>
@@ -397,7 +396,7 @@ function CategoryNode(props: CategoryNodeProps) {
             )
           })}
 
-          {inlineInput && inlineInput.parentPath === node.fullPath && (
+          {inlineInput && inlineInput.parentGroupId === node.group.id && (
             <div style={{ paddingLeft: `${(level + 1) * 12 + 8}px` }} className="pr-2 py-1">
               <Input value={inlineValue} onChange={(e) => onInlineChange(e.target.value)} onBlur={onInlineCommit} onKeyDown={(e) => { if (e.key === 'Enter') onInlineCommit(); if (e.key === 'Escape') onInlineCancel() }} placeholder={inlineInput.type === 'suite' ? '测试集名称' : '子分组名称'} className="h-5 text-xs py-0 px-1" autoFocus />
             </div>

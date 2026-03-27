@@ -33,7 +33,7 @@ export default function AssertionEditor({ requestId }: { requestId: string }) {
   const [assertions, setAssertions] = useState<Assertion[]>([])
 
   const load = useCallback(async () => {
-    const list = await invoke<Assertion[]>('list_assertions', { requestId })
+    const list = await invoke<Assertion[]>('list_assertions', { itemId: requestId })
     setAssertions(list)
   }, [requestId])
 
@@ -41,7 +41,7 @@ export default function AssertionEditor({ requestId }: { requestId: string }) {
 
   const add = async () => {
     await invoke('create_assertion', {
-      requestId,
+      itemId: requestId,
       assertionType: 'status_code',
       expression: '',
       operator: 'eq',

@@ -7,8 +7,8 @@ import { Badge } from '@/components/ui/badge'
 import type { ChainResult, ChainProgress, ChainStepResult } from '@/types'
 
 interface Props {
-  folderId: string
-  folderName: string
+  itemId: string
+  itemName: string
 }
 
 const STATUS_CONFIG: Record<string, { icon: React.ReactNode; color: string; label: string }> = {
@@ -19,7 +19,7 @@ const STATUS_CONFIG: Record<string, { icon: React.ReactNode; color: string; labe
   pending: { icon: <div className="h-4 w-4 rounded-full border-2 border-muted-foreground/30" />, color: 'text-muted-foreground', label: 'PENDING' },
 }
 
-export default function ChainRunnerPanel({ folderId, folderName }: Props) {
+export default function ChainRunnerPanel({ itemId, itemName }: Props) {
   const [running, setRunning] = useState(false)
   const [result, setResult] = useState<ChainResult | null>(null)
   const [progress, setProgress] = useState<ChainProgress | null>(null)
@@ -42,13 +42,13 @@ export default function ChainRunnerPanel({ folderId, folderName }: Props) {
     })
 
     try {
-      const res = await invoke<ChainResult>('run_chain', { folderId })
+      const res = await invoke<ChainResult>('run_chain', { itemId })
       setResult(res)
     } catch (e) {
       setResult({
         chain_id: '',
-        folder_id: folderId,
-        folder_name: folderName,
+        item_id: itemId,
+        item_name: itemName,
         total_steps: 0,
         completed_steps: 0,
         status: 'error',
@@ -82,7 +82,7 @@ export default function ChainRunnerPanel({ folderId, folderName }: Props) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Link2 className="h-5 w-5 text-amber-500" />
-          <h2 className="text-lg font-semibold">{folderName}</h2>
+          <h2 className="text-lg font-semibold">{itemName}</h2>
           <Badge variant="secondary" className="text-xs">请求链</Badge>
         </div>
         <Button onClick={handleRun} disabled={running} size="sm" className="gap-1.5">
@@ -211,7 +211,7 @@ function StepRow({ step, expanded, onToggle, formatTime }: {
           {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
           {step.step_index + 1}
         </span>
-        <span className="truncate font-medium">{er.request_name}</span>
+        <span className="truncate font-medium">{er.item_name}</span>
         <span className={`flex items-center gap-1 ${status.color}`}>
           {status.icon}
           <span className="text-xs">{status.label}</span>

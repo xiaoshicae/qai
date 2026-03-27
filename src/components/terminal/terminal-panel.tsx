@@ -41,8 +41,13 @@ export default function TerminalPanel({ onClose }: Props) {
     return () => { mountedRef.current = false }
   }, [])
 
+  // 用 ref 追踪 unlisten，防止 StrictMode 双注册
+  const unlistenRef = useRef<(() => void) | undefined>(undefined)
   useEffect(() => {
-    let unlisten: (() => void) | undefined
+    // 先清理旧 listener
+    unlistenRef.current?.()
+    unlistenRef.current = undefined
+
     listen<ClaudeEvent>('claude-event', (event) => {
       if (!mountedRef.current) return
       const { event_type, content } = event.payload
@@ -60,8 +65,9 @@ export default function TerminalPanel({ onClose }: Props) {
         setSending(false)
         setFirstMessage(false)
       }
-    }).then((fn) => { unlisten = fn })
-    return () => { unlisten?.(); mountedRef.current = false }
+    }).then((fn) => { unlistenRef.current = fn })
+
+    return () => { unlistenRef.current?.(); unlistenRef.current = undefined }
   }, [])
 
   useEffect(() => {
@@ -165,7 +171,7 @@ export default function TerminalPanel({ onClose }: Props) {
       {showActions && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setShowActions(false)} />
-          <div className="absolute bottom-16 left-3 right-3 z-50 rounded-xl border border-overlay/[0.1] bg-background shadow-2xl overflow-hidden">
+          <div className="relative z-50 mx-3 mb-1 rounded-xl border border-overlay/[0.1] bg-background shadow-2xl overflow-hidden">
             <div className="px-3 py-2 border-b border-overlay/[0.06]">
               <input placeholder="Filter actions..." className="w-full bg-transparent text-xs outline-none placeholder:text-muted-foreground/40" autoFocus />
             </div>

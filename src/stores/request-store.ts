@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import type { ApiRequest, ExecutionResult, StreamChunk } from '@/types'
+import type { CollectionItem, ExecutionResult, StreamChunk } from '@/types'
 
 interface RequestUpdates {
   name?: string
@@ -14,7 +14,7 @@ interface RequestUpdates {
 }
 
 interface RequestState {
-  currentRequest: ApiRequest | null
+  currentRequest: CollectionItem | null
   currentResponse: ExecutionResult | null
   loading: boolean
   streaming: boolean
@@ -35,14 +35,14 @@ export const useRequestStore = create<RequestState>((set, get) => ({
   streamChunks: 0,
 
   loadRequest: async (id: string) => {
-    const req = await invoke<ApiRequest>('get_request', { id })
+    const req = await invoke<CollectionItem>('get_item', { id })
     set({ currentRequest: req, currentResponse: null })
   },
 
   updateRequest: async (updates: RequestUpdates) => {
     const { currentRequest } = get()
     if (!currentRequest) return
-    const req = await invoke<ApiRequest>('update_request', { id: currentRequest.id, ...updates })
+    const req = await invoke<CollectionItem>('update_item', { id: currentRequest.id, ...updates })
     set({ currentRequest: req })
   },
 
@@ -57,8 +57,8 @@ export const useRequestStore = create<RequestState>((set, get) => ({
       set({
         currentResponse: {
           execution_id: '',
-          request_id: currentRequest.id,
-          request_name: currentRequest.name,
+          item_id: currentRequest.id,
+          item_name: currentRequest.name,
           status: 'error',
           response: null,
           assertion_results: [],
@@ -78,8 +78,8 @@ export const useRequestStore = create<RequestState>((set, get) => ({
     let content = ''
     let chunks = 0
     const unlisten = await listen<StreamChunk>('stream-chunk', (event) => {
-      const { chunk, done, request_id } = event.payload
-      if (request_id !== currentRequest.id) return
+      const { chunk, done, item_id } = event.payload
+      if (item_id !== currentRequest.id) return
       if (!done && chunk !== '[DONE]') {
         // 尝试从 SSE JSON 中提取 content
         try {
@@ -107,8 +107,8 @@ export const useRequestStore = create<RequestState>((set, get) => ({
       set({
         currentResponse: {
           execution_id: '',
-          request_id: currentRequest.id,
-          request_name: currentRequest.name,
+          item_id: currentRequest.id,
+          item_name: currentRequest.name,
           status: 'error',
           response: null,
           assertion_results: [],

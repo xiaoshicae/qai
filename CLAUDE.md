@@ -125,6 +125,7 @@ npm run build                       # 仅构建前端
 @.claude/rules/testing.md
 @.claude/rules/code-review-strategy.md
 @.claude/rules/ui-design.md
+@.claude/rules/database.md
 
 ## UI 设计
 

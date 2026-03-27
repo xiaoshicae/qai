@@ -49,7 +49,7 @@ export default function RunnerPanel() {
 
     unlistenRef.current = await listen<TestProgress>('test-progress', (event) => {
       setProgress((prev) => {
-        const idx = prev.findIndex((x) => x.request_id === event.payload.request_id)
+        const idx = prev.findIndex((x) => x.item_id === event.payload.item_id)
         if (idx >= 0) {
           const next = [...prev]
           next[idx] = event.payload
@@ -186,11 +186,11 @@ export default function RunnerPanel() {
       {running && progress.length > 0 && !batchResult && (
         <div className="rounded-xl border border-overlay/[0.06] overflow-hidden max-h-[400px] overflow-y-auto">
           {progress.map((p, i) => (
-            <div key={p.request_id} className={`flex items-center gap-2.5 px-4 py-2.5 text-sm ${i % 2 === 0 ? 'bg-card' : 'bg-transparent'}`}>
+            <div key={p.item_id} className={`flex items-center gap-2.5 px-4 py-2.5 text-sm ${i % 2 === 0 ? 'bg-card' : 'bg-transparent'}`}>
               <Badge variant={p.status === 'success' ? 'success' : p.status === 'failed' ? 'destructive' : 'secondary'}>
                 {p.status === 'success' ? 'PASS' : p.status === 'failed' ? 'FAIL' : p.status === 'running' ? 'RUN' : 'ERR'}
               </Badge>
-              <span className="flex-1 truncate">{p.request_name}</span>
+              <span className="flex-1 truncate">{p.item_name}</span>
               <span className="text-xs text-muted-foreground">{p.current}/{p.total}</span>
             </div>
           ))}
@@ -247,7 +247,7 @@ function ResultRow({ result, expanded, onToggle }: { result: ExecutionResult; ex
         <span className="flex items-center text-muted-foreground">
           {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
         </span>
-        <span className="truncate font-medium">{result.request_name}</span>
+        <span className="truncate font-medium">{result.item_name}</span>
         <span className="flex items-center gap-1">
           {statusIcon}
           <span className="text-xs">{result.status === 'success' ? 'PASS' : result.status === 'failed' ? 'FAIL' : 'ERR'}</span>

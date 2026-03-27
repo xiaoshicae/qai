@@ -88,6 +88,15 @@
             "command": "command -v jq >/dev/null 2>&1 || exit 0; cmd=$(cat - | jq -r '.tool_input.command // empty'); echo \"$cmd\" | grep -q 'gh pr create' && echo '[Hook] PR created - check CI status' || true"
           }
         ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v jq >/dev/null 2>&1 || exit 0; fp=$(cat - | jq -r '.tool_input.file_path // .tool_input.filePath // empty'); [ -n \"$fp\" ] && echo \"$fp\" | grep -qE 'src-tauri/src/(db|models)/' && echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"[DB Hook] 数据库相关文件已修改，如果涉及表结构或字段变更，请同步更新 .claude/rules/database.md 和 doc/database-design.md\"}}' || true"
+          }
+        ]
       }
     ],
     "PreToolUse": [

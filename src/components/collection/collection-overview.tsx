@@ -491,7 +491,7 @@ function InlineEdit({ value, placeholder, onSave }: { value: string; placeholder
 
 // ─── 场景行 ──────────────────────────
 function ScenarioRow({ r, stepLabel, indent, getResult, getStatus: _getStatus, statuses, progress, runningIds, expandedRows, detailData, toggleRow, runSingle, openEdit, deleteRequest, formatTime }: {
-  r: { id: string; name: string; method: string; folder?: string }
+  r: { id: string; name: string; method: string; folder?: string; expect_status?: number }
   stepLabel?: string
   indent?: boolean
   getResult: (id: string) => ExecutionResult | undefined

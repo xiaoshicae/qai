@@ -76,8 +76,10 @@ pub fn run() {
             commands::pty_cmd::pty_resize,
             commands::pty_cmd::pty_kill,
             commands::pty_cmd::prepare_mcp_config,
+            commands::claude_cmd::claude_start,
             commands::claude_cmd::claude_send,
             commands::claude_cmd::claude_stop,
+            commands::import_cmd::import_yaml_cases,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

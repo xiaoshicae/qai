@@ -243,10 +243,14 @@ fn migrate_if_needed(conn: &Connection) -> Result<(), rusqlite::Error> {
     }
 
     // 7. 删除旧表
+    if has_old_executions {
+        conn.execute_batch(
+            "DROP TABLE IF EXISTS executions;
+             ALTER TABLE executions_new RENAME TO executions;"
+        )?;
+    }
     conn.execute_batch(
-        "DROP TABLE IF EXISTS executions;
-         ALTER TABLE executions_new RENAME TO executions;
-         DROP TABLE IF EXISTS requests;
+        "DROP TABLE IF EXISTS requests;
          DROP TABLE IF EXISTS folders;"
     )?;
 

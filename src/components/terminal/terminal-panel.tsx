@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { Plus, X, ArrowUp, Square, Wrench, Slash, PlusCircle, RotateCcw, Cpu, Zap, Brain } from 'lucide-react'
+import { Plus, X, ArrowUp, Square, Wrench, Slash, RotateCcw, Cpu, Zap, Brain, PlusCircle } from 'lucide-react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 

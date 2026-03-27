@@ -555,6 +555,7 @@ function ScenarioRow({ r, stepLabel, indent, getResult, getStatus: _getStatus, s
   deleteRequest: (id: string, name: string, e: React.MouseEvent) => void
   formatTime: (ms: number) => string
 }) {
+  const [respTab, setRespTab] = useState<'body' | 'headers'>('body')
   const result = getResult(r.id)
   const prog = progress.find((p) => p.item_id === r.id)
   const old = statuses[r.id]
@@ -606,25 +607,55 @@ function ScenarioRow({ r, stepLabel, indent, getResult, getStatus: _getStatus, s
               </pre>
             </div>
             <div className="rounded-lg border border-overlay/[0.06] overflow-hidden">
-              <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 border-b border-overlay/[0.04] flex items-center gap-2">USER RESPONSE {resp && <span className="text-[9px] font-normal normal-case">{resp.status} | {resp.size_bytes}B</span>}</div>
-              {resp && resp.headers.length > 0 && (
-                <details className="border-b border-overlay/[0.04]">
-                  <summary className="px-3 py-1.5 text-[10px] text-muted-foreground/60 cursor-pointer hover:text-muted-foreground transition-colors">
-                    Response Headers ({resp.headers.length})
-                  </summary>
-                  <div className="px-3 py-1.5 text-[10px] font-mono space-y-0.5 max-h-32 overflow-y-auto">
-                    {resp.headers.map((h: { key: string; value: string }, hi: number) => (
-                      <div key={hi} className="flex gap-2">
-                        <span className="text-primary/70 shrink-0">{h.key}:</span>
-                        <span className="text-muted-foreground break-all">{h.value}</span>
-                      </div>
-                    ))}
+              {/* Tab 栏：Body / Headers + 状态信息 */}
+              <div className="flex items-center justify-between border-b border-overlay/[0.04] px-3">
+                <div className="flex items-center gap-0">
+                  <button className={`px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors relative ${respTab === 'body' ? 'text-foreground' : 'text-muted-foreground/60 hover:text-muted-foreground'}`} onClick={() => setRespTab('body')}>
+                    Body
+                    {respTab === 'body' && <span className="absolute bottom-0 left-1 right-1 h-0.5 bg-primary rounded-full" />}
+                  </button>
+                  <button className={`px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors relative ${respTab === 'headers' ? 'text-foreground' : 'text-muted-foreground/60 hover:text-muted-foreground'}`} onClick={() => setRespTab('headers')}>
+                    Headers{resp ? ` (${resp.headers.length})` : ''}
+                    {respTab === 'headers' && <span className="absolute bottom-0 left-1 right-1 h-0.5 bg-primary rounded-full" />}
+                  </button>
+                </div>
+                {resp && (
+                  <div className="flex items-center gap-2 text-[9px]">
+                    <span className={resp.status < 300 ? 'text-emerald-500 font-bold' : resp.status < 400 ? 'text-amber-500 font-bold' : 'text-red-500 font-bold'}>{resp.status} {resp.status_text}</span>
+                    <span className="text-muted-foreground">{formatTime(resp.time_ms)}</span>
+                    <span className="text-muted-foreground">{resp.size_bytes > 1024 ? `${(resp.size_bytes / 1024).toFixed(1)}KB` : `${resp.size_bytes}B`}</span>
                   </div>
-                </details>
+                )}
+              </div>
+              {/* Tab 内容 */}
+              {respTab === 'body' ? (
+                <pre className="px-3 py-2.5 text-xs font-mono whitespace-pre-wrap break-all max-h-52 overflow-y-auto">
+                  {resp ? (() => { try { return JSON.stringify(JSON.parse(resp.body), null, 2) } catch { return resp.body } })() : '尚未运行'}
+                </pre>
+              ) : (
+                <div className="max-h-52 overflow-y-auto">
+                  {resp && resp.headers.length > 0 ? (
+                    <table className="w-full text-[11px]">
+                      <thead>
+                        <tr className="border-b border-overlay/[0.04]">
+                          <th className="text-left px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 w-1/3">Key</th>
+                          <th className="text-left px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60">Value</th>
+                        </tr>
+                      </thead>
+                      <tbody className="font-mono">
+                        {resp.headers.map((h: { key: string; value: string }, hi: number) => (
+                          <tr key={hi} className="border-b border-overlay/[0.02] hover:bg-overlay/[0.03] transition-colors">
+                            <td className="px-3 py-1 text-primary/80 align-top">{h.key}</td>
+                            <td className="px-3 py-1 text-muted-foreground break-all">{h.value}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <div className="px-3 py-6 text-center text-xs text-muted-foreground/40">尚未运行</div>
+                  )}
+                </div>
               )}
-              <pre className="px-3 py-2.5 text-xs font-mono whitespace-pre-wrap break-all max-h-52 overflow-y-auto">
-                {resp ? (() => { try { return JSON.stringify(JSON.parse(resp.body), null, 2) } catch { return resp.body } })() : '尚未运行'}
-              </pre>
             </div>
           </div>
           {result && result.assertion_results.length > 0 && (

@@ -111,7 +111,7 @@ pub fn get_last_status_for_collection(conn: &Connection, collection_id: &str) ->
     rows.collect()
 }
 
-fn count_assertions(json: &str) -> (u32, u32) {
+pub(crate) fn count_assertions(json: &str) -> (u32, u32) {
     if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(json) {
         let total = arr.len() as u32;
         let passed = arr.iter().filter(|a| a.get("passed").and_then(|v| v.as_bool()).unwrap_or(false)).count() as u32;
@@ -157,4 +157,42 @@ pub fn cleanup(conn: &Connection, max_per_item: u32) -> Result<u64, rusqlite::Er
         params![max_per_item],
     )?;
     Ok(deleted as u64)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_count_assertions_all_passed() {
+        let json = r#"[{"passed":true},{"passed":true}]"#;
+        assert_eq!(count_assertions(json), (2, 2));
+    }
+
+    #[test]
+    fn test_count_assertions_mixed() {
+        let json = r#"[{"passed":true},{"passed":false},{"passed":true}]"#;
+        assert_eq!(count_assertions(json), (3, 2));
+    }
+
+    #[test]
+    fn test_count_assertions_empty_array() {
+        assert_eq!(count_assertions("[]"), (0, 0));
+    }
+
+    #[test]
+    fn test_count_assertions_invalid_json() {
+        assert_eq!(count_assertions("not json"), (0, 0));
+    }
+
+    #[test]
+    fn test_count_assertions_missing_passed_field() {
+        let json = r#"[{"other":"field"},{"passed":true}]"#;
+        assert_eq!(count_assertions(json), (2, 1));
+    }
+
+    #[test]
+    fn test_count_assertions_empty_string() {
+        assert_eq!(count_assertions(""), (0, 0));
+    }
 }

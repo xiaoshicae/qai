@@ -117,9 +117,162 @@ pub fn generate_html_report(result: &BatchResult) -> String {
     )
 }
 
-fn html_escape(s: &str) -> String {
+pub(crate) fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::assertion::AssertionResult;
+    use crate::models::execution::ExecutionResult;
+    use crate::models::item::HttpResponse;
+
+    #[test]
+    fn test_html_escape_ampersand() {
+        assert_eq!(html_escape("a & b"), "a &amp; b");
+    }
+
+    #[test]
+    fn test_html_escape_lt_gt() {
+        assert_eq!(html_escape("<script>"), "&lt;script&gt;");
+    }
+
+    #[test]
+    fn test_html_escape_quotes() {
+        assert_eq!(html_escape(r#""hello""#), "&quot;hello&quot;");
+    }
+
+    #[test]
+    fn test_html_escape_no_change() {
+        assert_eq!(html_escape("plain text"), "plain text");
+    }
+
+    #[test]
+    fn test_html_escape_combined() {
+        assert_eq!(html_escape(r#"<a href="x">&"#), "&lt;a href=&quot;x&quot;&gt;&amp;");
+    }
+
+    fn make_exec_result(status: &str, resp_status: u16, time_ms: u64) -> ExecutionResult {
+        ExecutionResult {
+            execution_id: "12345678-abcd".into(),
+            item_id: "i1".into(),
+            item_name: "test".into(),
+            status: status.into(),
+            response: Some(HttpResponse {
+                status: resp_status,
+                status_text: "OK".into(),
+                headers: vec![],
+                body: String::new(),
+                time_ms,
+                size_bytes: 0,
+            }),
+            assertion_results: vec![],
+            error_message: None,
+        }
+    }
+
+    #[test]
+    fn test_report_empty_results() {
+        let batch = BatchResult {
+            batch_id: "b1".into(),
+            total: 0, passed: 0, failed: 0, errors: 0,
+            total_time_ms: 0, results: vec![],
+        };
+        let html = generate_html_report(&batch);
+        assert!(html.contains("0.0%"));
+        assert!(html.contains("<!DOCTYPE html>"));
+    }
+
+    #[test]
+    fn test_report_all_pass() {
+        let batch = BatchResult {
+            batch_id: "b1".into(),
+            total: 2, passed: 2, failed: 0, errors: 0,
+            total_time_ms: 100,
+            results: vec![
+                make_exec_result("success", 200, 50),
+                make_exec_result("success", 200, 50),
+            ],
+        };
+        let html = generate_html_report(&batch);
+        assert!(html.contains("100.0%"));
+    }
+
+    #[test]
+    fn test_report_mixed_results() {
+        let batch = BatchResult {
+            batch_id: "b1".into(),
+            total: 3, passed: 2, failed: 1, errors: 0,
+            total_time_ms: 150,
+            results: vec![
+                make_exec_result("success", 200, 50),
+                make_exec_result("success", 200, 50),
+                make_exec_result("failed", 404, 50),
+            ],
+        };
+        let html = generate_html_report(&batch);
+        assert!(html.contains("66.7%"));
+    }
+
+    #[test]
+    fn test_report_contains_structure() {
+        let batch = BatchResult {
+            batch_id: "b1".into(),
+            total: 1, passed: 1, failed: 0, errors: 0,
+            total_time_ms: 50,
+            results: vec![make_exec_result("success", 200, 50)],
+        };
+        let html = generate_html_report(&batch);
+        assert!(html.contains("<!DOCTYPE html>"));
+        assert!(html.contains("<table>"));
+        assert!(html.contains("<thead>"));
+        assert!(html.contains("QAI 测试报告"));
+    }
+
+    #[test]
+    fn test_report_escapes_error_message() {
+        let mut result = make_exec_result("error", 500, 0);
+        result.error_message = Some("<script>alert('xss')</script>".into());
+        let batch = BatchResult {
+            batch_id: "b1".into(),
+            total: 1, passed: 0, failed: 0, errors: 1,
+            total_time_ms: 0,
+            results: vec![result],
+        };
+        let html = generate_html_report(&batch);
+        assert!(html.contains("&lt;script&gt;"));
+        assert!(!html.contains("<script>alert"));
+    }
+
+    #[test]
+    fn test_report_with_assertions() {
+        let mut result = make_exec_result("success", 200, 50);
+        result.assertion_results = vec![
+            AssertionResult {
+                assertion_id: "a1".into(),
+                passed: true,
+                actual: "200".into(),
+                message: "状态码 200 eq 200".into(),
+            },
+            AssertionResult {
+                assertion_id: "a2".into(),
+                passed: false,
+                actual: "{}".into(),
+                message: "路径 $.id 未找到".into(),
+            },
+        ];
+        let batch = BatchResult {
+            batch_id: "b1".into(),
+            total: 1, passed: 0, failed: 1, errors: 0,
+            total_time_ms: 50,
+            results: vec![result],
+        };
+        let html = generate_html_report(&batch);
+        assert!(html.contains("&#10004;"));
+        assert!(html.contains("&#10008;"));
+    }
 }

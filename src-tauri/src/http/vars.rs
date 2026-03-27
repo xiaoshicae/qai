@@ -103,6 +103,43 @@ pub fn extract_variables(rules: &[ExtractRule], response: &HttpResponse) -> Hash
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::item::{CollectionItem, ExtractRule, HttpResponse, KeyValuePair};
+
+    fn make_env_var(key: &str, value: &str, enabled: bool) -> EnvVariable {
+        EnvVariable {
+            id: "v1".into(),
+            environment_id: "e1".into(),
+            key: key.into(),
+            value: value.into(),
+            enabled,
+            sort_order: 0,
+        }
+    }
+
+    fn make_item(url: &str, headers: &str, params: &str, body: &str) -> CollectionItem {
+        CollectionItem {
+            id: "i1".into(),
+            collection_id: "c1".into(),
+            parent_id: None,
+            item_type: "request".into(),
+            name: "test".into(),
+            sort_order: 0,
+            method: "GET".into(),
+            url: url.into(),
+            headers: headers.into(),
+            query_params: params.into(),
+            body_type: "json".into(),
+            body_content: body.into(),
+            extract_rules: "[]".into(),
+            description: String::new(),
+            expect_status: 200,
+            poll_config: String::new(),
+            created_at: String::new(),
+            updated_at: String::new(),
+        }
+    }
+
+    // ─── replace_vars ───────────────────────────────────────
 
     #[test]
     fn test_replace_vars() {
@@ -120,5 +157,208 @@ mod tests {
     fn test_replace_vars_empty() {
         let vars = HashMap::new();
         assert_eq!(replace_vars("{{base_url}}/users", &vars), "{{base_url}}/users");
+    }
+
+    #[test]
+    fn test_replace_vars_multiple_same() {
+        let mut vars = HashMap::new();
+        vars.insert("x".into(), "val".into());
+        assert_eq!(replace_vars("{{x}}/{{x}}", &vars), "val/val");
+    }
+
+    #[test]
+    fn test_replace_vars_adjacent() {
+        let mut vars = HashMap::new();
+        vars.insert("a".into(), "1".into());
+        vars.insert("b".into(), "2".into());
+        assert_eq!(replace_vars("{{a}}{{b}}", &vars), "12");
+    }
+
+    #[test]
+    fn test_replace_vars_no_braces_fast_path() {
+        let mut vars = HashMap::new();
+        vars.insert("x".into(), "y".into());
+        assert_eq!(replace_vars("plain text", &vars), "plain text");
+    }
+
+    // ─── build_var_map ──────────────────────────────────────
+
+    #[test]
+    fn test_build_var_map_basic() {
+        let vars = vec![
+            make_env_var("host", "localhost", true),
+            make_env_var("port", "8080", true),
+        ];
+        let map = build_var_map(&vars);
+        assert_eq!(map.len(), 2);
+        assert_eq!(map["host"], "localhost");
+        assert_eq!(map["port"], "8080");
+    }
+
+    #[test]
+    fn test_build_var_map_skips_disabled() {
+        let vars = vec![
+            make_env_var("host", "localhost", true),
+            make_env_var("secret", "xxx", false),
+        ];
+        let map = build_var_map(&vars);
+        assert_eq!(map.len(), 1);
+        assert!(!map.contains_key("secret"));
+    }
+
+    #[test]
+    fn test_build_var_map_skips_empty_key() {
+        let vars = vec![make_env_var("", "val", true)];
+        let map = build_var_map(&vars);
+        assert!(map.is_empty());
+    }
+
+    #[test]
+    fn test_build_var_map_empty_input() {
+        let map = build_var_map(&[]);
+        assert!(map.is_empty());
+    }
+
+    // ─── apply_vars ─────────────────────────────────────────
+
+    #[test]
+    fn test_apply_vars_url_replaced() {
+        let mut vars = HashMap::new();
+        vars.insert("host".into(), "example.com".into());
+        let item = make_item("https://{{host}}/api", "[]", "[]", "");
+        let result = apply_vars(&item, &vars);
+        assert_eq!(result.url, "https://example.com/api");
+    }
+
+    #[test]
+    fn test_apply_vars_body_replaced() {
+        let mut vars = HashMap::new();
+        vars.insert("token".into(), "abc".into());
+        let item = make_item("http://x.com", "[]", "[]", r#"{"token":"{{token}}"}"#);
+        let result = apply_vars(&item, &vars);
+        assert_eq!(result.body_content, r#"{"token":"abc"}"#);
+    }
+
+    #[test]
+    fn test_apply_vars_headers_replaced() {
+        let mut vars = HashMap::new();
+        vars.insert("auth".into(), "Bearer tok".into());
+        let headers = r#"[{"key":"Authorization","value":"{{auth}}","enabled":true}]"#;
+        let item = make_item("http://x.com", headers, "[]", "");
+        let result = apply_vars(&item, &vars);
+        let parsed: Vec<KeyValuePair> = serde_json::from_str(&result.headers).unwrap();
+        assert_eq!(parsed[0].value, "Bearer tok");
+    }
+
+    #[test]
+    fn test_apply_vars_empty_vars_returns_clone() {
+        let vars = HashMap::new();
+        let item = make_item("http://{{host}}", "[]", "[]", "");
+        let result = apply_vars(&item, &vars);
+        assert_eq!(result.url, "http://{{host}}");
+    }
+
+    #[test]
+    fn test_apply_vars_invalid_headers_json() {
+        let mut vars = HashMap::new();
+        vars.insert("x".into(), "y".into());
+        let item = make_item("http://x.com", "not json", "[]", "");
+        let result = apply_vars(&item, &vars);
+        assert_eq!(result.headers, "not json");
+    }
+
+    // ─── extract_variables ──────────────────────────────────
+
+    #[test]
+    fn test_extract_var_from_json_body() {
+        let rules = vec![ExtractRule {
+            var_name: "token".into(),
+            source: "json_body".into(),
+            expression: "$.data.token".into(),
+        }];
+        let response = HttpResponse {
+            status: 200, status_text: "OK".into(),
+            headers: vec![], body: r#"{"data":{"token":"abc123"}}"#.into(),
+            time_ms: 50, size_bytes: 30,
+        };
+        let vars = extract_variables(&rules, &response);
+        assert_eq!(vars["token"], "abc123");
+    }
+
+    #[test]
+    fn test_extract_var_from_header() {
+        let rules = vec![ExtractRule {
+            var_name: "req_id".into(),
+            source: "header".into(),
+            expression: "X-Request-Id".into(),
+        }];
+        let response = HttpResponse {
+            status: 200, status_text: "OK".into(),
+            headers: vec![KeyValuePair { key: "x-request-id".into(), value: "rid-123".into(), enabled: true }],
+            body: String::new(), time_ms: 50, size_bytes: 0,
+        };
+        let vars = extract_variables(&rules, &response);
+        assert_eq!(vars["req_id"], "rid-123");
+    }
+
+    #[test]
+    fn test_extract_var_from_status_code() {
+        let rules = vec![ExtractRule {
+            var_name: "code".into(),
+            source: "status_code".into(),
+            expression: String::new(),
+        }];
+        let response = HttpResponse {
+            status: 201, status_text: "Created".into(),
+            headers: vec![], body: String::new(), time_ms: 50, size_bytes: 0,
+        };
+        let vars = extract_variables(&rules, &response);
+        assert_eq!(vars["code"], "201");
+    }
+
+    #[test]
+    fn test_extract_var_unknown_source() {
+        let rules = vec![ExtractRule {
+            var_name: "x".into(),
+            source: "unknown".into(),
+            expression: String::new(),
+        }];
+        let response = HttpResponse {
+            status: 200, status_text: "OK".into(),
+            headers: vec![], body: String::new(), time_ms: 0, size_bytes: 0,
+        };
+        let vars = extract_variables(&rules, &response);
+        assert!(vars.is_empty());
+    }
+
+    #[test]
+    fn test_extract_var_json_body_not_json() {
+        let rules = vec![ExtractRule {
+            var_name: "x".into(),
+            source: "json_body".into(),
+            expression: "$.id".into(),
+        }];
+        let response = HttpResponse {
+            status: 200, status_text: "OK".into(),
+            headers: vec![], body: "not json".into(), time_ms: 0, size_bytes: 0,
+        };
+        let vars = extract_variables(&rules, &response);
+        assert!(vars.is_empty());
+    }
+
+    #[test]
+    fn test_extract_var_without_dollar_prefix() {
+        let rules = vec![ExtractRule {
+            var_name: "name".into(),
+            source: "json_body".into(),
+            expression: "data.name".into(),
+        }];
+        let response = HttpResponse {
+            status: 200, status_text: "OK".into(),
+            headers: vec![], body: r#"{"data":{"name":"test"}}"#.into(),
+            time_ms: 0, size_bytes: 0,
+        };
+        let vars = extract_variables(&rules, &response);
+        assert_eq!(vars["name"], "test");
     }
 }

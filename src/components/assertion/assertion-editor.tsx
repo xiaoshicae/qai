@@ -94,7 +94,7 @@ export default function AssertionEditor({ requestId }: { requestId: string }) {
               defaultValue={a.expression}
               onBlur={(e) => update(a.id, 'expression', e.target.value)}
               placeholder={a.type === 'json_path' ? '$.data.id' : 'content-type'}
-              className="h-7 text-xs w-[120px] bg-white/[0.03] border-transparent focus-visible:border-white/[0.12]"
+              className="h-7 text-xs w-[120px] bg-overlay/[0.03] border-transparent focus-visible:border-overlay/[0.12]"
             />
           )}
           <Select
@@ -107,7 +107,7 @@ export default function AssertionEditor({ requestId }: { requestId: string }) {
             defaultValue={a.expected}
             onBlur={(e) => update(a.id, 'expected', e.target.value)}
             placeholder="预期值"
-            className="h-7 text-xs flex-1 min-w-[60px] bg-white/[0.03] border-transparent focus-visible:border-white/[0.12]"
+            className="h-7 text-xs flex-1 min-w-[60px] bg-overlay/[0.03] border-transparent focus-visible:border-overlay/[0.12]"
           />
           <Button
             variant="ghost"
@@ -122,7 +122,7 @@ export default function AssertionEditor({ requestId }: { requestId: string }) {
       <Button
         variant="ghost"
         size="sm"
-        className="w-full h-7 text-xs text-muted-foreground hover:text-foreground border border-dashed border-white/[0.06] hover:border-white/[0.1]"
+        className="w-full h-7 text-xs text-muted-foreground hover:text-foreground border border-dashed border-overlay/[0.06] hover:border-overlay/[0.1]"
         onClick={add}
       >
         <Plus className="h-3 w-3 mr-1" /> 添加断言

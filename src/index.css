@@ -13,33 +13,33 @@
   --color-overlay: oklch(1 0 0);
 
   /* ═══ 默认浅色主题 ═══ */
-  --color-background: oklch(0.965 0.002 260);
+  --color-background: oklch(0.955 0.003 260);
   --color-foreground: oklch(0.14 0.005 260);
-  --color-card: oklch(1 0 0);
+  --color-card: oklch(0.99 0.001 260);
   --color-card-foreground: oklch(0.14 0.005 260);
-  --color-popover: oklch(1 0 0);
+  --color-popover: oklch(0.99 0.001 260);
   --color-popover-foreground: oklch(0.14 0.005 260);
-  --color-secondary: oklch(0.94 0.003 260);
+  --color-secondary: oklch(0.92 0.004 260);
   --color-secondary-foreground: oklch(0.14 0.005 260);
-  --color-muted: oklch(0.94 0.003 260);
-  --color-muted-foreground: oklch(0.45 0.01 260);
-  --color-accent: oklch(0.94 0.003 260);
+  --color-muted: oklch(0.93 0.004 260);
+  --color-muted-foreground: oklch(0.4 0.015 260);
+  --color-accent: oklch(0.93 0.004 260);
   --color-accent-foreground: oklch(0.14 0.005 260);
   --color-destructive: oklch(0.577 0.245 27.33);
   --color-destructive-foreground: oklch(1 0 0);
-  --color-border: oklch(0.88 0.005 260);
-  --color-input: oklch(0.88 0.005 260);
+  --color-border: oklch(0.82 0.008 260);
+  --color-input: oklch(0.82 0.008 260);
   --color-ring: oklch(0.55 0.2 250);
-  --color-surface: oklch(0.97 0.002 260);
+  --color-surface: oklch(0.96 0.003 260);
 
   /* 侧边栏 */
-  --color-sidebar: oklch(0.975 0.002 260);
+  --color-sidebar: oklch(0.965 0.003 260);
   --color-sidebar-foreground: oklch(0.14 0.005 260);
   --color-sidebar-primary: oklch(0.55 0.2 250);
   --color-sidebar-primary-foreground: oklch(0.98 0 0);
-  --color-sidebar-accent: oklch(0.94 0.003 260);
+  --color-sidebar-accent: oklch(0.92 0.004 260);
   --color-sidebar-accent-foreground: oklch(0.14 0.005 260);
-  --color-sidebar-border: oklch(0.91 0.003 260);
+  --color-sidebar-border: oklch(0.87 0.005 260);
   --color-sidebar-ring: oklch(0.55 0.2 250);
 
   /* 圆角 */
@@ -82,10 +82,35 @@
   --color-sidebar-border: oklch(0.22 0.006 260);
 }
 
-/* 浅色模式 overlay 为黑色 */
+/* 浅色模式 overlay */
 :root:not(.dark) {
   --color-overlay: oklch(0 0 0);
 }
+
+/*
+  浅色模式下，overlay 低透明度边框几乎不可见（6% 黑色在白底上太淡）。
+  通过覆盖 Tailwind 生成的 border-color 来统一加强浅色边框。
+*/
+:root:not(.dark) .border-overlay\/\[0\.04\] { border-color: oklch(0 0 0 / 0.08); }
+:root:not(.dark) .border-overlay\/\[0\.06\] { border-color: oklch(0 0 0 / 0.12); }
+:root:not(.dark) .border-overlay\/\[0\.08\] { border-color: oklch(0 0 0 / 0.15); }
+:root:not(.dark) .border-overlay\/\[0\.1\] { border-color: oklch(0 0 0 / 0.18); }
+:root:not(.dark) .border-overlay\/\[0\.12\] { border-color: oklch(0 0 0 / 0.2); }
+:root:not(.dark) .border-overlay\/\[0\.15\] { border-color: oklch(0 0 0 / 0.22); }
+
+/* 浅色模式下 hover 边框也加强 */
+:root:not(.dark) .hover\:border-overlay\/\[0\.1\]:hover { border-color: oklch(0 0 0 / 0.2); }
+:root:not(.dark) .hover\:border-overlay\/\[0\.12\]:hover { border-color: oklch(0 0 0 / 0.25); }
+
+/* 浅色模式下半透明背景也略微加强（改善 hover/active 可见性） */
+:root:not(.dark) .bg-overlay\/\[0\.03\] { background-color: oklch(0 0 0 / 0.04); }
+:root:not(.dark) .bg-overlay\/\[0\.04\] { background-color: oklch(0 0 0 / 0.06); }
+:root:not(.dark) .bg-overlay\/\[0\.06\] { background-color: oklch(0 0 0 / 0.08); }
+:root:not(.dark) .bg-overlay\/\[0\.08\] { background-color: oklch(0 0 0 / 0.1); }
+:root:not(.dark) .hover\:bg-overlay\/\[0\.04\]:hover { background-color: oklch(0 0 0 / 0.07); }
+:root:not(.dark) .hover\:bg-overlay\/\[0\.06\]:hover { background-color: oklch(0 0 0 / 0.1); }
+:root:not(.dark) .hover\:bg-overlay\/\[0\.08\]:hover { background-color: oklch(0 0 0 / 0.12); }
+:root:not(.dark) .hover\:bg-overlay\/\[0\.1\]:hover { background-color: oklch(0 0 0 / 0.14); }
 
 @theme {
   --color-method-get: oklch(0.72 0.19 155);
@@ -178,11 +203,11 @@ input, textarea, pre, code {
 }
 
 :root:not(.dark) .glass-card {
-  background: oklch(1 0 0 / 0.85);
-  border-color: oklch(0 0 0 / 0.08);
+  background: oklch(0.995 0.001 260 / 0.9);
+  border-color: oklch(0 0 0 / 0.1);
   box-shadow:
-    0 1px 3px oklch(0 0 0 / 0.04),
-    0 4px 12px oklch(0 0 0 / 0.03);
+    0 1px 3px oklch(0 0 0 / 0.06),
+    0 4px 16px oklch(0 0 0 / 0.05);
 }
 
 .glass-card-hover:hover {

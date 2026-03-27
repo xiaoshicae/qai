@@ -34,7 +34,7 @@ export function Select({ value, onChange, options, className, placeholder }: Sel
     <div ref={ref} className={cn('relative', className)}>
       <button
         type="button"
-        className="flex items-center justify-between gap-1.5 w-full h-9 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 text-sm transition-all duration-200 cursor-pointer hover:border-white/[0.12] focus:border-primary/50 focus:ring-2 focus:ring-primary/20 outline-none"
+        className="flex items-center justify-between gap-1.5 w-full h-9 rounded-xl border border-overlay/[0.08] bg-overlay/[0.03] px-3 text-sm transition-all duration-200 cursor-pointer hover:border-overlay/[0.12] focus:border-primary/50 focus:ring-2 focus:ring-primary/20 outline-none"
         onClick={() => setOpen(!open)}
       >
         <span className={selected ? 'text-foreground font-medium' : 'text-muted-foreground'}>
@@ -53,7 +53,7 @@ export function Select({ value, onChange, options, className, placeholder }: Sel
                 type="button"
                 className={cn(
                   'flex items-center gap-2 w-full px-2.5 py-1.5 rounded-lg text-sm cursor-pointer transition-colors',
-                  active ? 'bg-white/[0.08] text-foreground' : 'text-foreground/70 hover:bg-white/[0.06] hover:text-foreground'
+                  active ? 'bg-overlay/[0.08] text-foreground' : 'text-foreground/70 hover:bg-overlay/[0.06] hover:text-foreground'
                 )}
                 onClick={() => { onChange(opt.value); setOpen(false) }}
               >

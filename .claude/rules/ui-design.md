@@ -2,151 +2,170 @@
 
 ## 设计风格
 
-高端深色 SaaS Dashboard 风格。参考：Linear、concierge.ai、Hoppscotch。
+高端 SaaS Dashboard 风格，支持深色/浅色双主题。参考：Linear、concierge.ai、Hoppscotch。
+
+## 主题系统
+
+### 切换机制
+
+- 通过 `useThemeStore`（`src/stores/theme-store.ts`）管理，支持 `dark` / `light` / `system` 三种模式
+- 在 `<html>` 上添加 `.dark` 或 `.light` 类来切换
+- 持久化到 SQLite settings 表（key: `theme_mode`）
+- `system` 模式监听 `prefers-color-scheme` 媒体查询
+
+### CSS 变量结构
+
+```
+index.css:
+  @theme { ... }        ← 浅色主题为默认值
+  .dark { ... }         ← 深色主题覆盖
+  :root:not(.dark) { }  ← 浅色特定样式
+```
+
+## overlay 色（核心概念）
+
+**`--color-overlay`** 是双主题系统的关键：
+- 深色模式 = 白色 `oklch(1 0 0)` → 叠加在深底上产生"微亮"效果
+- 浅色模式 = 黑色 `oklch(0 0 0)` → 叠加在浅底上产生"微暗"效果
+
+**所有半透明叠加层必须使用 `overlay`，禁止硬编码 `white` 或 `black`。**
+
+```
+bg-overlay/[0.03]   ← 输入框/textarea 背景
+bg-overlay/[0.04]   ← hover 态
+bg-overlay/[0.06]   ← 分割线、badge 背景
+bg-overlay/[0.08]   ← active/selected 态
+border-overlay/[0.06] ← 静态边框
+border-overlay/[0.08] ← 输入框边框
+border-overlay/[0.10] ← hover 边框
+border-overlay/[0.12] ← 焦点/强调边框
+border-overlay/[0.15] ← 最强边框（radio 等）
+```
 
 ## 色彩系统
 
-所有颜色使用 OKLch 色彩空间，**禁止纯灰**（色度 0），每个灰度加微量蓝紫色调（色度 0.004~0.006，色相 260）。
+所有颜色使用 OKLch 色彩空间，**禁止纯灰**（色度 0），每个灰度加微量蓝紫色调（色度 0.002~0.006，色相 260）。
 
-### 三级灰度层次
+### 深色色板
 
+| 用途 | 值 | Tailwind |
+|------|-----|---------|
+| 背景 | `oklch(0.145 0.004 260)` | `bg-background` |
+| 卡片 | `oklch(0.185 0.005 260)` | `bg-card` |
+| 侧边栏 | `oklch(0.125 0.004 260)` | `bg-sidebar` |
+| 前景文字 | `oklch(0.93 0.005 260)` | `text-foreground` |
+| 次要文字 | `oklch(0.55 0.01 260)` | `text-muted-foreground` |
+| 品牌色 | `oklch(0.65 0.18 240)` | `text-primary` |
+
+### 浅色色板
+
+| 用途 | 值 | Tailwind |
+|------|-----|---------|
+| 背景 | `oklch(0.965 0.002 260)` | `bg-background` |
+| 卡片 | `oklch(1 0 0)` | `bg-card` |
+| 侧边栏 | `oklch(0.975 0.002 260)` | `bg-sidebar` |
+| 前景文字 | `oklch(0.14 0.005 260)` | `text-foreground` |
+| 次要文字 | `oklch(0.45 0.01 260)` | `text-muted-foreground` |
+| 品牌色 | `oklch(0.55 0.2 250)` | `text-primary` |
+
+## 效果类（自动适配双主题）
+
+### glass-card
+
+深色：半透明深灰底 + 白色微光边框 + 强阴影 + 顶部内光
+浅色：半透明白底 + 黑色微光边框 + 柔和阴影
+
+```html
+<div className="glass-card rounded-2xl p-5">...</div>
 ```
-背景层（最深）   oklch(0.145 0.004 260)  →  bg-background / bg-sidebar
-卡片层（中间）   oklch(0.185 0.005 260)  →  bg-card / glass-card
-表面层（最浅）   oklch(0.21  0.006 260)  →  bg-surface
+
+### btn-gradient
+
+深色：亮青蓝→紫蓝渐变 + 品牌色光晕
+浅色：深青蓝→紫蓝渐变 + 更强投影
+
+```html
+<button className="btn-gradient text-primary-foreground">...</button>
 ```
 
-### 交互态统一系统
+### glow-ring
+
+选中态微光，深浅色自动调整亮度。
+
+### text-gradient
+
+渐变文字，深色更亮，浅色更暗以保证对比度。
+
+### divider-glow
+
+面板间分隔线，深浅色自动调整透明度。
+
+## 交互态
 
 ```
 默认:     bg-transparent
-Hover:    bg-white/[0.04]
-Active:   bg-white/[0.08]
-Selected: bg-white/[0.08] + glow-ring
+Hover:    bg-overlay/[0.04]
+Active:   bg-overlay/[0.08]
+Selected: bg-overlay/[0.08] + glow-ring
 ```
 
-## 边框系统
-
-**使用半透明白色边框，禁止实色 border 变量。**
+## 边框
 
 ```
-静态:   border-white/[0.06]
-Hover:  border-white/[0.08] 或 border-white/[0.1]
-焦点:   border-primary/50 + ring-2 ring-primary/20
-分割线: border-white/[0.04] 或 border-white/[0.06]
+静态:     border-overlay/[0.06]
+输入框:   border-overlay/[0.08]
+Hover:    border-overlay/[0.10] 或 hover:border-overlay/[0.12]
+焦点:     border-primary/50 + ring-2 ring-primary/20
+分割线:   border-overlay/[0.06] 或 border-overlay/[0.04]
 ```
-
-### 禁止的旧写法
-
-| 禁止 | 替代 |
-|------|------|
-| `ring-1 ring-foreground/10` | `border border-white/[0.06]` 或 `glass-card` |
-| `dark:bg-input/30` | 已内置到 Input/Textarea 组件 |
-| `bg-muted/30` | `bg-white/[0.03]` |
-| `bg-muted/50` | `bg-white/[0.04]` |
-| `border-border` (JSX 中) | `border-white/[0.06]` |
-| `border-foreground/5` | `border-white/[0.04]` |
-| `bg-surface-1` | `bg-white/[0.03]` |
-| `bg-sidebar-accent` | `bg-white/[0.08]` |
-
-## 卡片与容器
-
-### glass-card（毛玻璃卡片）
-
-用于所有独立卡片、弹窗、右键菜单：
-
-```css
-.glass-card {
-  background: oklch(0.185 0.005 260 / 0.8);
-  border: 1px solid oklch(1 0 0 / 0.06);
-  box-shadow: 0 0 0 1px oklch(0 0 0 / 0.3), 0 2px 8px oklch(0 0 0 / 0.2), inset 0 1px 0 oklch(1 0 0 / 0.03);
-  backdrop-filter: blur(12px);
-}
-```
-
-关键点：`inset 0 1px 0 rgba(255,255,255,0.03)` 顶部内光是高级感的核心。
-
-### glow-ring（选中态微光）
-
-用于选中的列表项、活跃的导航标签：
-
-```css
-.glow-ring {
-  box-shadow: 0 0 0 1px oklch(0.65 0.18 240 / 0.3), 0 0 8px oklch(0.65 0.18 240 / 0.1);
-}
-```
-
-## 按钮
-
-### 主按钮：渐变 + 光晕
-
-```css
-.btn-gradient {
-  background: linear-gradient(135deg, oklch(0.6 0.18 240), oklch(0.55 0.2 280));
-  box-shadow: 0 1px 2px oklch(0 0 0 / 0.3), 0 0 12px oklch(0.6 0.18 240 / 0.15);
-}
-```
-
-渐变方向统一 135deg，青蓝（hue 240）→ 紫蓝（hue 280）。
-
-### 按钮禁用态
-
-`disabled:opacity-40`（不是 50）。
 
 ## 圆角
 
 ```
-小元素（badge、标签）   →  rounded-lg  (6px)
-中等元素（按钮、输入框）→  rounded-xl  (12px)
-大容器（卡片、弹窗）    →  rounded-2xl (16px)
+小元素（badge）     →  rounded-lg  (6px)
+中等（按钮/输入框）→  rounded-xl  (12px)
+大容器（卡片/弹窗）→  rounded-2xl (16px)
 ```
-
-同一层级圆角一致，嵌套元素内层比外层小。
 
 ## 间距
 
 ```
-卡片内 padding:  p-5  (20px)
-卡片间 gap:      space-y-4
-按钮高度:        h-9  (36px)
-输入框高度:      h-9  (36px)
-页面 padding:    px-8 py-8
+卡片内 padding:    p-5
+卡片间 gap:        space-y-4
+按钮/输入框高度:   h-9
+页面 padding:      px-8 py-8
 ```
 
-原则：宁可留白多，也不要挤。
+## 过渡
 
-## 分割线
+所有交互元素：`transition-all duration-200`
 
-```
-面板内分割线:   border-t border-white/[0.06]
-面板间分隔:     divider-glow (渐变发光)
-```
+## 禁止的写法
 
-禁止使用 `border-t border-border` 这种实色分割线。
-
-## 过渡动画
-
-所有交互元素：`transition-all duration-200`。
+| 禁止 | 替代 | 原因 |
+|------|------|------|
+| `bg-white/[0.0x]` | `bg-overlay/[0.0x]` | 浅色模式下白底叠白色不可见 |
+| `border-white/[0.0x]` | `border-overlay/[0.0x]` | 同上 |
+| `ring-1 ring-foreground/10` | `border border-overlay/[0.06]` 或 `glass-card` | 旧写法，不统一 |
+| `dark:bg-input/30` | 已内置到 Input/Textarea 组件 | 使用 overlay 系统 |
+| `bg-muted/30` | `bg-overlay/[0.03]` | 统一用 overlay |
+| `border-border` (JSX 中) | `border-overlay/[0.06]` | 统一用 overlay |
+| `bg-surface-1` | `bg-overlay/[0.03]` | 不存在的变量 |
+| 原生 `<select>` | `@/components/ui/select.tsx` | 原生下拉白色系统样式 |
+| `tauriConfirm` / `tauri-plugin-dialog` 的 `confirm` | `useConfirmStore` (`@/components/ui/confirm-dialog.tsx`) | 原生弹窗白色系统样式 |
 
 ## 原生控件替代
 
-### 禁止使用原生 `<select>`
-
-macOS WebView 的原生 select 下拉菜单为白色系统样式，与深色主题冲突。
-
-必须使用 `@/components/ui/select.tsx`（自定义 Select 组件）。
-
-### 禁止使用原生系统弹窗
-
-`tauri-plugin-dialog` 的 `confirm()` 弹出白色系统弹窗。
-
-必须使用 `@/components/ui/confirm-dialog.tsx`（useConfirmStore）。
+### 自定义 Select
 
 ```tsx
-// 禁止
-import { confirm } from '@tauri-apps/plugin-dialog'
+import { Select } from '@/components/ui/select'
+<Select value={v} onChange={setV} options={[{ value: 'a', label: 'A' }]} />
+```
 
-// 正确
+### 自定义确认弹窗
+
+```tsx
 import { useConfirmStore } from '@/components/ui/confirm-dialog'
 const confirm = useConfirmStore((s) => s.confirm)
 const ok = await confirm('确定删除？', { title: '删除', kind: 'warning' })
@@ -154,21 +173,17 @@ const ok = await confirm('确定删除？', { title: '删除', kind: 'warning' }
 
 ## macOS 标题栏
 
-- `tauri.conf.json` 中配置 `titleBarStyle: "Overlay"` + `hiddenTitle: true`
+- `tauri.conf.json`: `titleBarStyle: "Overlay"` + `hiddenTitle: true`
 - 侧边栏顶部 `pt-9` + `data-tauri-drag-region`
 - 主内容区/AI 面板顶部 `h-8` + `data-tauri-drag-region`
-- 红绿灯所在区域内子元素也需要 `data-tauri-drag-region` 属性
 
-## 新建组件检查清单
+## 新建/修改组件检查清单
 
-新增或修改任何 UI 组件时：
-
-- [ ] 不使用纯灰色 `oklch(x 0 0)`
-- [ ] 不使用实色 border 变量（`border-border`）
+- [ ] 半透明叠加用 `overlay`，不用 `white` 或 `black`
 - [ ] 不使用 `ring-1 ring-foreground/10`
 - [ ] 不使用原生 `<select>` 或 `tauriConfirm`
-- [ ] 不使用 `dark:bg-input/30`
-- [ ] 卡片用 `glass-card` 或 `border border-white/[0.06]`
-- [ ] 交互态用 `bg-white/[0.04]`（hover）和 `bg-white/[0.08]`（active）
-- [ ] 圆角层级正确（xl → 2xl → lg 由内到外）
+- [ ] 卡片用 `glass-card` 或 `border border-overlay/[0.06]`
+- [ ] 交互态用 `bg-overlay/[0.04]`（hover）、`bg-overlay/[0.08]`（active）
+- [ ] 圆角层级正确
 - [ ] 有 `transition-all duration-200`
+- [ ] 在深色和浅色模式下都测试过

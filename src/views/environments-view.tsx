@@ -156,7 +156,7 @@ export default function EnvironmentsView() {
         {/* 右侧：变量编辑 */}
         <div className="flex-1 min-w-0">
           {selectedEnv ? (
-            <div className="rounded-xl bg-card border border-white/[0.06] p-4 space-y-3">
+            <div className="rounded-xl bg-card border border-overlay/[0.06] p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">{selectedEnv.name}</span>

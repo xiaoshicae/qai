@@ -12,7 +12,7 @@ function Dialog({ open, onOpenChange, children }: DialogProps) {
   if (!open) return null
   return (
     <div className="fixed inset-0 z-50">
-      <div className="fixed inset-0 bg-black/10 backdrop-blur-xs" onClick={() => onOpenChange(false)} />
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={() => onOpenChange(false)} />
       <div className="fixed inset-0 flex items-center justify-center p-4">
         {children}
       </div>

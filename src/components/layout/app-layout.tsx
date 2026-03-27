@@ -1,8 +1,9 @@
 import { useState, useCallback, useRef } from 'react'
 import { Outlet } from 'react-router-dom'
-import { Sparkles } from 'lucide-react'
+import { Sparkles, TerminalSquare } from 'lucide-react'
 import Sidebar from './sidebar'
 import AIPanel from '@/components/ai/ai-panel'
+import TerminalPanel from '@/components/terminal/terminal-panel'
 import { useAIStore } from '@/stores/ai-store'
 
 function useResizable(initial: number, min: number, max: number) {
@@ -72,9 +73,13 @@ function useResizableRight(initial: number, min: number, max: number) {
 }
 
 export default function AppLayout() {
-  const { open, toggleOpen } = useAIStore()
+  const { open, setOpen } = useAIStore()
+  const [panelMode, setPanelMode] = useState<'ai' | 'terminal'>('ai')
   const sidebar = useResizable(280, 200, 450)
   const aiPanel = useResizableRight(380, 280, 600)
+
+  const openTerminal = () => { setPanelMode('terminal'); setOpen(true) }
+  const openAI = () => { setPanelMode('ai'); setOpen(true) }
 
   return (
     <div className="flex h-screen bg-background">
@@ -96,13 +101,22 @@ export default function AppLayout() {
           <Outlet />
         </div>
         {!open && (
-          <button
-            className="absolute bottom-5 right-5 flex items-center gap-2 px-4 py-2.5 rounded-xl btn-gradient text-primary-foreground shadow-lg cursor-pointer transition-all duration-200 active:translate-y-px hover:shadow-xl"
-            onClick={toggleOpen}
-          >
-            <Sparkles className="h-4 w-4" />
-            <span className="text-sm font-medium">AI 助手</span>
-          </button>
+          <div className="absolute bottom-5 right-5 flex items-center gap-2">
+            <button
+              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-muted/80 hover:bg-muted text-foreground/80 shadow-lg cursor-pointer transition-all duration-200 active:translate-y-px text-sm"
+              onClick={openTerminal}
+            >
+              <TerminalSquare className="h-4 w-4" />
+              终端
+            </button>
+            <button
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl btn-gradient text-primary-foreground shadow-lg cursor-pointer transition-all duration-200 active:translate-y-px hover:shadow-xl"
+              onClick={openAI}
+            >
+              <Sparkles className="h-4 w-4" />
+              <span className="text-sm font-medium">AI 助手</span>
+            </button>
+          </div>
         )}
       </main>
 
@@ -114,10 +128,13 @@ export default function AppLayout() {
         />
       )}
 
-      {/* AI 面板 */}
+      {/* 右面板 */}
       {open && (
         <div className="flex-shrink-0 overflow-hidden" style={{ width: aiPanel.width }}>
-          <AIPanel />
+          {panelMode === 'terminal'
+            ? <TerminalPanel onClose={() => setOpen(false)} />
+            : <AIPanel />
+          }
         </div>
       )}
     </div>

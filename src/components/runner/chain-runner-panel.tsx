@@ -93,7 +93,7 @@ export default function ChainRunnerPanel({ folderId, folderName }: Props) {
 
       {/* 进度指示 */}
       {running && progress && (
-        <div className="rounded-lg border bg-white/[0.03] p-4">
+        <div className="rounded-lg border bg-overlay/[0.03] p-4">
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">
               步骤 {progress.step_index + 1} / {progress.total_steps}
@@ -123,7 +123,7 @@ export default function ChainRunnerPanel({ folderId, folderName }: Props) {
 
           {/* 步骤列表 */}
           <div className="rounded-lg border overflow-hidden">
-            <div className="grid grid-cols-[40px_1fr_80px_80px_80px] gap-2 px-4 py-2 bg-white/[0.04] text-xs text-muted-foreground font-medium border-b">
+            <div className="grid grid-cols-[40px_1fr_80px_80px_80px] gap-2 px-4 py-2 bg-overlay/[0.04] text-xs text-muted-foreground font-medium border-b">
               <span>#</span>
               <span>请求</span>
               <span>状态</span>
@@ -204,7 +204,7 @@ function StepRow({ step, expanded, onToggle, formatTime }: {
   return (
     <>
       <div
-        className="grid grid-cols-[40px_1fr_80px_80px_80px] gap-2 px-4 py-2.5 text-sm border-t hover:bg-white/[0.03] cursor-pointer transition-colors"
+        className="grid grid-cols-[40px_1fr_80px_80px_80px] gap-2 px-4 py-2.5 text-sm border-t hover:bg-overlay/[0.03] cursor-pointer transition-colors"
         onClick={onToggle}
       >
         <span className="flex items-center gap-1 text-muted-foreground">
@@ -227,7 +227,7 @@ function StepRow({ step, expanded, onToggle, formatTime }: {
       </div>
 
       {expanded && (
-        <div className="border-t bg-white/[0.03] px-4 py-3 space-y-3">
+        <div className="border-t bg-overlay/[0.03] px-4 py-3 space-y-3">
           {/* 提取的变量 */}
           {Object.keys(extracted_variables).length > 0 && (
             <div>

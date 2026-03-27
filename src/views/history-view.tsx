@@ -61,14 +61,14 @@ export default function HistoryView() {
           <p className="text-sm text-muted-foreground">暂无请求历史</p>
         </div>
       ) : (
-        <div className="rounded-xl border border-white/[0.06] overflow-hidden">
+        <div className="rounded-xl border border-overlay/[0.06] overflow-hidden">
           {entries.map((entry, i) => {
             const method = entry.request_method?.toUpperCase() ?? ''
             const color = METHOD_COLORS[method] ?? 'text-muted-foreground'
             return (
               <div
                 key={entry.id}
-                className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors hover:bg-white/[0.04] ${
+                className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors hover:bg-overlay/[0.04] ${
                   i % 2 === 0 ? 'bg-card' : 'bg-transparent'
                 }`}
                 onClick={() => handleClick(entry)}

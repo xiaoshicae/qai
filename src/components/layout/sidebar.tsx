@@ -285,9 +285,9 @@ export default function Sidebar() {
       <div className="px-3 pb-2.5 flex items-center gap-1.5">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/40" />
-          <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜索..." className="w-full h-7 pl-8 pr-2 rounded-lg bg-white/[0.04] text-xs placeholder:text-muted-foreground/40 border border-white/[0.06] outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20 transition-all" />
+          <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜索..." className="w-full h-7 pl-8 pr-2 rounded-lg bg-overlay/[0.04] text-xs placeholder:text-muted-foreground/40 border border-overlay/[0.06] outline-none focus:border-primary/40 focus:ring-1 focus:ring-primary/20 transition-all" />
         </div>
-        <button onClick={handleNewTopGroup} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-white/[0.06] cursor-pointer transition-colors" title="新建分组">
+        <button onClick={handleNewTopGroup} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-overlay/[0.06] cursor-pointer transition-colors" title="新建分组">
           <Plus className="h-3.5 w-3.5 text-muted-foreground" />
         </button>
       </div>
@@ -316,28 +316,28 @@ export default function Sidebar() {
         <div ref={menuRef} className="fixed z-50 min-w-[160px] rounded-xl glass-card p-1.5 shadow-2xl" style={{ left: menu.x, top: menu.y }}>
           {menu.target === 'cat' && (
             <>
-              <button className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs hover:bg-white/[0.06] cursor-pointer transition-colors" onClick={handleCatAddSuite}><FilePlus className="h-3.5 w-3.5 text-muted-foreground" /> 新建测试集</button>
-              <button className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs hover:bg-white/[0.06] cursor-pointer transition-colors" onClick={handleCatAddGroup}><FolderPlus className="h-3.5 w-3.5 text-muted-foreground" /> 新建子分组</button>
-              <button className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs hover:bg-white/[0.06] cursor-pointer transition-colors" onClick={handleCatRunAll}><Play className="h-3.5 w-3.5 text-muted-foreground" /> 运行全部</button>
-              <div className="h-px bg-white/[0.06] my-1" />
+              <button className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs hover:bg-overlay/[0.06] cursor-pointer transition-colors" onClick={handleCatAddSuite}><FilePlus className="h-3.5 w-3.5 text-muted-foreground" /> 新建测试集</button>
+              <button className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs hover:bg-overlay/[0.06] cursor-pointer transition-colors" onClick={handleCatAddGroup}><FolderPlus className="h-3.5 w-3.5 text-muted-foreground" /> 新建子分组</button>
+              <button className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs hover:bg-overlay/[0.06] cursor-pointer transition-colors" onClick={handleCatRunAll}><Play className="h-3.5 w-3.5 text-muted-foreground" /> 运行全部</button>
+              <div className="h-px bg-overlay/[0.06] my-1" />
               <button className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs text-destructive hover:bg-destructive/10 cursor-pointer transition-colors" onClick={handleCatDelete}><Trash2 className="h-3.5 w-3.5" /> 删除分组</button>
             </>
           )}
           {menu.target === 'col' && (
             <>
-              <button className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs hover:bg-white/[0.06] cursor-pointer transition-colors" onClick={handleColAddCase}><FilePlus className="h-3.5 w-3.5 text-muted-foreground" /> 添加测试用例</button>
-              <button className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs hover:bg-white/[0.06] cursor-pointer transition-colors" onClick={() => { if (menu.col) { handleSelect(menu.col); setMenu(null) } }}><Play className="h-3.5 w-3.5 text-muted-foreground" /> 运行全部</button>
-              <div className="h-px bg-white/[0.06] my-1" />
-              <button className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs hover:bg-white/[0.06] cursor-pointer transition-colors" onClick={handleColRename}><Pencil className="h-3.5 w-3.5 text-muted-foreground" /> 重命名</button>
+              <button className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs hover:bg-overlay/[0.06] cursor-pointer transition-colors" onClick={handleColAddCase}><FilePlus className="h-3.5 w-3.5 text-muted-foreground" /> 添加测试用例</button>
+              <button className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs hover:bg-overlay/[0.06] cursor-pointer transition-colors" onClick={() => { if (menu.col) { handleSelect(menu.col); setMenu(null) } }}><Play className="h-3.5 w-3.5 text-muted-foreground" /> 运行全部</button>
+              <div className="h-px bg-overlay/[0.06] my-1" />
+              <button className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs hover:bg-overlay/[0.06] cursor-pointer transition-colors" onClick={handleColRename}><Pencil className="h-3.5 w-3.5 text-muted-foreground" /> 重命名</button>
               <button className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-xs text-destructive hover:bg-destructive/10 cursor-pointer transition-colors" onClick={handleColDelete}><Trash2 className="h-3.5 w-3.5" /> 删除</button>
             </>
           )}
         </div>
       )}
 
-      <div className="border-t border-white/[0.06] px-2 py-2.5 flex items-center gap-1.5">
+      <div className="border-t border-overlay/[0.06] px-2 py-2.5 flex items-center gap-1.5">
         {NAV_ITEMS.map((item) => { const Icon = item.icon; const isActive = location.pathname === item.path; return (
-          <button key={item.path} onClick={() => navigate(item.path)} className={`flex-1 flex flex-col items-center gap-0.5 py-2 rounded-xl cursor-pointer transition-all duration-200 ${isActive ? 'bg-white/[0.08] text-foreground glow-ring' : 'text-muted-foreground hover:text-foreground hover:bg-white/[0.04]'}`}>
+          <button key={item.path} onClick={() => navigate(item.path)} className={`flex-1 flex flex-col items-center gap-0.5 py-2 rounded-xl cursor-pointer transition-all duration-200 ${isActive ? 'bg-overlay/[0.08] text-foreground glow-ring' : 'text-muted-foreground hover:text-foreground hover:bg-overlay/[0.04]'}`}>
             <Icon className="h-3.5 w-3.5" /><span className="text-[10px] font-medium">{item.label}</span>
           </button>
         ) })}
@@ -364,13 +364,13 @@ function CategoryNode(props: CategoryNodeProps) {
 
   return (
     <div className="mb-0.5">
-      <div className="group/cat flex items-center gap-1.5 w-full px-2 py-1.5 hover:bg-white/[0.04] rounded-lg cursor-pointer transition-all duration-150" style={{ paddingLeft: `${level * 12 + 8}px` }} onClick={() => onToggle(node.fullPath)}>
+      <div className="group/cat flex items-center gap-1.5 w-full px-2 py-1.5 hover:bg-overlay/[0.04] rounded-lg cursor-pointer transition-all duration-150" style={{ paddingLeft: `${level * 12 + 8}px` }} onClick={() => onToggle(node.fullPath)}>
         {isExpanded ? <ChevronDown className="h-3 w-3 text-muted-foreground/50 shrink-0" /> : <ChevronRight className="h-3 w-3 text-muted-foreground/50 shrink-0" />}
         <span className="text-[10px] font-semibold tracking-wider text-muted-foreground/50 uppercase flex-1">{node.name}</span>
         <button className="shrink-0 p-0.5 rounded-md opacity-0 group-hover/cat:opacity-100 text-muted-foreground hover:text-foreground cursor-pointer transition-opacity" onClick={(e) => onCatMenu(e, node.fullPath)}>
           <MoreHorizontal className="h-3.5 w-3.5" />
         </button>
-        <span className="bg-white/[0.06] text-muted-foreground text-[9px] px-1.5 py-0.5 rounded-full shrink-0 font-medium">{total}</span>
+        <span className="bg-overlay/[0.06] text-muted-foreground text-[9px] px-1.5 py-0.5 rounded-full shrink-0 font-medium">{total}</span>
       </div>
 
       {isExpanded && (
@@ -381,7 +381,7 @@ function CategoryNode(props: CategoryNodeProps) {
             const isSelected = selectedNodeId === col.id
             const isRenaming = renamingId === col.id
             return (
-              <div key={col.id} className={`group/item flex items-center gap-1 py-1.5 pr-1 text-xs rounded-lg cursor-pointer transition-all duration-150 ${isSelected ? 'bg-white/[0.08] text-foreground glow-ring' : 'text-muted-foreground hover:bg-white/[0.04] hover:text-foreground'}`} style={{ paddingLeft: `${(level + 1) * 12 + 8}px` }} onClick={() => !isRenaming && onSelect(col)}>
+              <div key={col.id} className={`group/item flex items-center gap-1 py-1.5 pr-1 text-xs rounded-lg cursor-pointer transition-all duration-150 ${isSelected ? 'bg-overlay/[0.08] text-foreground glow-ring' : 'text-muted-foreground hover:bg-overlay/[0.04] hover:text-foreground'}`} style={{ paddingLeft: `${(level + 1) * 12 + 8}px` }} onClick={() => !isRenaming && onSelect(col)}>
                 {isRenaming ? (
                   <Input value={renameValue} onChange={(e) => onRenameChange(e.target.value)} onBlur={onRenameCommit} onKeyDown={(e) => { if (e.key === 'Enter') onRenameCommit(); if (e.key === 'Escape') onRenameCancel() }} className="h-5 text-xs flex-1 py-0 px-1" autoFocus onClick={(e) => e.stopPropagation()} />
                 ) : (

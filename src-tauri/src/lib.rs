@@ -5,8 +5,10 @@ pub mod models;
 pub mod runner;
 pub mod ai;
 mod report;
+pub mod pty;
 
 use db::init::initialize_database;
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -17,6 +19,7 @@ pub fn run() {
         .setup(|app| {
             let app_handle = app.handle();
             initialize_database(app_handle)?;
+            app.manage(pty::PtyState::new());
 
             if cfg!(debug_assertions) {
                 app_handle.plugin(
@@ -67,6 +70,11 @@ pub fn run() {
             commands::env_cmd::set_active_environment,
             commands::env_cmd::get_environment_with_vars,
             commands::env_cmd::save_env_variables,
+            commands::pty_cmd::pty_spawn,
+            commands::pty_cmd::pty_write,
+            commands::pty_cmd::pty_resize,
+            commands::pty_cmd::pty_kill,
+            commands::pty_cmd::prepare_mcp_config,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

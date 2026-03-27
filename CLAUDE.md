@@ -2,7 +2,7 @@
 
 ## 项目概览
 
-**定位**: 类似 Postman 的桌面 API 测试工具，核心亮点是通过 Claude API 自动分析代码/文档并生成测试用例。
+**定位**: 类似 Postman 的桌面 API 测试工具，核心亮点是通过 AI 自动分析代码/文档并生成测试用例。
 **技术栈**: Tauri 2.0, Rust, React 19, TypeScript, Vite, Tailwind CSS 4, Zustand, SQLite
 
 ## 项目结构
@@ -10,30 +10,59 @@
 ```
 qai/
 ├── .claude/              # Claude Code 配置 (rules, skills, agents)
+├── doc/                  # 设计文档
+│   └── ui-design-guide.md  # UI 设计规范详解（深色/浅色双主题）
 ├── src/                  # React 前端
 │   ├── main.tsx          # 入口
-│   ├── App.tsx           # 根组件, 路由 (/, /runner, /settings)
-│   ├── stores/           # Zustand (collection, request)
+│   ├── App.tsx           # 根组件, 路由, 主题初始化, ConfirmDialog 挂载
+│   ├── index.css         # 全局样式, 主题变量, 效果类 (glass-card, btn-gradient 等)
+│   ├── stores/           # Zustand 状态管理
+│   │   ├── collection-store.ts  # 集合/树 CRUD
+│   │   ├── request-store.ts     # 当前请求状态
+│   │   ├── ai-store.ts          # AI 面板状态和消息
+│   │   ├── theme-store.ts       # 主题切换 (dark/light/system)
+│   │   ├── tabs-store.ts        # 标签页
+│   │   └── status-store.ts      # 执行状态
 │   ├── components/
-│   │   ├── layout/       # AppLayout, Sidebar
-│   │   ├── request/      # RequestPanel, KeyValueTable
+│   │   ├── ui/           # 基础 UI 组件 (CVA + Tailwind)
+│   │   │   ├── button.tsx        # 按钮 (btn-gradient 默认变体)
+│   │   │   ├── input.tsx         # 输入框 (overlay 系统)
+│   │   │   ├── textarea.tsx      # 文本域
+│   │   │   ├── select.tsx        # 自定义下拉选择（替代原生 select）
+│   │   │   ├── confirm-dialog.tsx # 自定义确认弹窗（替代 tauri-plugin-dialog）
+│   │   │   ├── dialog.tsx        # 通用弹窗 (glass-card)
+│   │   │   ├── card.tsx          # 卡片 (glass-card)
+│   │   │   ├── badge.tsx         # 标签
+│   │   │   ├── tabs.tsx          # 标签页
+│   │   │   └── progress.tsx      # 进度条
+│   │   ├── layout/       # AppLayout (三栏可拖拽), Sidebar
+│   │   ├── request/      # RequestPanel, KeyValueTable, RunsTab, ExtractRulesEditor
 │   │   ├── response/     # ResponsePanel
 │   │   ├── assertion/    # AssertionEditor, AssertionResult
-│   │   ├── runner/       # RunnerPanel
-│   │   └── ai/           # AIGenerateDialog
-│   └── views/            # WorkbenchView, RunnerView, SettingsView
+│   │   ├── collection/   # CollectionOverview (编辑弹窗, 批量执行)
+│   │   ├── runner/       # RunnerPanel, ChainRunnerPanel
+│   │   ├── tree/         # CollectionTree
+│   │   └── ai/           # AIPanel, AIGenerateDialog
+│   ├── views/            # 路由页面
+│   │   ├── workbench-view.tsx    # 主工作台
+│   │   ├── settings-view.tsx     # 设置 (主题切换 + AI 配置)
+│   │   ├── environments-view.tsx # 环境变量管理
+│   │   ├── history-view.tsx      # 请求历史
+│   │   └── runner-view.tsx       # 批量执行入口
+│   ├── types/            # TypeScript 类型定义
+│   └── lib/              # 工具函数 (cn)
 ├── src-tauri/            # Rust 后端
 │   ├── Cargo.toml        # tauri2, reqwest0.12, rusqlite0.32, uuid, chrono, regex
-│   ├── tauri.conf.json   # 窗口 1280x800, identifier com.qai.app
+│   ├── tauri.conf.json   # 窗口 1280x800, titleBarStyle: Overlay
 │   └── src/
-│       ├── lib.rs        # Tauri Builder, 23个命令注册
+│       ├── lib.rs        # Tauri Builder, 33 个命令注册
 │       ├── models/       # Collection, ApiRequest, Assertion, Execution
-│       ├── db/           # SQLite CRUD (init, collection, request, assertion, execution)
+│       ├── db/           # SQLite CRUD (init, collection, request, assertion, execution, env)
 │       ├── http/         # reqwest 客户端 (execute, to_execution)
-│       ├── runner/       # 断言评估引擎, 批量执行器
-│       ├── ai/           # Claude API, Prompt 模板, JSON 解析器
+│       ├── runner/       # 断言评估引擎, 批量执行器, 链式执行
+│       ├── ai/           # AI API 客户端, Prompt 模板, JSON 解析器
 │       ├── report/       # HTML 报告生成
-│       └── commands/     # Tauri 命令 (collection, request, assertion, runner, ai)
+│       └── commands/     # Tauri 命令 (collection, request, assertion, runner, ai, env)
 └── package.json
 ```
 
@@ -43,25 +72,29 @@ qai/
 |--------|-----|------|
 | 前端端口 | 5173 | Vite 开发服务器 |
 | 窗口大小 | 1280x800 | Tauri 窗口 |
+| 标题栏 | Overlay + hiddenTitle | macOS 原生融合 |
 | 数据库 | qai.db | SQLite WAL 模式, Tauri app data 目录 |
 | 打包体积 | ~6.6MB | DMG |
 
 ## 数据库表
 
-- `collections` (id, name, description, created_at, updated_at)
+- `collections` (id, name, description, category, endpoint, created_at, updated_at)
 - `folders` (id, collection_id, parent_folder_id, name, sort_order)
-- `requests` (id, collection_id, folder_id, name, method, url, headers JSON, query_params JSON, body_type, body_content)
+- `requests` (id, collection_id, folder_id, name, method, url, headers JSON, query_params JSON, body_type, body_content, expect_status, description, sort_order)
 - `assertions` (id, request_id, type, expression, operator, expected, enabled)
 - `executions` (id, request_id, batch_id, status, response_*, assertion_results JSON)
+- `environments` (id, name, is_active, created_at, updated_at)
+- `env_variables` (id, environment_id, key, value, enabled)
 - `settings` (key, value)
 
-## Tauri 命令 (共 23 个)
+## Tauri 命令 (共 33 个)
 
-集合: list_collections, create_collection, update_collection, delete_collection, get_collection_tree, create_folder, delete_folder
-请求: create_request, get_request, update_request, delete_request, send_request
+集合: list_collections, create_collection, update_collection, update_collection_meta, delete_collection, get_collection_tree, create_folder, get_folder, update_folder, delete_folder
+请求: create_request, get_request, update_request, delete_request, send_request, send_request_stream
 断言: list_assertions, create_assertion, update_assertion, delete_assertion
-执行: run_collection, export_report_html
-AI: ai_generate_tests, ai_suggest_assertions, ai_chat, save_setting, get_setting_cmd
+执行: run_collection, run_chain, export_report_html, list_history, list_request_runs, get_collection_status
+AI: ai_generate_tests, ai_suggest_assertions, ai_chat, save_setting, get_setting_cmd, test_ai_connection
+环境: list_environments, create_environment, update_environment, delete_environment, set_active_environment, get_environment_with_vars, save_env_variables
 
 ## 断言系统
 
@@ -73,7 +106,7 @@ AI: ai_generate_tests, ai_suggest_assertions, ai_chat, save_setting, get_setting
 ```bash
 cargo tauri dev                     # 开发模式 (热重载)
 cargo tauri build                   # 生产构建 (DMG + App)
-cd src-tauri && cargo test          # Rust 测试 (6个)
+cd src-tauri && cargo test          # Rust 测试
 cd src-tauri && cargo check         # Rust 编译检查
 npx tsc --noEmit                    # TypeScript 类型检查
 npm run build                       # 仅构建前端
@@ -91,6 +124,19 @@ npm run build                       # 仅构建前端
 @.claude/rules/git-workflow.md
 @.claude/rules/testing.md
 @.claude/rules/code-review-strategy.md
+@.claude/rules/ui-design.md
+
+## UI 设计
+
+**双主题系统**: 支持深色/浅色/跟随系统。核心机制是 `overlay` 色变量（深色=白，浅色=黑）。
+
+详细设计规范和方法论见：@doc/ui-design-guide.md
+
+关键约束：
+- 所有半透明叠加用 `overlay` 色，禁止硬编码 `white/black`
+- 禁止原生 `<select>` → 用 `@/components/ui/select.tsx`
+- 禁止 `tauriConfirm` → 用 `@/components/ui/confirm-dialog.tsx` 的 `useConfirmStore`
+- 效果类 `glass-card` / `btn-gradient` / `glow-ring` 自动适配双主题
 
 ## 可用 Agents
 
@@ -122,16 +168,14 @@ npm run build                       # 仅构建前端
 
 ## 当前状态 (v0.1.0)
 
-已完成 MVP: HTTP 客户端, 集合管理, 断言系统, 批量执行, HTML 报告, AI 生成用例
+已完成: HTTP 客户端, 集合管理, 断言系统, 批量执行, 链式执行, HTML 报告, AI 生成用例, 环境变量, 请求历史, 深色/浅色主题切换, 自定义 UI 组件系统
 
 ## 待做 (后续迭代)
 
 - 多标签页系统
 - 快捷键 (Cmd+Enter 发送)
-- 深色/浅色主题切换
 - Postman 导入
 - 环境变量 `{{variable}}` 替换
 - Monaco Editor 代码高亮
 - AI 流式响应 (SSE)
-- 请求历史记录
 - 拖拽排序

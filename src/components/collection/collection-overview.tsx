@@ -197,7 +197,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
         <StatCard label="TOTAL" value={total} />
         <StatCard label="PASSED" value={passed} color="text-emerald-500" />
         <StatCard label="FAILED" value={failed} color="text-red-500" />
-        <div className="rounded-xl border border-white/[0.06] p-4">
+        <div className="rounded-xl border border-overlay/[0.06] p-4">
           <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">PASS RATE</span>
           <div className="text-2xl font-bold tabular-nums mt-1" style={{ color: passRate === 100 ? '#10b981' : passRate >= 60 ? '#f59e0b' : passed + failed === 0 ? 'inherit' : '#ef4444' }}>
             {passed + failed > 0 ? `${passRate}%` : '-'}
@@ -222,11 +222,11 @@ export default function CollectionOverview({ collection, tree }: Props) {
       {error && <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-lg">{error}</div>}
 
       {/* 场景表格 */}
-      <div className="rounded-xl border border-white/[0.06] overflow-hidden">
-        <div className="grid grid-cols-[minmax(0,1.5fr)_minmax(0,2fr)_56px_68px_56px_64px_64px] gap-2 px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 border-b border-white/[0.04]">
+      <div className="rounded-xl border border-overlay/[0.06] overflow-hidden">
+        <div className="grid grid-cols-[minmax(0,1.5fr)_minmax(0,2fr)_56px_68px_56px_64px_64px] gap-2 px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 border-b border-overlay/[0.04]">
           <span>SCENARIO</span><span>DESCRIPTION</span><span>EXPECT</span><span>STATUS</span><span>HTTP</span><span>TOTAL</span><span />
         </div>
-        <div className="max-h-[calc(100vh-420px)] overflow-y-auto divide-y divide-white/[0.04]">
+        <div className="max-h-[calc(100vh-420px)] overflow-y-auto divide-y divide-overlay/[0.04]">
           {tableItems.length === 0 ? (
             <div className="px-4 py-12 text-center text-sm text-muted-foreground">暂无测试用例，点击"添加用例"创建</div>
           ) : tableItems.map((item, itemIdx) => {
@@ -358,22 +358,34 @@ function EditForm({ req, onChange, onSave, onCancel }: {
                 {t === 'none' ? 'None' : t.toUpperCase()}
               </button>
             ))}
-            {req.body_type === 'json' && (
-              <button onClick={formatBody} className="px-2.5 py-1 rounded-md text-[10px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer ml-1">Format</button>
-            )}
           </div>
         </div>
-        {req.body_type !== 'none' && (
-          <textarea
-            value={req.body_content}
-            onChange={(e) => set('body_content', e.target.value)}
-            onKeyDown={handleBodyKeyDown}
-            rows={8}
-            style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}
-            className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-xs leading-relaxed resize-y outline-none focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50"
-            placeholder='{ "key": "value" }'
-          />
-        )}
+        <div className="relative" style={{ height: '218px' }}>
+          {req.body_type === 'none' ? (
+            <div className="w-full h-full rounded-xl border border-overlay/[0.06] bg-overlay/[0.02] flex items-center justify-center">
+              <span className="text-xs text-muted-foreground/40">无请求体</span>
+            </div>
+          ) : (
+            <>
+              <textarea
+                value={req.body_content}
+                onChange={(e) => set('body_content', e.target.value)}
+                onKeyDown={handleBodyKeyDown}
+                style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}
+                className="w-full h-full rounded-xl border border-overlay/[0.08] bg-overlay/[0.03] px-3 py-2 text-xs leading-relaxed resize-none outline-none hover:border-overlay/[0.12] focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/20 transition-all duration-200"
+                placeholder='{ "key": "value" }'
+              />
+              {req.body_type === 'json' && (
+                <button
+                  onClick={formatBody}
+                  className="absolute top-2 right-2 px-2 py-0.5 rounded-md text-[10px] font-medium text-muted-foreground hover:text-foreground bg-overlay/[0.06] hover:bg-overlay/[0.1] cursor-pointer transition-colors"
+                >
+                  Format
+                </button>
+              )}
+            </>
+          )}
+        </div>
       </div>
 
       {/* Headers — Postman 风格 KV 编辑 */}
@@ -430,7 +442,7 @@ function EditForm({ req, onChange, onSave, onCancel }: {
 
 function StatCard({ label, value, color }: { label: string; value: number; color?: string }) {
   return (
-    <div className="rounded-xl border border-white/[0.06] p-4">
+    <div className="rounded-xl border border-overlay/[0.06] p-4">
       <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{label}</span>
       <div className={`text-2xl font-bold tabular-nums mt-1 ${color ?? ''}`}>{value}</div>
     </div>
@@ -471,7 +483,7 @@ function ScenarioRow({ r, stepLabel, indent, getResult, getStatus: _getStatus, s
 
   return (
     <div>
-      <div className={`grid grid-cols-[minmax(0,1.5fr)_minmax(0,2fr)_56px_68px_56px_64px_64px] gap-2 px-4 py-2.5 text-sm hover:bg-white/[0.03] cursor-pointer transition-colors group ${indent ? 'pl-10 bg-white/[0.02]' : ''}`} onClick={() => toggleRow(r.id)}>
+      <div className={`grid grid-cols-[minmax(0,1.5fr)_minmax(0,2fr)_56px_68px_56px_64px_64px] gap-2 px-4 py-2.5 text-sm hover:bg-overlay/[0.03] cursor-pointer transition-colors group ${indent ? 'pl-10 bg-overlay/[0.02]' : ''}`} onClick={() => toggleRow(r.id)}>
         <span className="flex items-center gap-1.5 min-w-0">
           {expanded ? <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" /> : <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" />}
           {stepLabel && <span className="text-[10px] text-amber-500/70 font-mono shrink-0">{stepLabel}</span>}
@@ -497,24 +509,24 @@ function ScenarioRow({ r, stepLabel, indent, getResult, getStatus: _getStatus, s
         </span>
       </div>
       {expanded && (
-        <div className={`bg-white/[0.03] px-4 py-4 space-y-4 border-t border-white/[0.04] ${indent ? 'ml-6' : ''}`}>
+        <div className={`bg-overlay/[0.03] px-4 py-4 space-y-4 border-t border-overlay/[0.04] ${indent ? 'ml-6' : ''}`}>
           <div className="grid grid-cols-2 gap-4">
-            <div className="rounded-lg border border-white/[0.06] overflow-hidden">
-              <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 border-b border-white/[0.04]">USER REQUEST</div>
+            <div className="rounded-lg border border-overlay/[0.06] overflow-hidden">
+              <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 border-b border-overlay/[0.04]">USER REQUEST</div>
               <pre className="px-3 py-2.5 text-xs font-mono whitespace-pre-wrap break-all max-h-52 overflow-y-auto">
                 {detail ? (() => { const p = [`${detail.method} ${detail.url}`]; if (detail.body_type !== 'none' && detail.body_content) { try { p.push(JSON.stringify(JSON.parse(detail.body_content), null, 2)) } catch { p.push(detail.body_content) } } return p.join('\n\n') })() : '加载中...'}
               </pre>
             </div>
-            <div className="rounded-lg border border-white/[0.06] overflow-hidden">
-              <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 border-b border-white/[0.04] flex items-center gap-2">USER RESPONSE {resp && <span className="text-[9px] font-normal normal-case">{resp.status} | {resp.size_bytes}B</span>}</div>
+            <div className="rounded-lg border border-overlay/[0.06] overflow-hidden">
+              <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 border-b border-overlay/[0.04] flex items-center gap-2">USER RESPONSE {resp && <span className="text-[9px] font-normal normal-case">{resp.status} | {resp.size_bytes}B</span>}</div>
               <pre className="px-3 py-2.5 text-xs font-mono whitespace-pre-wrap break-all max-h-52 overflow-y-auto">
                 {resp ? (() => { try { return JSON.stringify(JSON.parse(resp.body), null, 2) } catch { return resp.body } })() : '尚未运行'}
               </pre>
             </div>
           </div>
           {result && result.assertion_results.length > 0 && (
-            <div className="rounded-lg border border-white/[0.06] overflow-hidden">
-              <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 border-b border-white/[0.04]">ASSERTIONS ({result.assertion_results.filter((a) => a.passed).length}/{result.assertion_results.length})</div>
+            <div className="rounded-lg border border-overlay/[0.06] overflow-hidden">
+              <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 border-b border-overlay/[0.04]">ASSERTIONS ({result.assertion_results.filter((a) => a.passed).length}/{result.assertion_results.length})</div>
               <div className="px-3 py-2 space-y-1">{result.assertion_results.map((a, i) => (
                 <div key={i} className="flex items-start gap-1.5 text-xs">
                   {a.passed ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5" /> : <XCircle className="h-3.5 w-3.5 text-red-500 shrink-0 mt-0.5" />}

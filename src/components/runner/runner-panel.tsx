@@ -134,7 +134,7 @@ export default function RunnerPanel() {
           <StatCard icon={<Zap className="h-4 w-4" />} value={batchResult.total} label="总计" color="text-primary" />
           <StatCard icon={<CheckCircle2 className="h-4 w-4" />} value={batchResult.passed} label="通过" color="text-emerald-500" />
           <StatCard icon={<XCircle className="h-4 w-4" />} value={batchResult.failed + batchResult.errors} label="失败" color="text-red-500" />
-          <div className="rounded-xl bg-card border border-white/[0.06] p-4">
+          <div className="rounded-xl bg-card border border-overlay/[0.06] p-4">
             <div className="flex items-center gap-2 mb-2">
               <Timer className="h-4 w-4 text-amber-500" />
               <span className="text-xs text-muted-foreground">通过率</span>
@@ -159,9 +159,9 @@ export default function RunnerPanel() {
 
       {/* 结果表格 */}
       {batchResult && batchResult.results.length > 0 && (
-        <div className="rounded-xl border border-white/[0.06] overflow-hidden">
+        <div className="rounded-xl border border-overlay/[0.06] overflow-hidden">
           {/* 表头 */}
-          <div className="grid grid-cols-[32px_1fr_80px_70px_80px_70px] gap-2 px-4 py-2 bg-white/[0.04] text-xs text-muted-foreground font-medium border-b border-white/[0.04]">
+          <div className="grid grid-cols-[32px_1fr_80px_70px_80px_70px] gap-2 px-4 py-2 bg-overlay/[0.04] text-xs text-muted-foreground font-medium border-b border-overlay/[0.04]">
             <span />
             <span>请求</span>
             <span>状态</span>
@@ -184,7 +184,7 @@ export default function RunnerPanel() {
 
       {/* 运行中进度列表 */}
       {running && progress.length > 0 && !batchResult && (
-        <div className="rounded-xl border border-white/[0.06] overflow-hidden max-h-[400px] overflow-y-auto">
+        <div className="rounded-xl border border-overlay/[0.06] overflow-hidden max-h-[400px] overflow-y-auto">
           {progress.map((p, i) => (
             <div key={p.request_id} className={`flex items-center gap-2.5 px-4 py-2.5 text-sm ${i % 2 === 0 ? 'bg-card' : 'bg-transparent'}`}>
               <Badge variant={p.status === 'success' ? 'success' : p.status === 'failed' ? 'destructive' : 'secondary'}>
@@ -212,7 +212,7 @@ export default function RunnerPanel() {
 
 function StatCard({ icon, value, label, color }: { icon: React.ReactNode; value: string | number; label: string; color: string }) {
   return (
-    <div className="rounded-xl bg-card border border-white/[0.06] p-4">
+    <div className="rounded-xl bg-card border border-overlay/[0.06] p-4">
       <div className={`flex items-center gap-2 mb-2 ${color}`}>{icon}<span className="text-xs text-muted-foreground">{label}</span></div>
       <div className={`text-2xl font-bold tabular-nums ${color}`}>{value}</div>
     </div>
@@ -241,7 +241,7 @@ function ResultRow({ result, expanded, onToggle }: { result: ExecutionResult; ex
   return (
     <>
       <div
-        className="grid grid-cols-[32px_1fr_80px_70px_80px_70px] gap-2 px-4 py-2.5 text-sm border-t border-white/[0.04] hover:bg-white/[0.03] cursor-pointer transition-colors"
+        className="grid grid-cols-[32px_1fr_80px_70px_80px_70px] gap-2 px-4 py-2.5 text-sm border-t border-overlay/[0.04] hover:bg-overlay/[0.03] cursor-pointer transition-colors"
         onClick={onToggle}
       >
         <span className="flex items-center text-muted-foreground">
@@ -264,7 +264,7 @@ function ResultRow({ result, expanded, onToggle }: { result: ExecutionResult; ex
       </div>
 
       {expanded && (
-        <div className="border-t border-white/[0.04] bg-white/[0.03] px-4 py-3 space-y-3">
+        <div className="border-t border-overlay/[0.04] bg-overlay/[0.03] px-4 py-3 space-y-3">
           {/* 请求信息 */}
           {resp && (
             <div className="grid grid-cols-2 gap-4">

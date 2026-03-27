@@ -50,7 +50,7 @@ export default function AIPanel() {
       <div className="h-8 shrink-0" data-tauri-drag-region="" />
 
       {/* 头部 */}
-      <div className="flex items-center gap-2 h-10 px-4 border-b border-white/[0.06] shrink-0">
+      <div className="flex items-center gap-2 h-10 px-4 border-b border-overlay/[0.06] shrink-0">
         <Sparkles className="h-4 w-4 text-primary" />
         <span className="text-sm font-medium flex-1">AI 助手</span>
         {messages.length > 0 && (
@@ -68,7 +68,7 @@ export default function AIPanel() {
         {messages.length === 0 ? (
           <div className="space-y-5 pt-6">
             <div className="text-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/[0.04] border border-white/[0.06] mx-auto mb-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-overlay/[0.04] border border-overlay/[0.06] mx-auto mb-3">
                 <Sparkles className="h-5 w-5 text-primary" />
               </div>
               <p className="text-sm font-medium text-foreground">AI 助手</p>
@@ -78,7 +78,7 @@ export default function AIPanel() {
               {QUICK_ACTIONS.map((action) => (
                 <button
                   key={action.label}
-                  className="flex items-center gap-3 w-full px-3.5 py-2.5 rounded-xl text-left text-[13px] text-foreground/60 hover:bg-white/[0.04] hover:text-foreground border border-transparent hover:border-white/[0.06] transition-all duration-200 cursor-pointer"
+                  className="flex items-center gap-3 w-full px-3.5 py-2.5 rounded-xl text-left text-[13px] text-foreground/60 hover:bg-overlay/[0.04] hover:text-foreground border border-transparent hover:border-overlay/[0.06] transition-all duration-200 cursor-pointer"
                   onClick={() => handleQuickAction(action.prompt)}
                 >
                   <action.icon className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -95,7 +95,7 @@ export default function AIPanel() {
       </div>
 
       {/* 输入区 */}
-      <div className="border-t border-white/[0.06] p-3 shrink-0">
+      <div className="border-t border-overlay/[0.06] p-3 shrink-0">
         <div className="relative">
           <textarea
             ref={inputRef}
@@ -104,7 +104,7 @@ export default function AIPanel() {
             onKeyDown={handleKeyDown}
             placeholder="描述你的需求..."
             rows={2}
-            className="w-full resize-none rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 py-2.5 pr-10 text-sm outline-none placeholder:text-muted-foreground/50 focus-visible:border-primary/40 focus-visible:ring-2 focus-visible:ring-primary/15 transition-all duration-200"
+            className="w-full resize-none rounded-xl border border-overlay/[0.08] bg-overlay/[0.03] px-3.5 py-2.5 pr-10 text-sm outline-none placeholder:text-muted-foreground/50 focus-visible:border-primary/40 focus-visible:ring-2 focus-visible:ring-primary/15 transition-all duration-200"
           />
           <button
             className={`absolute right-2.5 bottom-2.5 p-1.5 rounded-lg cursor-pointer transition-all duration-200 ${

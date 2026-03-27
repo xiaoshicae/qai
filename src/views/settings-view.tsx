@@ -60,7 +60,15 @@ async function putSetting(key: string, value: string) {
   try { await invoke('save_setting', { key, value }) } catch {}
 }
 
+const THEME_OPTIONS = [
+  { id: 'dark', label: '深色', icon: Moon },
+  { id: 'light', label: '浅色', icon: Sun },
+  { id: 'system', label: '系统', icon: Monitor },
+] as const
+
 export default function SettingsView() {
+  const themeMode = useThemeStore((s) => s.mode)
+  const setThemeMode = useThemeStore((s) => s.setMode)
   const [provider, setProvider] = useState('claude')
   const [savedProvider, setSavedProvider] = useState('claude')
   const [keys, setKeys] = useState<Record<string, string>>({})
@@ -183,13 +191,38 @@ export default function SettingsView() {
   return (
     <div className="mx-auto max-w-lg px-8 py-8">
       <div className="flex items-center gap-3 mb-8">
-        <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/[0.06]">
+        <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-overlay/[0.06]">
           <Sparkles className="h-4 w-4 text-gradient text-primary" />
         </div>
         <h1 className="text-xl font-semibold tracking-tight">设置</h1>
       </div>
 
       <div className="space-y-4">
+        {/* 主题 */}
+        <div className="glass-card rounded-2xl p-5 space-y-4">
+          <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">主题</label>
+          <div className="grid grid-cols-3 gap-2.5">
+            {THEME_OPTIONS.map((t) => {
+              const active = themeMode === t.id
+              const Icon = t.icon
+              return (
+                <button
+                  key={t.id}
+                  className={`flex flex-col items-center gap-1.5 py-3.5 rounded-xl cursor-pointer transition-all duration-200 ${
+                    active
+                      ? 'btn-gradient text-primary-foreground shadow-lg'
+                      : 'bg-overlay/[0.04] text-foreground/70 hover:bg-overlay/[0.08] border border-overlay/[0.06] hover:border-overlay/[0.1]'
+                  }`}
+                  onClick={() => setThemeMode(t.id)}
+                >
+                  <Icon className="h-4 w-4" />
+                  <span className="text-[11px] font-medium">{t.label}</span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
         {/* 提供商 */}
         <div className="glass-card rounded-2xl p-5 space-y-4">
           <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">AI 提供商</label>
@@ -203,7 +236,7 @@ export default function SettingsView() {
                   className={`relative flex flex-col items-center gap-1.5 py-3.5 rounded-xl cursor-pointer transition-all duration-200 ${
                     active
                       ? 'btn-gradient text-primary-foreground shadow-lg'
-                      : 'bg-white/[0.04] text-foreground/70 hover:bg-white/[0.08] border border-white/[0.06] hover:border-white/[0.1]'
+                      : 'bg-overlay/[0.04] text-foreground/70 hover:bg-overlay/[0.08] border border-overlay/[0.06] hover:border-overlay/[0.1]'
                   }`}
                   onClick={() => handleProviderChange(p.id)}
                 >
@@ -276,12 +309,12 @@ export default function SettingsView() {
                   <div
                     key={m.value}
                     className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl cursor-pointer transition-all duration-200 ${
-                      active ? 'bg-primary/10 glow-ring' : 'hover:bg-white/[0.04]'
+                      active ? 'bg-primary/10 glow-ring' : 'hover:bg-overlay/[0.04]'
                     }`}
                     onClick={() => handleModelChange(m.value)}
                   >
                     <div className={`w-4 h-4 rounded-full border-[1.5px] flex items-center justify-center shrink-0 transition-all duration-200 ${
-                      active ? 'border-primary bg-primary scale-110' : 'border-white/[0.15]'
+                      active ? 'border-primary bg-primary scale-110' : 'border-overlay/[0.15]'
                     }`}>
                       {active && <Check className="h-2.5 w-2.5 text-white" strokeWidth={3} />}
                     </div>
@@ -290,7 +323,7 @@ export default function SettingsView() {
                     </span>
                     {m.badge && (
                       <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium transition-colors ${
-                        active ? 'bg-primary/15 text-primary' : 'bg-white/[0.06] text-muted-foreground'
+                        active ? 'bg-primary/15 text-primary' : 'bg-overlay/[0.06] text-muted-foreground'
                       }`}>{m.badge}</span>
                     )}
                   </div>

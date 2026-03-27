@@ -52,7 +52,7 @@ export default function ResponsePanel() {
             <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
           </div>
         </div>
-        <pre className="font-mono text-xs leading-relaxed whitespace-pre-wrap break-all max-h-[400px] overflow-y-auto bg-card p-4 rounded-xl border border-white/[0.06]">
+        <pre className="font-mono text-xs leading-relaxed whitespace-pre-wrap break-all max-h-[400px] overflow-y-auto bg-card p-4 rounded-xl border border-overlay/[0.06]">
           {streamContent}
           <span className="animate-pulse">|</span>
         </pre>
@@ -111,12 +111,12 @@ export default function ResponsePanel() {
           )}
         </TabsList>
         <TabsContent value="body">
-          <pre className="font-mono text-xs leading-relaxed whitespace-pre-wrap break-all max-h-[400px] overflow-y-auto bg-card p-4 rounded-xl border border-white/[0.06]">
+          <pre className="font-mono text-xs leading-relaxed whitespace-pre-wrap break-all max-h-[400px] overflow-y-auto bg-card p-4 rounded-xl border border-overlay/[0.06]">
             {prettyBody}
           </pre>
         </TabsContent>
         <TabsContent value="headers">
-          <div className="rounded-xl border border-white/[0.06] overflow-hidden">
+          <div className="rounded-xl border border-overlay/[0.06] overflow-hidden">
             {response.headers.map((h, i) => (
               <div key={h.key} className={`flex gap-3 px-4 py-2 text-xs font-mono ${i % 2 === 0 ? 'bg-card' : 'bg-transparent'}`}>
                 <span className="text-primary font-medium min-w-[180px] shrink-0">{h.key}</span>

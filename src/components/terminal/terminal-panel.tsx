@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { PlusCircle, X, ArrowUp, Square, Wrench, Loader2 } from 'lucide-react'
+import { PlusCircle, X, ArrowUp, Square, Wrench } from 'lucide-react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -27,48 +27,25 @@ export default function TerminalPanel({ onClose }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
-  const [ready, setReady] = useState(false)
-  const [starting, setStarting] = useState(true)
+  const [firstMessage, setFirstMessage] = useState(true)
+  const [mcpConfigPath, setMcpConfigPath] = useState<string | null>(null)
   const [thinkingWord, setThinkingWord] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const mountedRef = useRef(true)
 
-  // 启动长驻 Claude 进程
   useEffect(() => {
     mountedRef.current = true
-    setStarting(true)
-
-    const start = async () => {
-      try {
-        const configPath = await invoke<string>('prepare_mcp_config')
-        await invoke('claude_start', { mcpConfigPath: configPath })
-      } catch (e) {
-        setMessages([{ id: crypto.randomUUID(), role: 'system', content: `启动失败: ${e}` }])
-        setStarting(false)
-      }
-    }
-    start()
-
-    return () => {
-      mountedRef.current = false
-      invoke('claude_stop').catch(() => {})
-    }
+    invoke<string>('prepare_mcp_config').then(setMcpConfigPath).catch(() => {})
+    return () => { mountedRef.current = false }
   }, [])
 
-  // 监听 Claude 事件
   useEffect(() => {
     let unlisten: (() => void) | undefined
     listen<ClaudeEvent>('claude-event', (event) => {
       if (!mountedRef.current) return
       const { event_type, content } = event.payload
-
-      if (event_type === 'ready') {
-        setReady(true)
-        setStarting(false)
-        inputRef.current?.focus()
-      } else if (event_type === 'delta') {
-        setSending(true) // 收到 delta 说明正在响应
+      if (event_type === 'delta') {
         setMessages((prev) => {
           const last = prev[prev.length - 1]
           if (last && last.role === 'assistant') {
@@ -76,25 +53,20 @@ export default function TerminalPanel({ onClose }: Props) {
           }
           return [...prev, { id: crypto.randomUUID(), role: 'assistant', content }]
         })
-      } else if (event_type === 'result') {
-        setSending(false)
       } else if (event_type === 'tool_use') {
         setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: 'tool', content }])
-      } else if (event_type === 'exit') {
-        setReady(false)
-        setStarting(false)
-        setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: 'system', content: 'Claude 进程已退出' }])
+      } else if (event_type === 'result') {
+        setSending(false)
+        setFirstMessage(false)
       }
     }).then((fn) => { unlisten = fn })
     return () => { unlisten?.(); mountedRef.current = false }
   }, [])
 
-  // 自动滚动
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages, sending])
 
-  // 思考动画
   useEffect(() => {
     if (!sending) return
     setThinkingWord(THINKING_WORDS[Math.floor(Math.random() * THINKING_WORDS.length)])
@@ -106,12 +78,13 @@ export default function TerminalPanel({ onClose }: Props) {
 
   const handleSend = async () => {
     const text = input.trim()
-    if (!text || sending || !ready) return
+    if (!text || sending) return
     setInput('')
     setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: 'user', content: text }])
     setSending(true)
     try {
-      await invoke('claude_send', { message: text })
+      await invoke('claude_send', { message: text, mcpConfigPath })
+      // result 事件会触发 setSending(false)
     } catch (e: any) {
       setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: 'system', content: `${e}` }])
       setSending(false)
@@ -120,19 +93,13 @@ export default function TerminalPanel({ onClose }: Props) {
 
   const handleStop = () => { invoke('claude_stop').catch(() => {}); setSending(false) }
 
-  const handleNewSession = async () => {
+  const handleNewSession = () => {
     invoke('claude_stop').catch(() => {})
+    invoke('claude_reset_session').catch(() => {})
     setMessages([])
     setSending(false)
-    setReady(false)
-    setStarting(true)
-    try {
-      const configPath = await invoke<string>('prepare_mcp_config')
-      await invoke('claude_start', { mcpConfigPath: configPath })
-    } catch (e) {
-      setMessages([{ id: crypto.randomUUID(), role: 'system', content: `重启失败: ${e}` }])
-      setStarting(false)
-    }
+    setFirstMessage(true)
+    inputRef.current?.focus()
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -146,8 +113,7 @@ export default function TerminalPanel({ onClose }: Props) {
         <div className="flex items-center gap-2">
           <ClaudeLogo />
           <span className="text-xs font-medium">Claude Code</span>
-          {ready && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" title="已连接" />}
-          {starting && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+          {mcpConfigPath && <span className="text-[9px] text-emerald-500 font-medium">MCP</span>}
         </div>
         <div className="flex items-center gap-1">
           <button onClick={handleNewSession} className="p-1 rounded hover:bg-overlay/[0.06] cursor-pointer transition-colors" title="新建会话">
@@ -161,25 +127,12 @@ export default function TerminalPanel({ onClose }: Props) {
 
       {/* 消息区域 */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-        {/* 启动中 */}
-        {starting && messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-center">
-            <ClaudeLogo size={28} />
-            <p className="text-sm font-medium mt-3">Claude Code</p>
-            <div className="flex items-center gap-2 mt-2">
-              <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">正在启动，首次需要 10-30 秒...</span>
-            </div>
-          </div>
-        )}
-
-        {/* 就绪空状态 */}
-        {ready && messages.length === 0 && !sending && (
+        {messages.length === 0 && !sending && (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <ClaudeLogo size={28} />
             <p className="text-sm font-medium mt-3">Claude Code</p>
             <p className="text-xs text-muted-foreground mt-1.5 max-w-[240px] leading-relaxed">
-              已就绪。通过 MCP 管理测试用例，描述你的需求开始对话。
+              {firstMessage ? '首次对话需要 10-30 秒初始化，后续秒回。' : '已就绪，描述你的需求。'}
             </p>
           </div>
         )}
@@ -198,10 +151,11 @@ export default function TerminalPanel({ onClose }: Props) {
           return <div key={msg.id} className="text-xs text-destructive/80 px-1">{msg.content}</div>
         })}
 
-        {sending && !messages.some((m) => m.role === 'assistant' && messages.indexOf(m) === messages.length - 1) && (
+        {sending && (
           <div className="flex items-center gap-2">
             <ClaudeLogo />
             <span className="text-sm text-[#D97757] animate-pulse">{thinkingWord}</span>
+            {firstMessage && <span className="text-[10px] text-muted-foreground/50">首次初始化中...</span>}
           </div>
         )}
       </div>
@@ -214,9 +168,9 @@ export default function TerminalPanel({ onClose }: Props) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={starting ? '正在启动 Claude...' : '描述你的需求...'}
+            placeholder="描述你的需求..."
             rows={1}
-            disabled={sending || !ready}
+            disabled={sending}
             className="w-full px-3 py-2.5 pr-12 bg-transparent text-sm resize-none outline-none placeholder:text-muted-foreground/40 max-h-32 overflow-y-auto disabled:opacity-50"
           />
           <div className="absolute right-2 bottom-2">
@@ -225,7 +179,7 @@ export default function TerminalPanel({ onClose }: Props) {
                 <Square className="h-3 w-3" />
               </button>
             ) : (
-              <button onClick={handleSend} disabled={!input.trim() || !ready} className="h-7 w-7 flex items-center justify-center rounded-lg btn-gradient text-primary-foreground disabled:opacity-30 cursor-pointer transition-all" title="发送">
+              <button onClick={handleSend} disabled={!input.trim()} className="h-7 w-7 flex items-center justify-center rounded-lg btn-gradient text-primary-foreground disabled:opacity-30 cursor-pointer transition-all" title="发送">
                 <ArrowUp className="h-3.5 w-3.5" />
               </button>
             )}

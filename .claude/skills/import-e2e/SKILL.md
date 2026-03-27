@@ -1,73 +1,74 @@
 ---
-description: 从 e2e 目录导入真实测试用例到 QAI
+description: 从 e2e 目录导入真实测试用例到 QAI（清空后重建）
 allowed-tools: Bash, Read, Grep, Glob
 ---
 
 # 导入 E2E 测试用例
 
-从 `/Users/zs/Workspace/eigenai/llm-trainer-gateway/e2e/cases` 目录导入 YAML 测试用例到 QAI 数据库。
+从 `/Users/zs/Workspace/eigenai/llm-trainer-gateway/e2e/cases` 目录读取 YAML 测试用例，清空 QAI 数据库后重新导入。
 
-## 前置条件
+## 数据库位置
 
-- QAI 开发服务器正在运行（`cargo tauri dev`）
-- e2e 目录存在：`/Users/zs/Workspace/eigenai/llm-trainer-gateway/e2e/cases`
+`/Users/zs/Library/Application Support/com.qai.app/qai.db`
 
 ## 执行步骤
 
 ### 1. 验证 e2e 目录
 
-```bash
-ls /Users/zs/Workspace/eigenai/llm-trainer-gateway/e2e/cases/
-```
+确认 `/Users/zs/Workspace/eigenai/llm-trainer-gateway/e2e/cases` 存在且包含 YAML 文件。
 
-确认目录存在且包含 text/audio/image/video 子目录。
-
-### 2. 统计用例数量
+### 2. 清空数据库
 
 ```bash
-find /Users/zs/Workspace/eigenai/llm-trainer-gateway/e2e/cases -name "*.yml" | wc -l
+sqlite3 "/Users/zs/Library/Application Support/com.qai.app/qai.db" "
+DELETE FROM executions;
+DELETE FROM assertions;
+DELETE FROM requests;
+DELETE FROM folders;
+DELETE FROM collections;
+"
 ```
 
-### 3. 触发导入
+### 3. 解析 YAML 并导入
 
-通过 QAI 前端侧边栏的上传按钮（搜索框右侧）触发导入，选择目录：
-`/Users/zs/Workspace/eigenai/llm-trainer-gateway/e2e/cases`
+用 Python 脚本解析所有 `.yml` 文件，生成 SQL INSERT 语句：
 
-或者，如果开发服务器运行中，可以通过 Tauri 的 invoke 接口直接调用：
+- 每个 YAML 文件 → 一个 collection（name = YAML 的 `name` 字段，category/endpoint 等对应字段）
+- 每个 scenario → 一个 request（name = scenario `id`，method = POST，url = collection endpoint）
+  - `payload` → body_type = json, body_content = JSON 字符串
+  - `form_data` → body_type = urlencoded, body_content = `[{key, value, enabled}]` 数组
+  - `multipart_fields` → body_type = form-data, body_content = `[{key, value, enabled}]` 数组
+  - `expect.status` → expect_status
+- 每个 request 自动创建一个 status_code 断言（eq expect_status）
+- Headers 自动添加 Content-Type
 
-提示用户在 QAI 应用中点击侧边栏的上传图标，选择 e2e/cases 目录，确认清空后导入。
+### 4. 验证
 
-### 4. 验证导入结果
+```bash
+sqlite3 "/Users/zs/Library/Application Support/com.qai.app/qai.db" "
+SELECT category, count(*) FROM collections GROUP BY category;
+SELECT count(*) FROM requests;
+SELECT count(*) FROM assertions;
+"
+```
 
-导入完成后检查：
-- 侧边栏应显示所有模型集合（按 TEXT/AUDIO/IMAGE/VIDEO 分组）
-- 每个集合应包含对应的测试场景
-
-## YAML 格式说明
-
-每个 `.yml` 文件对应一个模型（QAI 集合），格式：
+## YAML 格式
 
 ```yaml
-model: model-id           # 模型 ID
-name: 显示名称             # 集合名称
-category: text            # 分类：text/audio/image/video
-endpoint: /api/v1/...     # API 端点
-
-scenarios:                # 场景列表
-  - id: scenario-name     # 场景名 → 请求名
+model: model-id
+name: 显示名称
+category: text
+endpoint: /api/v1/chat/completions
+scenarios:
+  - id: scenario-name
     description: 描述
-    payload:              # JSON 请求体
-      key: value
-    form_data:            # 或 form-data 请求体
-      key: value
+    payload: { ... }        # 或 form_data / multipart_fields
     expect:
-      status: 200         # 期望 HTTP 状态码
+      status: 200
 ```
 
 ## 注意事项
 
-- 导入会清空所有现有集合和用例
-- 每个 YAML 文件的 `name` 字段作为集合名称
-- 每个 scenario 自动创建 status_code 断言
-- Headers 中自动添加 Content-Type
-- Authorization header 需通过 QAI 环境变量配置
+- 导入前会清空所有现有数据（collections、requests、assertions、executions、folders）
+- 如果 QAI 应用正在运行，导入后需要刷新页面或重启应用才能看到新数据
+- environments 和 settings 不受影响

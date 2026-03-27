@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { PlusCircle, X, ArrowUp, Square, Wrench } from 'lucide-react'
+import { PlusCircle, X, ArrowUp, Square, Wrench, Clock, ChevronLeft } from 'lucide-react'
 
 interface Props {
   onClose: () => void
@@ -13,6 +13,14 @@ interface ChatMessage {
   content: string
 }
 
+interface Session {
+  id: string
+  title: string
+  messages: ChatMessage[]
+  sessionId: string | null // claude --resume 用的 session_id
+  createdAt: number
+}
+
 interface ClaudeEvent {
   event_type: string
   content: string
@@ -22,15 +30,19 @@ interface ClaudeEvent {
 const THINKING_WORDS = ['Thinking...', 'Pondering...', 'Analyzing...', 'Reasoning...', 'Frolicking...']
 
 export default function TerminalPanel({ onClose }: Props) {
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [sessions, setSessions] = useState<Session[]>([])
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
+  const [showHistory, setShowHistory] = useState(false)
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
-  const [sessionId, setSessionId] = useState<string | null>(null)
   const [mcpConfigPath, setMcpConfigPath] = useState<string | null>(null)
   const [thinkingWord, setThinkingWord] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const mountedRef = useRef(true)
+
+  const activeSession = sessions.find((s) => s.id === activeSessionId)
+  const messages = activeSession?.messages ?? []
 
   useEffect(() => {
     mountedRef.current = true
@@ -38,34 +50,37 @@ export default function TerminalPanel({ onClose }: Props) {
     return () => { mountedRef.current = false }
   }, [])
 
-  // 监听 Claude 事件 — 用 ref 防止 StrictMode 重复
   useEffect(() => {
     let unlisten: (() => void) | undefined
     listen<ClaudeEvent>('claude-event', (event) => {
       if (!mountedRef.current) return
       const { event_type, content } = event.payload
       if (event_type === 'assistant') {
-        setMessages((prev) => {
-          const last = prev[prev.length - 1]
+        setSessions((prev) => prev.map((s) => {
+          if (s.id !== activeSessionId) return s
+          const msgs = [...s.messages]
+          const last = msgs[msgs.length - 1]
           if (last && last.role === 'assistant') {
-            return [...prev.slice(0, -1), { ...last, content: last.content + content }]
+            msgs[msgs.length - 1] = { ...last, content: last.content + content }
+          } else {
+            msgs.push({ id: crypto.randomUUID(), role: 'assistant', content })
           }
-          return [...prev, { id: crypto.randomUUID(), role: 'assistant', content }]
-        })
+          return { ...s, messages: msgs }
+        }))
       } else if (event_type === 'tool_use') {
-        setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: 'tool', content }])
+        setSessions((prev) => prev.map((s) => {
+          if (s.id !== activeSessionId) return s
+          return { ...s, messages: [...s.messages, { id: crypto.randomUUID(), role: 'tool', content }] }
+        }))
       }
-      // result 事件不显示（费用信息不展示）
     }).then((fn) => { unlisten = fn })
     return () => { unlisten?.(); mountedRef.current = false }
-  }, [])
+  }, [activeSessionId])
 
-  // 自动滚动
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages, sending])
 
-  // 思考文字动画
   useEffect(() => {
     if (!sending) return
     setThinkingWord(THINKING_WORDS[Math.floor(Math.random() * THINKING_WORDS.length)])
@@ -75,36 +90,99 @@ export default function TerminalPanel({ onClose }: Props) {
     return () => clearInterval(interval)
   }, [sending])
 
+  const createSession = () => {
+    invoke('claude_stop').catch(() => {})
+    setSending(false)
+    const newSession: Session = {
+      id: crypto.randomUUID(),
+      title: 'New session',
+      messages: [],
+      sessionId: null,
+      createdAt: Date.now(),
+    }
+    setSessions((prev) => [newSession, ...prev])
+    setActiveSessionId(newSession.id)
+    setShowHistory(false)
+    inputRef.current?.focus()
+  }
+
+  const switchSession = (id: string) => {
+    invoke('claude_stop').catch(() => {})
+    setSending(false)
+    setActiveSessionId(id)
+    setShowHistory(false)
+  }
+
+  // 首次挂载自动创建一个 session
+  useEffect(() => {
+    if (sessions.length === 0) createSession()
+  }, [])
+
   const handleSend = async () => {
     const text = input.trim()
-    if (!text || sending) return
+    if (!text || sending || !activeSession) return
     setInput('')
-    setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: 'user', content: text }])
+
+    // 更新 session title（第一条消息作为标题）
+    setSessions((prev) => prev.map((s) => {
+      if (s.id !== activeSessionId) return s
+      const title = s.messages.length === 0 ? text.substring(0, 40) : s.title
+      return { ...s, title, messages: [...s.messages, { id: crypto.randomUUID(), role: 'user', content: text }] }
+    }))
+
     setSending(true)
     try {
-      const result = await invoke<any>('claude_send', { message: text, mcpConfigPath, sessionId })
-      if (result?.session_id) setSessionId(result.session_id)
+      const result = await invoke<any>('claude_send', {
+        message: text,
+        mcpConfigPath,
+        sessionId: activeSession.sessionId,
+      })
+      if (result?.session_id) {
+        setSessions((prev) => prev.map((s) =>
+          s.id === activeSessionId ? { ...s, sessionId: result.session_id } : s
+        ))
+      }
     } catch (e: any) {
-      setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: 'system', content: `${e}` }])
+      setSessions((prev) => prev.map((s) => {
+        if (s.id !== activeSessionId) return s
+        return { ...s, messages: [...s.messages, { id: crypto.randomUUID(), role: 'system', content: `${e}` }] }
+      }))
     } finally {
       setSending(false)
       inputRef.current?.focus()
     }
   }
 
-  const handleStop = () => {
-    invoke('claude_stop').catch(() => {})
-    setSending(false)
-  }
-  const handleClear = () => {
-    invoke('claude_stop').catch(() => {})
-    setMessages([])
-    setSessionId(null)
-    setSending(false)
-    inputRef.current?.focus()
-  }
+  const handleStop = () => { invoke('claude_stop').catch(() => {}); setSending(false) }
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
+  }
+
+  // 历史列表视图
+  if (showHistory) {
+    return (
+      <div className="flex flex-col h-full bg-background">
+        <div className="flex items-center justify-between px-3 py-2 border-b border-overlay/[0.08] shrink-0">
+          <div className="flex items-center gap-2">
+            <button onClick={() => setShowHistory(false)} className="p-1 rounded hover:bg-overlay/[0.06] cursor-pointer"><ChevronLeft className="h-3.5 w-3.5 text-muted-foreground" /></button>
+            <span className="text-xs font-medium">会话历史</span>
+          </div>
+          <button onClick={createSession} className="p-1 rounded hover:bg-overlay/[0.06] cursor-pointer" title="新建会话"><PlusCircle className="h-3.5 w-3.5 text-muted-foreground" /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {sessions.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => switchSession(s.id)}
+              className={`w-full text-left px-4 py-3 border-b border-overlay/[0.04] hover:bg-overlay/[0.04] cursor-pointer transition-colors ${s.id === activeSessionId ? 'bg-overlay/[0.06]' : ''}`}
+            >
+              <div className="text-sm truncate">{s.title}</div>
+              <div className="text-[10px] text-muted-foreground mt-0.5">{s.messages.length} 条消息 · {new Date(s.createdAt).toLocaleTimeString()}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -113,15 +191,18 @@ export default function TerminalPanel({ onClose }: Props) {
       <div className="flex items-center justify-between px-3 py-2 border-b border-overlay/[0.08] shrink-0" data-tauri-drag-region="">
         <div className="flex items-center gap-2">
           <ClaudeLogo />
-          <span className="text-xs font-medium">Claude Code</span>
+          <span className="text-xs font-medium">{activeSession?.title || 'Claude Code'}</span>
           {mcpConfigPath && <span className="text-[9px] text-emerald-500 font-medium">MCP</span>}
         </div>
         <div className="flex items-center gap-1">
-          <button onClick={handleClear} className="p-1 rounded hover:bg-overlay/[0.06] cursor-pointer transition-colors" title="新建会话">
+          <button onClick={() => setShowHistory(true)} className="p-1 rounded hover:bg-overlay/[0.06] cursor-pointer transition-colors" title="会话历史">
+            <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+          </button>
+          <button onClick={createSession} className="p-1 rounded hover:bg-overlay/[0.06] cursor-pointer transition-colors" title="新建会话">
             <PlusCircle className="h-3.5 w-3.5 text-muted-foreground" />
           </button>
           <button onClick={onClose} className="p-1 rounded hover:bg-overlay/[0.06] cursor-pointer transition-colors" title="关闭">
-            <X className="h-3 w-3 text-muted-foreground" />
+            <X className="h-3.5 w-3.5 text-muted-foreground" />
           </button>
         </div>
       </div>
@@ -139,35 +220,17 @@ export default function TerminalPanel({ onClose }: Props) {
         )}
 
         {messages.map((msg) => {
-          if (msg.role === 'user') {
-            return (
-              <div key={msg.id} className="rounded-xl bg-overlay/[0.06] px-3.5 py-2.5 text-sm">
-                {msg.content}
-              </div>
-            )
-          }
-          if (msg.role === 'assistant') {
-            return (
-              <div key={msg.id} className="flex gap-2.5">
-                <div className="shrink-0 mt-0.5 h-4 w-4 rounded-full bg-[#D4A574]/20 flex items-center justify-center">
-                  <div className="h-1.5 w-1.5 rounded-full bg-[#D4A574]" />
-                </div>
-                <div className="text-sm leading-relaxed whitespace-pre-wrap min-w-0">{msg.content}</div>
-              </div>
-            )
-          }
-          if (msg.role === 'tool') {
-            return (
-              <div key={msg.id} className="flex items-center gap-1.5 text-xs text-muted-foreground/70 pl-6">
-                <Wrench className="h-3 w-3" />
-                <span>{msg.content}</span>
-              </div>
-            )
-          }
+          if (msg.role === 'user') return <div key={msg.id} className="rounded-xl bg-overlay/[0.06] px-3.5 py-2.5 text-sm">{msg.content}</div>
+          if (msg.role === 'assistant') return (
+            <div key={msg.id} className="flex gap-2.5">
+              <div className="shrink-0 mt-0.5 h-4 w-4 rounded-full bg-[#D4A574]/20 flex items-center justify-center"><div className="h-1.5 w-1.5 rounded-full bg-[#D4A574]" /></div>
+              <div className="text-sm leading-relaxed whitespace-pre-wrap min-w-0">{msg.content}</div>
+            </div>
+          )
+          if (msg.role === 'tool') return <div key={msg.id} className="flex items-center gap-1.5 text-xs text-muted-foreground/70 pl-6"><Wrench className="h-3 w-3" /><span>{msg.content}</span></div>
           return <div key={msg.id} className="text-xs text-destructive/80 px-1">{msg.content}</div>
         })}
 
-        {/* 思考动画 — Claude 风格 */}
         {sending && (
           <div className="flex items-center gap-2">
             <ClaudeLogo />

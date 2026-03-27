@@ -230,26 +230,13 @@ input, textarea, pre, code {
 }
 
 /* ═══ 渐变主色按钮 ═══ */
-.btn-gradient {
-  background: linear-gradient(135deg, oklch(0.55 0.2 240), oklch(0.5 0.22 280));
-  color: oklch(0.98 0 0);
-}
-
+/* 深色：深蓝紫渐变 + 光晕 */
 .dark .btn-gradient {
   background: linear-gradient(135deg, oklch(0.6 0.18 240), oklch(0.55 0.2 280));
+  color: oklch(0.98 0 0);
   box-shadow:
     0 1px 2px oklch(0 0 0 / 0.3),
     0 0 12px oklch(0.6 0.18 240 / 0.15);
-}
-
-:root:not(.dark) .btn-gradient {
-  box-shadow:
-    0 1px 3px oklch(0 0 0 / 0.15),
-    0 0 10px oklch(0.55 0.2 240 / 0.2);
-}
-
-.btn-gradient:hover {
-  filter: brightness(1.08);
 }
 
 .dark .btn-gradient:hover {
@@ -259,10 +246,16 @@ input, textarea, pre, code {
     0 0 20px oklch(0.6 0.18 240 / 0.25);
 }
 
+/* 浅色：纯色前景 + 轻投影，不用渐变 */
+:root:not(.dark) .btn-gradient {
+  background: oklch(0.35 0.15 260);
+  color: oklch(0.98 0 0);
+  box-shadow: 0 1px 3px oklch(0 0 0 / 0.1);
+}
+
 :root:not(.dark) .btn-gradient:hover {
-  box-shadow:
-    0 2px 6px oklch(0 0 0 / 0.18),
-    0 0 16px oklch(0.55 0.2 240 / 0.3);
+  background: oklch(0.3 0.16 260);
+  box-shadow: 0 2px 6px oklch(0 0 0 / 0.15);
 }
 
 /* ═══ 渐变文字 ═══ */

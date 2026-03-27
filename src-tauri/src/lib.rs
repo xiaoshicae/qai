@@ -20,6 +20,7 @@ pub fn run() {
             let app_handle = app.handle();
             initialize_database(app_handle)?;
             app.manage(pty::PtyState::new());
+            app.manage(commands::claude_cmd::ClaudeState::new());
 
             if cfg!(debug_assertions) {
                 app_handle.plugin(
@@ -75,6 +76,8 @@ pub fn run() {
             commands::pty_cmd::pty_resize,
             commands::pty_cmd::pty_kill,
             commands::pty_cmd::prepare_mcp_config,
+            commands::claude_cmd::claude_send,
+            commands::claude_cmd::claude_stop,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

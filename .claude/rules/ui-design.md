@@ -177,6 +177,75 @@ const ok = await confirm('确定删除？', { title: '删除', kind: 'warning' }
 - 侧边栏顶部 `pt-9` + `data-tauri-drag-region`
 - 主内容区/AI 面板顶部 `h-8` + `data-tauri-drag-region`
 
+## 浅色模式 overlay 补偿
+
+浅色模式下 `overlay/[0.06]` (6% 黑色在白底) 几乎不可见。
+`index.css` 中通过 CSS 选择器覆盖，将浅色模式的 overlay 透明度统一提升约 2 倍：
+
+```css
+:root:not(.dark) .border-overlay\/\[0\.06\] { border-color: oklch(0 0 0 / 0.12); }
+:root:not(.dark) .bg-overlay\/\[0\.04\] { background-color: oklch(0 0 0 / 0.06); }
+/* ... 等 */
+```
+
+**不需要在组件中写额外的浅色模式适配代码**，CSS 层自动处理。
+
+## 布局防跳动规范
+
+### 条件内容不能改变容器尺寸
+
+弹窗内切换显示/隐藏内容时，必须保持容器高度不变：
+
+```tsx
+// 错误：条件渲染导致弹窗尺寸跳动
+{bodyType !== 'none' && <textarea rows={8} />}
+
+// 正确：固定容器高度，所有状态共用
+<div style={{ minHeight: '218px' }}>
+  {bodyType === 'none' ? (
+    <div className="h-full ...">无请求体</div>
+  ) : (
+    <textarea className="h-full ..." />
+  )}
+</div>
+```
+
+### 工具按钮不能影响布局
+
+条件出现的按钮（如 Format）不应该在标签栏内导致其他按钮位移：
+
+```tsx
+// 错误：条件渲染导致标签组宽度变化
+{bodyType === 'json' && <button>Format</button>}
+
+// 正确方案 A：invisible 占位
+<button className={bodyType === 'json' ? '' : 'invisible'}>Format</button>
+
+// 正确方案 B：浮动在内容区内
+<div className="relative">
+  <textarea />
+  {bodyType === 'json' && (
+    <button className="absolute top-2 right-2 ...">Format</button>
+  )}
+</div>
+```
+
+## Body 类型规范
+
+支持 5 种 body 类型：
+
+| 类型 | body_type | 编辑器 | Content-Type |
+|------|-----------|--------|-------------|
+| None | `none` | 占位框 | (不发送) |
+| Form Data | `form-data` | KeyValueTable | multipart/form-data |
+| URL Encoded | `urlencoded` | KeyValueTable | x-www-form-urlencoded |
+| JSON | `json` | textarea + Format | application/json |
+| Raw | `raw` | textarea | (手动设置) |
+
+- `form-data` 和 `urlencoded` 的 body_content 存储格式：`JSON.stringify([{key, value, enabled}])`
+- Rust 端 `form-data` 用 `reqwest::multipart::Form`，`urlencoded` 用 `builder.form()`
+- 旧的 `form` 类型等同于 `urlencoded`，Rust 端做了兼容
+
 ## 新建/修改组件检查清单
 
 - [ ] 半透明叠加用 `overlay`，不用 `white` 或 `black`
@@ -186,4 +255,5 @@ const ok = await confirm('确定删除？', { title: '删除', kind: 'warning' }
 - [ ] 交互态用 `bg-overlay/[0.04]`（hover）、`bg-overlay/[0.08]`（active）
 - [ ] 圆角层级正确
 - [ ] 有 `transition-all duration-200`
+- [ ] 条件内容不改变容器尺寸（防跳动）
 - [ ] 在深色和浅色模式下都测试过

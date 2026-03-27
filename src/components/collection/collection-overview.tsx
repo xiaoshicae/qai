@@ -3,11 +3,12 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import {
   Play, Download, CheckCircle2, XCircle, AlertCircle, Circle,
-  ChevronDown, ChevronRight, Loader2, Plus, Trash2, Pencil, Link2,
+  ChevronDown, ChevronRight, Loader2, Plus, Trash2, Pencil, Link2, Square,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
+import KeyValueTable from '@/components/request/key-value-table'
 import { Progress } from '@/components/ui/progress'
 import { useConfirmStore } from '@/components/ui/confirm-dialog'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from '@/components/ui/dialog'
@@ -16,6 +17,14 @@ import type {
   Collection, CollectionTreeNode, RequestLastStatus,
   BatchResult, TestProgress, ExecutionResult, ApiRequest,
 } from '@/types'
+
+const BODY_TYPES = [
+  { id: 'none', label: 'None' },
+  { id: 'form-data', label: 'Form Data' },
+  { id: 'urlencoded', label: 'URL Encoded' },
+  { id: 'json', label: 'JSON' },
+  { id: 'raw', label: 'Raw' },
+]
 
 interface Props {
   collection: Collection
@@ -88,16 +97,28 @@ export default function CollectionOverview({ collection, tree }: Props) {
   const getResult = (id: string): ExecutionResult | undefined => batchResult?.results.find((x) => x.request_id === id) ?? singleResults[id]
 
   // 批量运行
+  const abortRef = useRef(false)
   const runAll = async () => {
+    abortRef.current = false
     setRunning(true); setProgress([]); setBatchResult(null); setSingleResults({}); setError(null); setExpandedRows(new Set())
     unlistenRef.current = await listen<TestProgress>('test-progress', (e) => {
+      if (abortRef.current) return
       setProgress((prev) => { const idx = prev.findIndex((x) => x.request_id === e.payload.request_id); if (idx >= 0) { const n = [...prev]; n[idx] = e.payload; return n } return [...prev, e.payload] })
     })
     try {
       const result = await invoke<BatchResult>('run_collection', { collectionId: collection.id, concurrency: 5 })
-      setBatchResult(result); loadStatuses()
-    } catch (e: any) { setError(typeof e === 'string' ? e : e.message) }
+      if (!abortRef.current) { setBatchResult(result); loadStatuses() }
+    } catch (e: any) { if (!abortRef.current) setError(typeof e === 'string' ? e : e.message) }
     finally { setRunning(false); unlistenRef.current?.(); unlistenRef.current = null }
+  }
+
+  const stopRun = () => {
+    abortRef.current = true
+    setRunning(false)
+    setProgress([])
+    unlistenRef.current?.()
+    unlistenRef.current = null
+    loadStatuses()
   }
 
   // 单个运行
@@ -182,13 +203,13 @@ export default function CollectionOverview({ collection, tree }: Props) {
       {/* 头部 */}
       <div>
         <h1 className="text-xl font-bold mb-1.5">{collection.name}</h1>
-        <input
+        <InlineEdit
           value={collection.description}
-          onChange={async (e) => {
-            await invoke('update_collection_meta', { id: collection.id, description: e.target.value })
+          placeholder="双击添加描述..."
+          onSave={async (v) => {
+            await invoke('update_collection_meta', { id: collection.id, description: v })
+            await loadTree(collection.id)
           }}
-          placeholder="添加描述..."
-          className="text-xs text-muted-foreground bg-transparent border-0 outline-none w-full placeholder:text-muted-foreground/40 focus:text-foreground"
         />
       </div>
 
@@ -208,10 +229,15 @@ export default function CollectionOverview({ collection, tree }: Props) {
 
       {/* 操作栏 */}
       <div className="flex items-center gap-2">
-        <Button onClick={runAll} disabled={running} size="sm" className="gap-1.5">
-          {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-          {running ? '执行中...' : '运行全部'}
-        </Button>
+        {running ? (
+          <Button onClick={stopRun} size="sm" variant="destructive" className="gap-1.5">
+            <Square className="h-3 w-3" /> 停止
+          </Button>
+        ) : (
+          <Button onClick={runAll} size="sm" className="gap-1.5">
+            <Play className="h-3.5 w-3.5" /> 运行全部
+          </Button>
+        )}
         <Button variant="outline" size="sm" className="gap-1.5" onClick={addTestCase}>
           <Plus className="h-3.5 w-3.5" /> 添加用例
         </Button>
@@ -236,7 +262,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
               const groupStatuses = item.steps.map((s) => getStatus(s.id)).filter(Boolean)
               const groupPass = groupStatuses.every((s) => s === 'success')
               const groupFail = groupStatuses.some((s) => s === 'failed' || s === 'error')
-              const groupLabel = groupStatuses.length === 0 ? '-' : groupPass ? 'PASS' : groupFail ? 'FAIL' : 'RUN'
+              const groupLabel = groupStatuses.length === 0 ? '-' : groupPass ? 'PASS' : groupFail ? 'FAIL' : 'Running'
               const groupColor = groupStatuses.length === 0 ? '' : groupPass ? 'text-emerald-500' : groupFail ? 'text-red-500' : 'text-blue-500'
               return (
                 <div key={`group-${itemIdx}`}>
@@ -316,11 +342,6 @@ function EditForm({ req, onChange, onSave, onCancel }: {
   })()
 
   const setHeaders = (h: typeof headers) => set('headers', JSON.stringify(h))
-  const addHeader = () => setHeaders([...headers, { key: '', value: '', enabled: true }])
-  const removeHeader = (i: number) => setHeaders(headers.filter((_, idx) => idx !== i))
-  const updateHeader = (i: number, field: string, val: string | boolean) => {
-    const next = [...headers]; next[i] = { ...next[i], [field]: val }; setHeaders(next)
-  }
 
   return (
     <div className="space-y-4">
@@ -353,17 +374,24 @@ function EditForm({ req, onChange, onSave, onCancel }: {
         <div className="flex items-center justify-between mb-1.5">
           <label className="text-xs text-muted-foreground">请求体</label>
           <div className="flex items-center gap-1">
-            {['none', 'json', 'form', 'raw'].map((t) => (
-              <button key={t} className={`px-2.5 py-1 rounded-md text-[10px] font-medium cursor-pointer transition-colors ${req.body_type === t ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`} onClick={() => set('body_type', t)}>
-                {t === 'none' ? 'None' : t.toUpperCase()}
+            {BODY_TYPES.map((t) => (
+              <button key={t.id} className={`px-2.5 py-1 rounded-md text-[10px] font-medium cursor-pointer transition-colors ${req.body_type === t.id ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`} onClick={() => set('body_type', t.id)}>
+                {t.label}
               </button>
             ))}
           </div>
         </div>
-        <div className="relative" style={{ height: '218px' }}>
+        <div className="relative h-[200px]">
           {req.body_type === 'none' ? (
             <div className="w-full h-full rounded-xl border border-overlay/[0.06] bg-overlay/[0.02] flex items-center justify-center">
               <span className="text-xs text-muted-foreground/40">无请求体</span>
+            </div>
+          ) : (req.body_type === 'form-data' || req.body_type === 'urlencoded' || req.body_type === 'form') ? (
+            <div className="h-full overflow-y-auto">
+              <KeyValueTable
+                value={(() => { try { const p = JSON.parse(req.body_content || '[]'); return Array.isArray(p) ? p : [] } catch { return [] } })()}
+                onChange={(v) => set('body_content', JSON.stringify(v))}
+              />
             </div>
           ) : (
             <>
@@ -372,7 +400,7 @@ function EditForm({ req, onChange, onSave, onCancel }: {
                 onChange={(e) => set('body_content', e.target.value)}
                 onKeyDown={handleBodyKeyDown}
                 style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}
-                className="w-full h-full rounded-xl border border-overlay/[0.08] bg-overlay/[0.03] px-3 py-2 text-xs leading-relaxed resize-none outline-none hover:border-overlay/[0.12] focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/20 transition-all duration-200"
+                className="w-full h-full min-h-0 rounded-xl border border-overlay/[0.08] bg-overlay/[0.03] px-3 py-2 text-xs leading-relaxed resize-none outline-none hover:border-overlay/[0.12] focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/20 transition-all duration-200"
                 placeholder='{ "key": "value" }'
               />
               {req.body_type === 'json' && (
@@ -388,47 +416,13 @@ function EditForm({ req, onChange, onSave, onCancel }: {
         </div>
       </div>
 
-      {/* Headers — Postman 风格 KV 编辑 */}
+      {/* Headers */}
       <div>
-        <div className="flex items-center justify-between mb-1.5">
-          <label className="text-xs text-muted-foreground">Headers</label>
-          <button onClick={addHeader} className="text-[10px] text-muted-foreground hover:text-foreground cursor-pointer">+ 添加</button>
-        </div>
-        {headers.length === 0 ? (
-          <div className="text-xs text-muted-foreground/50 text-center py-3 border border-dashed border-foreground/10 rounded-lg">
-            暂无 Header，点击"+ 添加"
-          </div>
-        ) : (
-          <div className="space-y-1.5">
-            {headers.map((h, i) => (
-              <div key={i} className="flex items-center gap-1.5">
-                <input
-                  type="checkbox"
-                  checked={h.enabled}
-                  onChange={(e) => updateHeader(i, 'enabled', e.target.checked)}
-                  className="shrink-0 cursor-pointer"
-                />
-                <Input
-                  value={h.key}
-                  onChange={(e) => updateHeader(i, 'key', e.target.value)}
-                  placeholder="Key"
-                  className="h-7 text-xs flex-1"
-                  style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}
-                />
-                <Input
-                  value={h.value}
-                  onChange={(e) => updateHeader(i, 'value', e.target.value)}
-                  placeholder="Value"
-                  className="h-7 text-xs flex-1"
-                  style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}
-                />
-                <button onClick={() => removeHeader(i)} className="shrink-0 h-7 w-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 cursor-pointer transition-colors">
-                  <Trash2 className="h-3 w-3" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+        <label className="text-xs text-muted-foreground mb-1.5 block">Headers</label>
+        <KeyValueTable
+          value={headers}
+          onChange={setHeaders}
+        />
       </div>
 
       {/* 按钮 */}
@@ -446,6 +440,43 @@ function StatCard({ label, value, color }: { label: string; value: number; color
       <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{label}</span>
       <div className={`text-2xl font-bold tabular-nums mt-1 ${color ?? ''}`}>{value}</div>
     </div>
+  )
+}
+
+// ─── 双击编辑 ──────────────────────────
+function InlineEdit({ value, placeholder, onSave }: { value: string; placeholder: string; onSave: (v: string) => void }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(value)
+
+  useEffect(() => { setDraft(value) }, [value])
+
+  const commit = () => {
+    setEditing(false)
+    if (draft !== value) onSave(draft)
+  }
+
+  if (editing) {
+    return (
+      <Input
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setDraft(value); setEditing(false) } }}
+        className="h-7 text-xs"
+        autoFocus
+      />
+    )
+  }
+
+  return (
+    <span
+      className="text-xs text-muted-foreground cursor-pointer hover:text-foreground transition-colors inline-flex items-center gap-1 group"
+      onDoubleClick={() => setEditing(true)}
+      title="双击编辑"
+    >
+      {value || <span className="text-muted-foreground/40 italic">{placeholder}</span>}
+      <Pencil className="h-2.5 w-2.5 opacity-0 group-hover:opacity-50 hover:!opacity-100 transition-opacity cursor-pointer" onClick={(e) => { e.stopPropagation(); setEditing(true) }} />
+    </span>
   )
 }
 
@@ -476,7 +507,7 @@ function ScenarioRow({ r, stepLabel, indent, getResult, getStatus: _getStatus, s
   const isRunning = runningIds.has(r.id) || prog?.status === 'running'
   const detail = detailData[r.id]
   const sd = !status ? { icon: <Circle className="h-3.5 w-3.5 text-muted-foreground/30" />, label: '-', color: '' }
-    : status === 'running' ? { icon: <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500" />, label: 'RUN', color: 'text-blue-500' }
+    : status === 'running' ? { icon: <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500" />, label: 'Running', color: 'text-blue-500' }
     : status === 'success' ? { icon: <CheckCircle2 className="h-3.5 w-3.5" />, label: 'PASS', color: 'text-emerald-500' }
     : status === 'failed' ? { icon: <XCircle className="h-3.5 w-3.5" />, label: 'FAIL', color: 'text-red-500' }
     : { icon: <AlertCircle className="h-3.5 w-3.5" />, label: 'ERR', color: 'text-amber-500' }

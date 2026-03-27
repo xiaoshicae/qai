@@ -7,6 +7,8 @@ use base64::Engine;
 pub struct PtyState {
     writer: Mutex<Option<Box<dyn Write + Send>>>,
     master: Mutex<Option<Box<dyn MasterPty + Send>>>,
+    #[allow(dead_code)]
+    slave: Mutex<Option<Box<dyn portable_pty::SlavePty + Send>>>,
 }
 
 impl PtyState {
@@ -14,6 +16,7 @@ impl PtyState {
         Self {
             writer: Mutex::new(None),
             master: Mutex::new(None),
+            slave: Mutex::new(None),
         }
     }
 
@@ -25,18 +28,30 @@ impl PtyState {
             .openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
             .map_err(|e| format!("{e}"))?;
 
-        let mut cmd = CommandBuilder::new_default_prog();
+        // 明确指定 shell 路径
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+        let mut cmd = CommandBuilder::new(&shell);
+        cmd.arg("-l"); // login shell，加载完整环境
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
+        // 确保 PATH 包含常用路径
+        if let Ok(path) = std::env::var("PATH") {
+            cmd.env("PATH", path);
+        } else {
+            cmd.env("PATH", "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin");
+        }
+        if let Ok(home) = std::env::var("HOME") {
+            cmd.env("HOME", &home);
+            cmd.cwd(&home);
+        }
 
         let _child = pair.slave.spawn_command(cmd).map_err(|e| format!("{e}"))?;
-        // slave 端在 spawn 后可以 drop
-        drop(pair.slave);
 
         let reader = pair.master.try_clone_reader().map_err(|e| format!("{e}"))?;
         let writer = pair.master.take_writer().map_err(|e| format!("{e}"))?;
 
         *self.writer.lock().unwrap() = Some(writer);
+        *self.slave.lock().unwrap() = Some(pair.slave); // 保持 slave 存活
         *self.master.lock().unwrap() = Some(pair.master);
 
         // 后台线程读取 PTY 输出
@@ -68,6 +83,7 @@ impl PtyState {
 
     pub fn kill(&self) -> Result<(), String> {
         *self.writer.lock().unwrap() = None;
+        *self.slave.lock().unwrap() = None;
         *self.master.lock().unwrap() = None;
         Ok(())
     }

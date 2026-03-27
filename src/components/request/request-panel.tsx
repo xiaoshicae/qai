@@ -146,19 +146,22 @@ export default function RequestPanel() {
         </TabsContent>
         <TabsContent value="body">
           <div className="mb-3 flex items-center gap-1">
-            {['none', 'json', 'form', 'raw'].map((t) => (
-              <button
-                key={t}
-                className={`px-2.5 py-1 rounded-lg text-xs font-medium cursor-pointer transition-colors ${
-                  bodyType === t
-                    ? 'bg-muted text-foreground'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-                onClick={() => setBodyType(t)}
-              >
-                {t === 'none' ? 'None' : t.toUpperCase()}
-              </button>
-            ))}
+            {['none', 'form-data', 'urlencoded', 'json', 'raw'].map((t) => {
+              const label: Record<string, string> = { none: 'None', 'form-data': 'Form Data', urlencoded: 'URL Encoded', json: 'JSON', raw: 'Raw' }
+              return (
+                <button
+                  key={t}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium cursor-pointer transition-colors ${
+                    bodyType === t
+                      ? 'bg-muted text-foreground'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                  onClick={() => setBodyType(t)}
+                >
+                  {label[t] ?? t}
+                </button>
+              )
+            })}
             {bodyType === 'json' && bodyContent && (
               <div className="ml-auto flex items-center gap-0.5">
                 <button
@@ -186,7 +189,7 @@ export default function RequestPanel() {
               </div>
             )}
           </div>
-          {bodyType !== 'none' && bodyType !== 'form' && (
+          {bodyType !== 'none' && bodyType !== 'form' && bodyType !== 'form-data' && bodyType !== 'urlencoded' && (
             <Textarea
               value={bodyContent}
               onChange={(e) => setBodyContent(e.target.value)}
@@ -196,7 +199,7 @@ export default function RequestPanel() {
               className="font-mono text-xs leading-relaxed"
             />
           )}
-          {bodyType === 'form' && (
+          {(bodyType === 'form' || bodyType === 'form-data' || bodyType === 'urlencoded') && (
             <KeyValueTable
               value={(() => {
                 try {

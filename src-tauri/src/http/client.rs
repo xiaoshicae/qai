@@ -41,7 +41,7 @@ pub async fn execute(client: &reqwest::Client, req: &ApiRequest) -> Result<Execu
                 builder = builder.body(req.body_content.clone());
             }
         }
-        "form" => {
+        "form" | "urlencoded" => {
             let form_data: Vec<KeyValuePair> =
                 serde_json::from_str(&req.body_content).unwrap_or_default();
             let form: Vec<(&str, &str)> = form_data
@@ -50,6 +50,15 @@ pub async fn execute(client: &reqwest::Client, req: &ApiRequest) -> Result<Execu
                 .map(|kv| (kv.key.as_str(), kv.value.as_str()))
                 .collect();
             builder = builder.form(&form);
+        }
+        "form-data" => {
+            let form_data: Vec<KeyValuePair> =
+                serde_json::from_str(&req.body_content).unwrap_or_default();
+            let mut multipart = reqwest::multipart::Form::new();
+            for kv in form_data.iter().filter(|kv| kv.enabled) {
+                multipart = multipart.text(kv.key.clone(), kv.value.clone());
+            }
+            builder = builder.multipart(multipart);
         }
         _ => {}
     }

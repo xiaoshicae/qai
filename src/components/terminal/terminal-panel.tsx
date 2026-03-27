@@ -1,160 +1,216 @@
 import { useEffect, useRef, useState } from 'react'
-import { Terminal } from '@xterm/xterm'
-import { FitAddon } from '@xterm/addon-fit'
-import { WebLinksAddon } from '@xterm/addon-web-links'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import '@xterm/xterm/css/xterm.css'
-import { TerminalSquare, RefreshCw, X } from 'lucide-react'
+import { PlusCircle, X, ArrowUp, Square, Wrench } from 'lucide-react'
 
 interface Props {
   onClose: () => void
 }
 
+interface ChatMessage {
+  id: string
+  role: 'user' | 'assistant' | 'tool' | 'system'
+  content: string
+}
+
+interface ClaudeEvent {
+  event_type: string
+  content: string
+  raw?: any
+}
+
+const THINKING_WORDS = ['Thinking...', 'Pondering...', 'Analyzing...', 'Reasoning...', 'Frolicking...']
+
 export default function TerminalPanel({ onClose }: Props) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const termRef = useRef<Terminal | null>(null)
-  const fitRef = useRef<FitAddon | null>(null)
-  const [spawned, setSpawned] = useState(false)
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [input, setInput] = useState('')
+  const [sending, setSending] = useState(false)
+  const [sessionId, setSessionId] = useState<string | null>(null)
+  const [mcpConfigPath, setMcpConfigPath] = useState<string | null>(null)
+  const [thinkingWord, setThinkingWord] = useState('')
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+  const mountedRef = useRef(true)
 
   useEffect(() => {
-    if (!containerRef.current) return
-
-    const term = new Terminal({
-      fontSize: 13,
-      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-      cursorBlink: true,
-      cursorStyle: 'bar',
-      theme: {
-        background: '#0a0a0b',
-        foreground: '#e4e4e7',
-        cursor: '#a78bfa',
-        selectionBackground: '#3f3f4640',
-        black: '#18181b',
-        red: '#ef4444',
-        green: '#10b981',
-        yellow: '#f59e0b',
-        blue: '#3b82f6',
-        magenta: '#a78bfa',
-        cyan: '#06b6d4',
-        white: '#e4e4e7',
-        brightBlack: '#52525b',
-        brightRed: '#f87171',
-        brightGreen: '#34d399',
-        brightYellow: '#fbbf24',
-        brightBlue: '#60a5fa',
-        brightMagenta: '#c4b5fd',
-        brightCyan: '#22d3ee',
-        brightWhite: '#fafafa',
-      },
-    })
-
-    const fitAddon = new FitAddon()
-    term.loadAddon(fitAddon)
-    term.loadAddon(new WebLinksAddon())
-    term.open(containerRef.current)
-    fitAddon.fit()
-
-    termRef.current = term
-    fitRef.current = fitAddon
-
-    // 键盘输入 → PTY
-    term.onData((data) => {
-      const bytes = new TextEncoder().encode(data)
-      invoke('pty_write', { data: Array.from(bytes) }).catch(() => {})
-    })
-
-    // PTY 输出 → 终端
-    let unlistenOutput: (() => void) | undefined
-    let unlistenExit: (() => void) | undefined
-
-    listen<string>('pty-output', (event) => {
-      const bytes = Uint8Array.from(atob(event.payload), (c) => c.charCodeAt(0))
-      term.write(bytes)
-    }).then((fn) => { unlistenOutput = fn })
-
-    listen('pty-exit', () => {
-      term.writeln('\r\n\x1b[33m[终端已退出]\x1b[0m')
-      setSpawned(false)
-    }).then((fn) => { unlistenExit = fn })
-
-    // 启动 PTY
-    const { cols, rows } = term
-    invoke('pty_spawn', { cols, rows }).then(() => {
-      setSpawned(true)
-    }).catch((e) => {
-      term.writeln(`\x1b[31m启动终端失败: ${e}\x1b[0m`)
-    })
-
-    // 监听容器大小变化
-    const resizeObserver = new ResizeObserver(() => {
-      fitAddon.fit()
-      if (termRef.current) {
-        const { cols, rows } = termRef.current
-        invoke('pty_resize', { cols, rows }).catch(() => {})
-      }
-    })
-    resizeObserver.observe(containerRef.current)
-
-    return () => {
-      resizeObserver.disconnect()
-      unlistenOutput?.()
-      unlistenExit?.()
-      invoke('pty_kill').catch(() => {})
-      term.dispose()
-    }
+    mountedRef.current = true
+    invoke<string>('prepare_mcp_config').then(setMcpConfigPath).catch(() => {})
+    return () => { mountedRef.current = false }
   }, [])
 
-  const handleRestart = async () => {
-    await invoke('pty_kill').catch(() => {})
-    if (termRef.current) {
-      termRef.current.clear()
-      const { cols, rows } = termRef.current
-      await invoke('pty_spawn', { cols, rows })
-      setSpawned(true)
+  // 监听 Claude 事件 — 用 ref 防止 StrictMode 重复
+  useEffect(() => {
+    let unlisten: (() => void) | undefined
+    listen<ClaudeEvent>('claude-event', (event) => {
+      if (!mountedRef.current) return
+      const { event_type, content } = event.payload
+      if (event_type === 'assistant') {
+        setMessages((prev) => {
+          const last = prev[prev.length - 1]
+          if (last && last.role === 'assistant') {
+            return [...prev.slice(0, -1), { ...last, content: last.content + content }]
+          }
+          return [...prev, { id: crypto.randomUUID(), role: 'assistant', content }]
+        })
+      } else if (event_type === 'tool_use') {
+        setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: 'tool', content }])
+      }
+      // result 事件不显示（费用信息不展示）
+    }).then((fn) => { unlisten = fn })
+    return () => { unlisten?.(); mountedRef.current = false }
+  }, [])
+
+  // 自动滚动
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
+  }, [messages, sending])
+
+  // 思考文字动画
+  useEffect(() => {
+    if (!sending) return
+    setThinkingWord(THINKING_WORDS[Math.floor(Math.random() * THINKING_WORDS.length)])
+    const interval = setInterval(() => {
+      setThinkingWord(THINKING_WORDS[Math.floor(Math.random() * THINKING_WORDS.length)])
+    }, 3000)
+    return () => clearInterval(interval)
+  }, [sending])
+
+  const handleSend = async () => {
+    const text = input.trim()
+    if (!text || sending) return
+    setInput('')
+    setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: 'user', content: text }])
+    setSending(true)
+    try {
+      const result = await invoke<any>('claude_send', { message: text, mcpConfigPath, sessionId })
+      if (result?.session_id) setSessionId(result.session_id)
+    } catch (e: any) {
+      setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: 'system', content: `${e}` }])
+    } finally {
+      setSending(false)
+      inputRef.current?.focus()
     }
   }
 
-  // 自动启动 claude（带 MCP 配置）
-  const handleStartClaude = async () => {
-    try {
-      const configPath = await invoke<string>('prepare_mcp_config')
-      const cmd = `claude --mcp-config "${configPath}"\n`
-      const bytes = new TextEncoder().encode(cmd)
-      await invoke('pty_write', { data: Array.from(bytes) })
-    } catch (e) {
-      termRef.current?.writeln(`\x1b[31mClaude 启动失败: ${e}\x1b[0m`)
-    }
+  const handleStop = () => {
+    invoke('claude_stop').catch(() => {})
+    setSending(false)
+  }
+  const handleClear = () => {
+    invoke('claude_stop').catch(() => {})
+    setMessages([])
+    setSessionId(null)
+    setSending(false)
+    inputRef.current?.focus()
+  }
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
   }
 
   return (
-    <div className="flex flex-col h-full bg-[#0a0a0b]">
+    <div className="flex flex-col h-full bg-background">
       {/* 头部 */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-white/[0.06]" data-tauri-drag-region="">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-overlay/[0.08] shrink-0" data-tauri-drag-region="">
         <div className="flex items-center gap-2">
-          <TerminalSquare className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-xs font-medium text-foreground/80">终端</span>
+          <ClaudeLogo />
+          <span className="text-xs font-medium">Claude Code</span>
+          {mcpConfigPath && <span className="text-[9px] text-emerald-500 font-medium">MCP</span>}
         </div>
         <div className="flex items-center gap-1">
-          {spawned && (
-            <button
-              onClick={handleStartClaude}
-              className="px-2 py-0.5 rounded text-[10px] font-medium text-primary hover:bg-primary/10 cursor-pointer transition-colors"
-            >
-              启动 Claude
-            </button>
-          )}
-          <button onClick={handleRestart} className="p-1 rounded hover:bg-white/[0.06] cursor-pointer transition-colors" title="重启终端">
-            <RefreshCw className="h-3 w-3 text-muted-foreground" />
+          <button onClick={handleClear} className="p-1 rounded hover:bg-overlay/[0.06] cursor-pointer transition-colors" title="新建会话">
+            <PlusCircle className="h-3.5 w-3.5 text-muted-foreground" />
           </button>
-          <button onClick={onClose} className="p-1 rounded hover:bg-white/[0.06] cursor-pointer transition-colors" title="关闭">
+          <button onClick={onClose} className="p-1 rounded hover:bg-overlay/[0.06] cursor-pointer transition-colors" title="关闭">
             <X className="h-3 w-3 text-muted-foreground" />
           </button>
         </div>
       </div>
 
-      {/* 终端容器 */}
-      <div ref={containerRef} className="flex-1 px-1 py-1" />
+      {/* 消息区域 */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+        {messages.length === 0 && !sending && (
+          <div className="flex flex-col items-center justify-center h-full text-center">
+            <ClaudeLogo size={28} />
+            <p className="text-sm font-medium mt-3">Claude Code</p>
+            <p className="text-xs text-muted-foreground mt-1.5 max-w-[240px] leading-relaxed">
+              通过 MCP 管理测试用例。描述你的需求开始对话。
+            </p>
+          </div>
+        )}
+
+        {messages.map((msg) => {
+          if (msg.role === 'user') {
+            return (
+              <div key={msg.id} className="rounded-xl bg-overlay/[0.06] px-3.5 py-2.5 text-sm">
+                {msg.content}
+              </div>
+            )
+          }
+          if (msg.role === 'assistant') {
+            return (
+              <div key={msg.id} className="flex gap-2.5">
+                <div className="shrink-0 mt-0.5 h-4 w-4 rounded-full bg-[#D4A574]/20 flex items-center justify-center">
+                  <div className="h-1.5 w-1.5 rounded-full bg-[#D4A574]" />
+                </div>
+                <div className="text-sm leading-relaxed whitespace-pre-wrap min-w-0">{msg.content}</div>
+              </div>
+            )
+          }
+          if (msg.role === 'tool') {
+            return (
+              <div key={msg.id} className="flex items-center gap-1.5 text-xs text-muted-foreground/70 pl-6">
+                <Wrench className="h-3 w-3" />
+                <span>{msg.content}</span>
+              </div>
+            )
+          }
+          return <div key={msg.id} className="text-xs text-destructive/80 px-1">{msg.content}</div>
+        })}
+
+        {/* 思考动画 — Claude 风格 */}
+        {sending && (
+          <div className="flex items-center gap-2">
+            <ClaudeLogo />
+            <span className="text-sm text-[#D97757] animate-pulse">{thinkingWord}</span>
+          </div>
+        )}
+      </div>
+
+      {/* 输入区域 */}
+      <div className="shrink-0 px-3 pb-3 pt-1">
+        <div className="relative rounded-xl border border-overlay/[0.1] bg-overlay/[0.02] focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/20 transition-all">
+          <textarea
+            ref={inputRef}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="描述你的需求..."
+            rows={1}
+            disabled={sending}
+            className="w-full px-3 py-2.5 pr-12 bg-transparent text-sm resize-none outline-none placeholder:text-muted-foreground/40 max-h-32 overflow-y-auto"
+          />
+          <div className="absolute right-2 bottom-2">
+            {sending ? (
+              <button onClick={handleStop} className="h-7 w-7 flex items-center justify-center rounded-lg bg-destructive/10 hover:bg-destructive/20 text-destructive cursor-pointer transition-colors" title="停止">
+                <Square className="h-3 w-3" />
+              </button>
+            ) : (
+              <button onClick={handleSend} disabled={!input.trim()} className="h-7 w-7 flex items-center justify-center rounded-lg btn-gradient text-primary-foreground disabled:opacity-30 cursor-pointer transition-all" title="发送">
+                <ArrowUp className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+        <p className="text-[10px] text-muted-foreground/40 mt-1 text-center">Enter 发送 · Shift+Enter 换行</p>
+      </div>
     </div>
+  )
+}
+
+function ClaudeLogo({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 52 49" fill="none" className="shrink-0">
+      <path d="M23.15 45.53l.66-2.91.75-3.76.61-3.01.57-3.71.33-1.22-.05-.1-.23.05-2.82 3.85-4.28 5.78-3.38 3.57-.8.33-1.41-.7.14-1.32.8-1.13 4.65-5.97 2.82-3.71 1.83-2.12-.05-.28h-.09L10.79 37.25l-2.21.28-1-.89.15-1.46.47-.47 3.71-2.58 9.26-5.17.14-.47-.14-.24h-.47l-1.55-.09-5.26-.14-4.56-.19-4.47-.24-1.13-.23-1.03-1.41.09-.71.94-.61 1.36.09 2.96.24 4.47.28 3.24.19 4.8.52h.75l.09-.33-.24-.19-.19-.19-4.65-3.1-4.98-3.29-2.63-1.93-1.41-.99-.7-.89-.29-1.97 1.27-1.41 1.74.14.42.09 1.74 1.36 3.71 2.87 4.89 3.62.7.56.33-.19v-.14l-.33-.52-2.63-4.79-2.82-4.89-1.27-2.02-.33-1.22c-.13-.42-.19-.89-.19-1.41l1.46-1.97.8-.28 1.97.28.8.7 1.22 2.77 1.93 4.37 3.05 5.92.9 1.79.47 1.6.19.52h.33v-.28l.24-3.38.47-4.09.47-5.26.14-1.5.75-1.79 1.46-.94 1.13.52.94 1.36-.14.85-.52 3.62-1.13 5.69-.7 3.85h.42l.47-.52 1.93-2.54 3.24-4.04 1.41-1.6 1.69-1.79 1.08-.85h2.02l1.46 2.21-.66 2.3-2.07 2.63-1.74 2.21-2.49 3.34-1.5 2.68.14.19h.33l5.59-1.22 3.05-.52 3.57-.61 1.65.75.19.75-.66 1.6-3.85.94-4.51.89-6.72 1.6-.09.05.09.14 3.01.28 1.32.09h3.19l5.92.42 1.55 1.03.9 1.22-.14.99-2.4 1.18-3.19-.75-7.52-1.79-2.54-.61h-.38v.19l2.16 2.12 3.9 3.52 4.94 4.56.24 1.13-.61.94-.66-.09-4.32-3.29-1.69-1.46-3.76-3.15h-.24v.33l.85 1.27 4.61 6.91.24 2.12-.33.66-1.22.42-1.27-.24-2.73-3.76-2.77-4.28-2.26-3.81-.24.19-1.36 14.19-.61.71-1.41.56-1.18-.89-.66-1.46z" fill="#D97757" />
+    </svg>
   )
 }

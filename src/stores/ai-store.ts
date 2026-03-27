@@ -22,7 +22,7 @@ interface AIState {
 let msgId = 0
 
 export const useAIStore = create<AIState>((set) => ({
-  open: true,
+  open: false,
   messages: [],
   sending: false,
 

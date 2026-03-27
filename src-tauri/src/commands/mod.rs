@@ -5,3 +5,4 @@ pub mod runner_cmd;
 pub mod ai_cmd;
 pub mod env_cmd;
 pub mod pty_cmd;
+pub mod claude_cmd;

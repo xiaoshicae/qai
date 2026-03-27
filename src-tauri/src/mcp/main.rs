@@ -34,25 +34,57 @@ fn main() {
 
     eprintln!("[qai-mcp] Started, db={db_path}");
 
-    // MCP 服务主循环：逐行读 JSON-RPC from stdin, 写响应到 stdout
+    // MCP 服务主循环：Content-Length 分帧的 JSON-RPC (stdio transport)
     let stdin = io::stdin();
     let stdout = io::stdout();
+    let mut reader = io::BufReader::new(stdin.lock());
     let mut out = stdout.lock();
 
-    for line in stdin.lock().lines() {
-        let line = match line {
-            Ok(l) => l,
-            Err(_) => break,
+    loop {
+        // 读取 headers（Content-Length: N\r\n\r\n）
+        let mut content_length: Option<usize> = None;
+        loop {
+            let mut header_line = String::new();
+            match reader.read_line(&mut header_line) {
+                Ok(0) => { eprintln!("[qai-mcp] stdin closed"); return; }
+                Err(_) => return,
+                _ => {}
+            }
+            let trimmed = header_line.trim();
+            if trimmed.is_empty() {
+                break; // 空行 = headers 结束
+            }
+            if let Some(len_str) = trimmed.strip_prefix("Content-Length:") {
+                content_length = len_str.trim().parse().ok();
+            }
+        }
+
+        let len = match content_length {
+            Some(l) => l,
+            None => {
+                // 也尝试纯行模式（兼容简单测试）
+                continue;
+            }
         };
 
-        if line.trim().is_empty() {
-            continue;
+        // 读取 body
+        let mut body = vec![0u8; len];
+        if io::Read::read_exact(&mut reader, &mut body).is_err() {
+            break;
         }
+
+        let line = match String::from_utf8(body) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
 
         let response = server::handle_request(&conn, &line);
         let response_json = serde_json::to_string(&response).unwrap();
 
-        writeln!(out, "{response_json}").unwrap();
+        // 写入 Content-Length 头 + body
+        let resp_bytes = response_json.as_bytes();
+        write!(out, "Content-Length: {}\r\n\r\n", resp_bytes.len()).unwrap();
+        out.write_all(resp_bytes).unwrap();
         out.flush().unwrap();
     }
 

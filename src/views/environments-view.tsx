@@ -1,18 +1,20 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
-import { Plus, Trash2, Check, Pencil } from 'lucide-react'
+import { Plus, Trash2, Pencil, Cloud, CloudOff } from 'lucide-react'
 import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
 import type { Environment, EnvVariable } from '@/types'
 
 export default function EnvironmentsView() {
   const [envs, setEnvs] = useState<Environment[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [variables, setVariables] = useState<EnvVariable[]>([])
-  const [newEnvName, setNewEnvName] = useState('')
   const [editingName, setEditingName] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
   const [loaded, setLoaded] = useState(false)
+  const [saveIndicator, setSaveIndicator] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const varsRef = useRef(variables)
+  varsRef.current = variables
 
   const loadEnvs = useCallback(async () => {
     try {
@@ -39,13 +41,33 @@ export default function EnvironmentsView() {
     }
   }, [selectedId])
 
+  // 自动保存：变量变化后 debounce 800ms 自动保存
+  const autoSave = useCallback((vars: EnvVariable[]) => {
+    if (!selectedId) return
+    // 过滤掉空行（key 和 value 都为空的）
+    const toSave = vars.filter((v) => v.key.trim() || v.value.trim())
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(async () => {
+      setSaveIndicator('saving')
+      try {
+        await invoke('save_env_variables', { environmentId: selectedId, variables: toSave })
+        setSaveIndicator('saved')
+        setTimeout(() => setSaveIndicator('idle'), 1500)
+      } catch (e) {
+        console.error('自动保存失败:', e)
+        setSaveIndicator('error')
+        setTimeout(() => setSaveIndicator('idle'), 3000)
+      }
+    }, 800)
+  }, [selectedId])
+
   const createEnv = async () => {
-    const name = newEnvName.trim() || '新环境'
     try {
-      const env = await invoke<Environment>('create_environment', { name })
+      const env = await invoke<Environment>('create_environment', { name: '新环境' })
       setEnvs((prev) => [...prev, env])
       setSelectedId(env.id)
-      setNewEnvName('')
+      setEditingName(env.id)
+      setEditName('新环境')
     } catch {}
   }
 
@@ -68,41 +90,39 @@ export default function EnvironmentsView() {
     setEditingName(null)
   }
 
-  const toggleActive = async (id: string) => {
-    try {
-      await invoke('set_active_environment', { id })
-      setEnvs((prev) => prev.map((e) => ({ ...e, is_active: e.id === id })))
-    } catch {}
-  }
-
-  const addVariable = () => {
-    setVariables((prev) => [...prev, {
-      id: '', environment_id: selectedId ?? '', key: '', value: '', enabled: true, sort_order: prev.length,
-    }])
-  }
-
   const updateVariable = (index: number, field: keyof EnvVariable, val: string | boolean) => {
-    setVariables((prev) => prev.map((v, i) => i === index ? { ...v, [field]: val } : v))
+    setVariables((prev) => {
+      const next = prev.map((v, i) => i === index ? { ...v, [field]: val } : v)
+      // 自动追加空行：最后一行被编辑时，追加新空行
+      const lastFilled = next.length > 0 && (next[next.length - 1].key.trim() || next[next.length - 1].value.trim())
+      if (lastFilled) {
+        next.push({ id: '', environment_id: selectedId ?? '', key: '', value: '', enabled: true, sort_order: next.length })
+      }
+      autoSave(next)
+      return next
+    })
   }
 
   const removeVariable = (index: number) => {
-    setVariables((prev) => prev.filter((_, i) => i !== index))
+    setVariables((prev) => {
+      const next = prev.filter((_, i) => i !== index)
+      autoSave(next)
+      return next
+    })
   }
 
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle')
-
-  const saveVariables = async () => {
-    if (!selectedId) return
-    try {
-      await invoke('save_env_variables', { environmentId: selectedId, variables })
-      setSaveStatus('saved')
-      setTimeout(() => setSaveStatus('idle'), 2000)
-    } catch (e) {
-      console.error('保存环境变量失败:', e)
-      setSaveStatus('error')
-      setTimeout(() => setSaveStatus('idle'), 3000)
-    }
+  const toggleEnabled = (index: number, checked: boolean) => {
+    setVariables((prev) => {
+      const next = prev.map((v, i) => i === index ? { ...v, enabled: checked } : v)
+      autoSave(next)
+      return next
+    })
   }
+
+  // 确保始终有一个空行
+  const displayVars = variables.length === 0 || (variables[variables.length - 1]?.key.trim() || variables[variables.length - 1]?.value.trim())
+    ? [...variables, { id: '', environment_id: selectedId ?? '', key: '', value: '', enabled: true, sort_order: variables.length }]
+    : variables
 
   if (!loaded) return null
 
@@ -134,7 +154,6 @@ export default function EnvironmentsView() {
                 />
               ) : (
                 <>
-                  {env.is_active && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />}
                   <span className={`text-sm truncate flex-1 ${selectedId === env.id ? 'font-medium' : ''}`}>{env.name}</span>
                   <button
                     className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground cursor-pointer p-0.5"
@@ -166,70 +185,60 @@ export default function EnvironmentsView() {
           {selectedEnv ? (
             <div className="rounded-xl bg-card border border-overlay/[0.06] p-4 space-y-3">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">{selectedEnv.name}</span>
-                  {selectedEnv.is_active ? (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 font-medium">使用中</span>
-                  ) : (
-                    <button
-                      className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
-                      onClick={() => toggleActive(selectedEnv.id)}
-                    >
-                      设为活跃
-                    </button>
-                  )}
+                <span className="text-sm font-medium">{selectedEnv.name}</span>
+                {/* 自动保存状态指示 */}
+                <div className="flex items-center gap-1 text-[10px] text-muted-foreground/60 transition-opacity">
+                  {saveIndicator === 'saving' && <><Cloud className="h-3 w-3 animate-pulse" /> 保存中...</>}
+                  {saveIndicator === 'saved' && <><Cloud className="h-3 w-3 text-emerald-500" /> 已保存</>}
+                  {saveIndicator === 'error' && <><CloudOff className="h-3 w-3 text-destructive" /> 保存失败</>}
                 </div>
               </div>
 
               {/* 表头 */}
-              {variables.length > 0 && (
-                <div className="flex items-center gap-2 px-1">
-                  <span className="w-4" />
-                  <span className="flex-1 text-[10px] text-muted-foreground uppercase tracking-wider">变量名</span>
-                  <span className="flex-1 text-[10px] text-muted-foreground uppercase tracking-wider">值</span>
-                  <span className="w-7" />
-                </div>
-              )}
-
-              {/* 变量行 */}
-              {variables.map((v, i) => (
-                <div key={i} className="flex items-center gap-2 group">
-                  <input
-                    type="checkbox"
-                    checked={v.enabled}
-                    onChange={(e) => updateVariable(i, 'enabled', e.target.checked)}
-                    className="h-3.5 w-3.5 rounded accent-primary cursor-pointer"
-                  />
-                  <Input
-                    value={v.key}
-                    onChange={(e) => updateVariable(i, 'key', e.target.value)}
-                    placeholder="KEY"
-                    className="flex-1 h-7 text-xs font-mono"
-                  />
-                  <Input
-                    value={v.value}
-                    onChange={(e) => updateVariable(i, 'value', e.target.value)}
-                    placeholder="value"
-                    className="flex-1 h-7 text-xs font-mono"
-                  />
-                  <button
-                    className="h-7 w-7 flex items-center justify-center opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive cursor-pointer transition-opacity"
-                    onClick={() => removeVariable(i)}
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </button>
-                </div>
-              ))}
-
-              <div className="flex items-center gap-2">
-                <Button variant="ghost" size="sm" className="text-xs text-muted-foreground gap-1" onClick={addVariable}>
-                  <Plus className="h-3 w-3" /> 添加变量
-                </Button>
-                <div className="flex-1" />
-                <Button size="sm" className="gap-1" onClick={saveVariables}>
-                  <Check className="h-3 w-3" /> {saveStatus === 'saved' ? '已保存' : saveStatus === 'error' ? '保存失败' : '保存'}
-                </Button>
+              <div className="flex items-center gap-2 px-1">
+                <span className="w-4" />
+                <span className="flex-1 text-[10px] text-muted-foreground uppercase tracking-wider">变量名</span>
+                <span className="flex-1 text-[10px] text-muted-foreground uppercase tracking-wider">值</span>
+                <span className="w-7" />
               </div>
+
+              {/* 变量行（含尾部空行） */}
+              {displayVars.map((v, i) => {
+                const isEmpty = !v.key.trim() && !v.value.trim()
+                const isLast = i === displayVars.length - 1 && isEmpty
+                return (
+                  <div key={i} className={`flex items-center gap-2 group ${isLast ? 'opacity-50 focus-within:opacity-100 transition-opacity' : ''}`}>
+                    <input
+                      type="checkbox"
+                      checked={v.enabled}
+                      onChange={(e) => toggleEnabled(i, e.target.checked)}
+                      className="h-3.5 w-3.5 rounded accent-primary cursor-pointer"
+                    />
+                    <Input
+                      value={v.key}
+                      onChange={(e) => updateVariable(i, 'key', e.target.value)}
+                      placeholder="KEY"
+                      className="flex-1 h-7 text-xs font-mono"
+                    />
+                    <Input
+                      value={v.value}
+                      onChange={(e) => updateVariable(i, 'value', e.target.value)}
+                      placeholder="value"
+                      className="flex-1 h-7 text-xs font-mono"
+                    />
+                    {!isLast ? (
+                      <button
+                        className="h-7 w-7 flex items-center justify-center opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive cursor-pointer transition-opacity"
+                        onClick={() => removeVariable(i)}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    ) : (
+                      <span className="w-7" />
+                    )}
+                  </div>
+                )
+              })}
 
               <p className="text-[11px] text-muted-foreground">
                 在请求中使用 <code className="bg-muted px-1 py-0.5 rounded text-xs font-mono">{'{{KEY}}'}</code> 引用变量

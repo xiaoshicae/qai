@@ -194,7 +194,7 @@ input, textarea, pre, code {
 }
 
 .dark .glass-card {
-  background: oklch(0.185 0.005 260 / 0.8);
+  background: oklch(0.185 0.005 260);
   border-color: oklch(1 0 0 / 0.06);
   box-shadow:
     0 0 0 1px oklch(0 0 0 / 0.3),
@@ -203,7 +203,7 @@ input, textarea, pre, code {
 }
 
 :root:not(.dark) .glass-card {
-  background: oklch(0.995 0.001 260 / 0.9);
+  background: oklch(0.995 0.001 260);
   border-color: oklch(0 0 0 / 0.1);
   box-shadow:
     0 1px 3px oklch(0 0 0 / 0.06),

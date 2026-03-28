@@ -3,11 +3,13 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import {
   Play, Download, CheckCircle2, XCircle, AlertCircle, Circle,
-  ChevronDown, ChevronRight, Loader2, Plus, Trash2, Pencil, Link2, Square,
+  ChevronDown, ChevronRight, Loader2, Plus, Trash2, Pencil, Link2, Square, Zap, ListOrdered,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
+import { JsonHighlight } from '@/components/ui/json-highlight'
+import { VarHighlight } from '@/components/ui/var-highlight'
 import KeyValueTable from '@/components/request/key-value-table'
 import { Progress } from '@/components/ui/progress'
 import { useConfirmStore } from '@/components/ui/confirm-dialog'
@@ -47,10 +49,27 @@ export default function CollectionOverview({ collection, tree }: Props) {
   const [isNewReq, setIsNewReq] = useState(false)
   const [runMode, setRunMode] = useState<'concurrent' | 'sequential'>('concurrent')
   const [delayMs, setDelayMs] = useState(0)
+  const [showRunSettings, setShowRunSettings] = useState(false)
+  const [envVars, setEnvVars] = useState<Record<string, string>>({})
   const unlistenRef = useRef<(() => void) | null>(null)
 
   useEffect(() => { return () => { unlistenRef.current?.() } }, [])
   useEffect(() => { loadStatuses(); setBatchResult(null); setSingleResults({}); setDetailData({}) }, [collection.id])
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const envs = await invoke<{ id: string; name: string; is_active: boolean }[]>('list_environments')
+        const active = envs.find((e) => e.is_active)
+        if (active) {
+          const data = await invoke<{ variables: { key: string; value: string; enabled: boolean }[] }>('get_environment_with_vars', { id: active.id })
+          const map: Record<string, string> = {}
+          for (const v of data.variables) if (v.enabled) map[v.key] = v.value
+          setEnvVars(map)
+        }
+      } catch {}
+    })()
+  }, [])
 
   const loadStatuses = async () => {
     try {
@@ -155,19 +174,54 @@ export default function CollectionOverview({ collection, tree }: Props) {
     } catch {} finally { setRunningIds((prev) => { const n = new Set(prev); n.delete(requestId); return n }) }
   }
 
-  // 添加测试用例：创建后弹出编辑弹窗
-  const addTestCase = async () => {
-    const req = await invoke<CollectionItem>('create_item', { collectionId: collection.id, parentId: null, itemType: 'request', name: '新测试用例', method: 'POST' })
-    const updated = await invoke<CollectionItem>('update_item', { id: req.id })
-    await loadTree(collection.id)
+  // 添加测试用例：先弹编辑框，保存时才创建记录
+  const addTestCase = () => {
     setIsNewReq(true)
-    setEditReq(updated)
+    setEditReq({
+      id: '',
+      collection_id: collection.id,
+      parent_id: null,
+      type: 'request',
+      name: '',
+      sort_order: 0,
+      method: 'POST',
+      url: '',
+      headers: '[]',
+      query_params: '[]',
+      body_type: 'none',
+      body_content: '',
+      extract_rules: '[]',
+      description: '',
+      expect_status: 200,
+      poll_config: '',
+      created_at: '',
+      updated_at: '',
+    })
   }
 
-  // 添加链
-  const addChain = async () => {
-    await invoke<CollectionItem>('create_item', { collectionId: collection.id, parentId: null, itemType: 'chain', name: '新链式请求', method: 'GET' })
-    await loadTree(collection.id)
+  // 添加链：弹框填信息
+  const addChain = () => {
+    setIsNewReq(true)
+    setEditReq({
+      id: '',
+      collection_id: collection.id,
+      parent_id: null,
+      type: 'chain',
+      name: '',
+      sort_order: 0,
+      method: 'GET',
+      url: '',
+      headers: '[]',
+      query_params: '[]',
+      body_type: 'none',
+      body_content: '',
+      extract_rules: '[]',
+      description: '',
+      expect_status: 200,
+      poll_config: '',
+      created_at: '',
+      updated_at: '',
+    })
   }
 
   // 添加链步骤
@@ -216,22 +270,43 @@ export default function CollectionOverview({ collection, tree }: Props) {
   // 保存编辑
   const saveEdit = async () => {
     if (!editReq) return
+    if (!editReq.name.trim()) { return }
     try {
-      const updated = await invoke<CollectionItem>('update_item', {
-        id: editReq.id,
-        name: editReq.name,
-        method: editReq.method,
-        url: editReq.url,
-        headers: editReq.headers,
-        queryParams: editReq.query_params,
-        bodyType: editReq.body_type,
-        bodyContent: editReq.body_content,
-        extractRules: editReq.extract_rules,
-        description: editReq.description,
-        expectStatus: editReq.expect_status,
-      })
+      if (isNewReq) {
+        // 新建：先创建记录再更新详情
+        const created = await invoke<CollectionItem>('create_item', {
+          collectionId: collection.id,
+          parentId: editReq.parent_id,
+          itemType: editReq.type,
+          name: editReq.name,
+          method: editReq.method,
+        })
+        await invoke('update_item', {
+          id: created.id,
+          url: editReq.url,
+          headers: editReq.headers,
+          bodyType: editReq.body_type,
+          bodyContent: editReq.body_content,
+          description: editReq.description,
+          expectStatus: editReq.expect_status,
+        })
+      } else {
+        // 编辑：直接更新
+        await invoke('update_item', {
+          id: editReq.id,
+          name: editReq.name,
+          method: editReq.method,
+          url: editReq.url,
+          headers: editReq.headers,
+          queryParams: editReq.query_params,
+          bodyType: editReq.body_type,
+          bodyContent: editReq.body_content,
+          extractRules: editReq.extract_rules,
+          description: editReq.description,
+          expectStatus: editReq.expect_status,
+        })
+      }
       await loadTree(collection.id)
-      setDetailData((prev) => ({ ...prev, [editReq.id]: updated }))
       setEditReq(null)
       setIsNewReq(false)
     } catch (e: any) {
@@ -289,49 +364,51 @@ export default function CollectionOverview({ collection, tree }: Props) {
       </div>
 
       {/* 操作栏 */}
-      <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex items-center gap-2">
         {running ? (
           <Button onClick={stopRun} size="sm" variant="destructive" className="gap-1.5">
             <Square className="h-3 w-3" /> 停止
           </Button>
         ) : (
-          <Button onClick={runAll} size="sm" className="gap-1.5">
-            <Play className="h-3.5 w-3.5" /> 运行全部
-          </Button>
-        )}
-
-        {/* 执行模式切换 */}
-        <div className="flex items-center h-8 rounded-lg border border-overlay/[0.08] overflow-hidden text-xs">
-          <button
-            onClick={() => setRunMode('concurrent')}
-            className={`px-2.5 h-full cursor-pointer transition-colors ${runMode === 'concurrent' ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:bg-overlay/[0.04]'}`}
-          >
-            并发
-          </button>
-          <button
-            onClick={() => setRunMode('sequential')}
-            className={`px-2.5 h-full cursor-pointer transition-colors ${runMode === 'sequential' ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:bg-overlay/[0.04]'}`}
-          >
-            顺序
-          </button>
-        </div>
-
-        {/* 顺序模式下显示 delay 设置 */}
-        {runMode === 'sequential' && (
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span>Delay</span>
-            <input
-              type="number"
-              value={delayMs}
-              onChange={(e) => setDelayMs(Math.max(0, Number(e.target.value)))}
-              className="w-16 h-7 rounded-md border border-overlay/[0.08] bg-transparent text-center text-xs outline-none focus:border-primary/50"
-              min={0}
-              step={100}
-            />
-            <span>ms</span>
+          <div className="relative">
+            <Button onClick={runAll} size="sm" className="gap-1.5 pr-1">
+              <Play className="h-3.5 w-3.5" /> 运行全部
+              <span className="w-px h-4 bg-primary-foreground/20 mx-0.5" />
+              <span onClick={(e) => { e.stopPropagation(); setShowRunSettings(!showRunSettings) }} className="p-0.5 rounded hover:bg-primary-foreground/10 cursor-pointer">
+                <ChevronDown className="h-3 w-3" />
+              </span>
+            </Button>
+            {showRunSettings && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowRunSettings(false)} />
+                <div className="absolute top-full left-0 mt-1 z-50 w-52 rounded-lg border border-overlay/[0.1] bg-background shadow-xl p-1.5 space-y-1">
+                  <button onClick={() => setRunMode('concurrent')} className={`flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs cursor-pointer transition-colors ${runMode === 'concurrent' ? 'bg-primary/10 text-primary' : 'hover:bg-overlay/[0.04]'}`}>
+                    <Zap className="h-3.5 w-3.5" /> 并发执行
+                  </button>
+                  <button onClick={() => setRunMode('sequential')} className={`flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs cursor-pointer transition-colors ${runMode === 'sequential' ? 'bg-primary/10 text-primary' : 'hover:bg-overlay/[0.04]'}`}>
+                    <ListOrdered className="h-3.5 w-3.5" /> 顺序执行
+                  </button>
+                  {runMode === 'sequential' && (
+                    <div className="px-2.5 py-2 border-t border-overlay/[0.06] mt-1 space-y-1.5">
+                      <div className="text-[10px] text-muted-foreground">请求间隔</div>
+                      <div className="flex gap-1">
+                        {[0, 200, 500, 1000, 2000, 5000].map((ms) => (
+                          <button
+                            key={ms}
+                            onClick={() => setDelayMs(ms)}
+                            className={`px-2 py-1 rounded text-[10px] cursor-pointer transition-colors ${delayMs === ms ? 'bg-primary/15 text-primary font-medium' : 'text-muted-foreground hover:bg-overlay/[0.04]'}`}
+                          >
+                            {ms === 0 ? '无' : ms >= 1000 ? `${ms / 1000}s` : `${ms}ms`}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         )}
-
         <Button variant="outline" size="sm" className="gap-1.5" onClick={addTestCase}>
           <Plus className="h-3.5 w-3.5" /> 添加用例
         </Button>
@@ -390,13 +467,13 @@ export default function CollectionOverview({ collection, tree }: Props) {
                   </div>
                   {/* Group 内的 Steps */}
                   {groupExpanded && item.steps.map((r, stepIdx) => (
-                    <ScenarioRow key={r.id} r={r} stepLabel={`Step ${stepIdx + 1}`} indent getResult={getResult} getStatus={getStatus} statuses={statuses} progress={progress} runningIds={runningIds} expandedRows={expandedRows} detailData={detailData} toggleRow={toggleRow} runSingle={runSingle} openEdit={openEdit} deleteRequest={deleteRequest} formatTime={formatTime} />
+                    <ScenarioRow key={r.id} r={r} stepLabel={`Step ${stepIdx + 1}`} indent envVars={envVars} getResult={getResult} getStatus={getStatus} statuses={statuses} progress={progress} runningIds={runningIds} expandedRows={expandedRows} detailData={detailData} toggleRow={toggleRow} runSingle={runSingle} openEdit={openEdit} deleteRequest={deleteRequest} formatTime={formatTime} />
                   ))}
                 </div>
               )
             }
             // ─── 普通请求 ───
-            return <ScenarioRow key={item.id} r={item} getResult={getResult} getStatus={getStatus} statuses={statuses} progress={progress} runningIds={runningIds} expandedRows={expandedRows} detailData={detailData} toggleRow={toggleRow} runSingle={runSingle} openEdit={openEdit} deleteRequest={deleteRequest} formatTime={formatTime} />
+            return <ScenarioRow key={item.id} r={item} envVars={envVars} getResult={getResult} getStatus={getStatus} statuses={statuses} progress={progress} runningIds={runningIds} expandedRows={expandedRows} detailData={detailData} toggleRow={toggleRow} runSingle={runSingle} openEdit={openEdit} deleteRequest={deleteRequest} formatTime={formatTime} />
           })}
         </div>
       </div>
@@ -405,7 +482,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
       <Dialog open={!!editReq} onOpenChange={() => { setEditReq(null); setIsNewReq(false) }}>
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogClose onClose={() => { setEditReq(null); setIsNewReq(false) }} />
-          <DialogHeader><DialogTitle>{isNewReq ? '新建测试用例' : '编辑测试用例'}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{isNewReq ? (editReq?.type === 'chain' ? '新建链式请求' : '新建测试用例') : '编辑测试用例'}</DialogTitle></DialogHeader>
           {editReq && <EditForm req={editReq} onChange={setEditReq} onSave={saveEdit} onCancel={() => { setEditReq(null); setIsNewReq(false) }} />}
         </DialogContent>
       </Dialog>
@@ -594,10 +671,11 @@ function InlineEdit({ value, placeholder, onSave }: { value: string; placeholder
 }
 
 // ─── 场景行 ──────────────────────────
-function ScenarioRow({ r, stepLabel, indent, getResult, getStatus: _getStatus, statuses, progress, runningIds, expandedRows, detailData, toggleRow, runSingle, openEdit, deleteRequest, formatTime }: {
+function ScenarioRow({ r, stepLabel, indent, envVars = {}, getResult, getStatus: _getStatus, statuses, progress, runningIds, expandedRows, detailData, toggleRow, runSingle, openEdit, deleteRequest, formatTime }: {
   r: { id: string; name: string; method: string; folder?: string; expect_status?: number }
   stepLabel?: string
   indent?: boolean
+  envVars?: Record<string, string>
   getResult: (id: string) => ExecutionResult | undefined
   getStatus: (id: string) => string | undefined
   statuses: Record<string, ItemLastStatus>
@@ -658,9 +736,19 @@ function ScenarioRow({ r, stepLabel, indent, getResult, getStatus: _getStatus, s
           <div className="grid grid-cols-2 gap-4">
             <div className="rounded-lg border border-overlay/[0.06] overflow-hidden">
               <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 border-b border-overlay/[0.04]">USER REQUEST</div>
-              <pre className="px-3 py-2.5 text-xs font-mono whitespace-pre-wrap break-all max-h-52 overflow-y-auto">
-                {detail ? (() => { const p = [`${detail.method} ${detail.url}`]; if (detail.body_type !== 'none' && detail.body_content) { try { p.push(JSON.stringify(JSON.parse(detail.body_content), null, 2)) } catch { p.push(detail.body_content) } } return p.join('\n\n') })() : '加载中...'}
-              </pre>
+              <div className="px-3 py-2.5 max-h-52 overflow-y-auto">
+                {detail ? (
+                  <>
+                    <div className="text-xs font-mono mb-2">
+                      <span className="text-method-post font-bold">{detail.method}</span>{' '}
+                      <VarHighlight text={detail.url} vars={envVars} className="text-xs font-mono" />
+                    </div>
+                    {detail.body_type !== 'none' && detail.body_content && (
+                      <JsonHighlight code={(() => { try { return JSON.stringify(JSON.parse(detail.body_content), null, 2) } catch { return detail.body_content } })()} />
+                    )}
+                  </>
+                ) : <span className="text-xs text-muted-foreground">加载中...</span>}
+              </div>
             </div>
             <div className="rounded-lg border border-overlay/[0.06] overflow-hidden">
               {/* Tab 栏：Body / Headers + 状态信息 */}
@@ -700,7 +788,9 @@ function ScenarioRow({ r, stepLabel, indent, getResult, getStatus: _getStatus, s
                         {resp.headers.map((h: { key: string; value: string }, hi: number) => (
                           <tr key={hi} className="border-b border-overlay/[0.02] hover:bg-overlay/[0.03] transition-colors">
                             <td className="px-3 py-1 text-primary/80 align-top">{h.key}</td>
-                            <td className="px-3 py-1 text-muted-foreground break-all">{h.value}</td>
+                            <td className="px-3 py-1 text-muted-foreground break-all">
+                              <VarHighlight text={h.value} vars={envVars} className="text-[11px] font-mono" />
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -828,9 +918,5 @@ function ResponseBody({ resp }: { resp: HttpResponse | null | undefined }) {
     try { return JSON.stringify(JSON.parse(resp.body), null, 2) } catch { return resp.body }
   })()
 
-  return (
-    <pre className="px-3 py-2.5 text-xs font-mono whitespace-pre-wrap break-all max-h-52 overflow-y-auto">
-      {formatted}
-    </pre>
-  )
+  return <JsonHighlight code={formatted} className="px-3 py-2.5 max-h-52 overflow-y-auto" />
 }

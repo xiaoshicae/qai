@@ -252,6 +252,7 @@ export default function RequestPanel() {
                     }
                   })()}
                   onChange={(v) => setBodyContent(JSON.stringify(v))}
+                  allowFiles={bodyType === 'form-data'}
                 />
               )}
             </>

@@ -579,7 +579,7 @@ mod tests {
     fn test_eval_header_exists() {
         let a = make_assertion("header_contains", "X-Custom", "exists", "");
         let r = make_response(200, "", 0, vec![KeyValuePair {
-            key: "x-custom".into(), value: "val".into(), enabled: true,
+            key: "x-custom".into(), value: "val".into(), enabled: true, field_type: String::new(),
         }]);
         let results = evaluate_assertions(&[a], &r);
         assert!(results[0].passed);
@@ -605,7 +605,7 @@ mod tests {
     fn test_eval_header_case_insensitive() {
         let a = make_assertion("header_contains", "Content-Type", "contains", "json");
         let r = make_response(200, "", 0, vec![KeyValuePair {
-            key: "content-type".into(), value: "application/json".into(), enabled: true,
+            key: "content-type".into(), value: "application/json".into(), enabled: true, field_type: String::new(),
         }]);
         let results = evaluate_assertions(&[a], &r);
         assert!(results[0].passed);

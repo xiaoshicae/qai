@@ -89,11 +89,19 @@ export default function EnvironmentsView() {
     setVariables((prev) => prev.filter((_, i) => i !== index))
   }
 
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle')
+
   const saveVariables = async () => {
     if (!selectedId) return
     try {
       await invoke('save_env_variables', { environmentId: selectedId, variables })
-    } catch {}
+      setSaveStatus('saved')
+      setTimeout(() => setSaveStatus('idle'), 2000)
+    } catch (e) {
+      console.error('保存环境变量失败:', e)
+      setSaveStatus('error')
+      setTimeout(() => setSaveStatus('idle'), 3000)
+    }
   }
 
   if (!loaded) return null
@@ -219,7 +227,7 @@ export default function EnvironmentsView() {
                 </Button>
                 <div className="flex-1" />
                 <Button size="sm" className="gap-1" onClick={saveVariables}>
-                  <Check className="h-3 w-3" /> 保存
+                  <Check className="h-3 w-3" /> {saveStatus === 'saved' ? '已保存' : saveStatus === 'error' ? '保存失败' : '保存'}
                 </Button>
               </div>
 

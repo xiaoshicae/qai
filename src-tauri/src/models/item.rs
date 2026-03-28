@@ -46,6 +46,8 @@ pub struct KeyValuePair {
     pub key: String,
     pub value: String,
     pub enabled: bool,
+    #[serde(default)]
+    pub field_type: String, // "text" | "file"，默认空字符串视为 text
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

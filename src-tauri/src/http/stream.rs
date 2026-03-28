@@ -80,6 +80,7 @@ pub async fn execute_stream(
             key: k.to_string(),
             value: v.to_str().unwrap_or("").to_string(),
             enabled: true,
+            field_type: String::new(),
         })
         .collect();
 

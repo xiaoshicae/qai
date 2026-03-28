@@ -30,6 +30,10 @@ struct YamlScenario {
     content_type: Option<String>,
     // expect
     expect: Option<YamlExpect>,
+    // WebSocket 字段
+    protocol: Option<String>,
+    ws_endpoint: Option<String>,
+    ws_payload: Option<serde_json::Value>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -148,8 +152,25 @@ fn import_single_case(
     for (idx, scenario) in case.scenarios.iter().enumerate() {
         let expect_status = scenario.expect.as_ref().and_then(|e| e.status).unwrap_or(200);
 
-        // 根据 content_type 和字段判断 body_type 和 body_content
-        let (body_type, body_content) = build_body(scenario);
+        // WebSocket 场景特殊处理
+        let is_ws = scenario.protocol.as_deref() == Some("websocket");
+        let (body_type, body_content) = if is_ws {
+            let payload = scenario.ws_payload.as_ref()
+                .map(|v| serde_json::to_string_pretty(v).unwrap_or_default())
+                .unwrap_or_default();
+            ("json".to_string(), payload)
+        } else {
+            build_body(scenario)
+        };
+
+        // WebSocket 用 ws_endpoint，HTTP 用 case 级 endpoint
+        let item_endpoint = if is_ws {
+            scenario.ws_endpoint.as_deref().unwrap_or(endpoint)
+        } else {
+            endpoint
+        };
+
+        let protocol = if is_ws { Some("websocket") } else { None };
 
         // 构建 headers
         let headers = build_headers(scenario);
@@ -165,7 +186,7 @@ fn import_single_case(
                     &item.id,
                     Some(&scenario.id),
                     Some("POST"),
-                    Some(endpoint),
+                    Some(item_endpoint),
                     Some(&headers),
                     None, // query_params
                     Some(&body_type),
@@ -174,7 +195,7 @@ fn import_single_case(
                     scenario.description.as_deref(),
                     Some(expect_status),
                     None, // parent_id
-                    None, // protocol
+                    protocol,
                 ).map_err(|e| e.to_string())?;
                 result.requests_updated += 1;
             }
@@ -194,7 +215,7 @@ fn import_single_case(
                     &item.id,
                     None, // name 已设
                     None, // method 已设
-                    Some(endpoint),
+                    Some(item_endpoint),
                     Some(&headers),
                     None,
                     Some(&body_type),
@@ -203,7 +224,7 @@ fn import_single_case(
                     scenario.description.as_deref(),
                     Some(expect_status),
                     None, // parent_id
-                    None, // protocol
+                    protocol,
                 ).map_err(|e| e.to_string())?;
 
                 // 为 status_code 断言自动创建

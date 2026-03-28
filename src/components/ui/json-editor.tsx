@@ -45,7 +45,8 @@ export function JsonEditor({ value, onChange, className, placeholder }: Props) {
     <div className={`relative ${className ?? ''}`}>
       <pre
         ref={preRef}
-        className="absolute inset-0 px-3 py-2 text-xs leading-relaxed font-mono whitespace-pre-wrap break-all overflow-hidden pointer-events-none"
+        className="absolute inset-0 px-3 py-2 text-xs leading-relaxed font-mono whitespace-pre-wrap break-words overflow-hidden pointer-events-none border border-transparent"
+        style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', wordBreak: 'break-word', overflowWrap: 'break-word', tabSize: 2 }}
         aria-hidden="true"
       >
         {tokens.map((t, i) => {
@@ -64,8 +65,8 @@ export function JsonEditor({ value, onChange, className, placeholder }: Props) {
         onBlur={() => setFocused(false)}
         spellCheck={false}
         placeholder={placeholder}
-        style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', color: 'transparent', caretColor: 'var(--color-foreground)' }}
-        className={`relative w-full h-full min-h-0 px-3 py-2 text-xs leading-relaxed resize-none outline-none bg-transparent z-10 rounded-xl border transition-all duration-200 ${
+        style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', color: 'transparent', caretColor: 'var(--color-foreground)', wordBreak: 'break-word', overflowWrap: 'break-word', tabSize: 2 }}
+        className={`relative w-full h-full min-h-0 px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap resize-none outline-none bg-transparent z-10 rounded-xl border transition-all duration-200 ${
           jsonError && value.trim()
             ? 'border-red-500/50 hover:border-red-500/70'
             : focused

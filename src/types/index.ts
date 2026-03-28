@@ -52,6 +52,7 @@ export interface KeyValuePair {
   key: string
   value: string
   enabled: boolean
+  fieldType?: 'text' | 'file'
 }
 
 export interface HttpResponse {

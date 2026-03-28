@@ -213,19 +213,36 @@ export default function CollectionOverview({ collection, tree }: Props) {
     setShowChainDialog(false)
   }
 
-  // 添加链步骤
+  // 添加链步骤（只构建临时对象，saveEdit 时才真正创建）
   const addChainStep = async (chainId: string) => {
-    const item = await invoke<CollectionItem>('create_item', { collectionId: collection.id, parentId: chainId, itemType: 'request', name: '新步骤', method: 'POST' })
-    await loadTree(collection.id)
     setExpandedRows((prev) => {
       const n = new Set(prev)
-      // 展开 chain group
       const idx = tableItems.findIndex((t) => 'isChain' in t && (t as StepGroup).groupId === chainId)
       if (idx >= 0) n.add(`group-${idx}`)
       return n
     })
     setIsNewReq(true)
-    setEditReq(item)
+    setEditReq({
+      id: '',
+      collection_id: collection.id,
+      parent_id: chainId,
+      type: 'request',
+      name: '新步骤',
+      sort_order: 0,
+      method: 'POST',
+      url: '',
+      headers: '[]',
+      query_params: '[]',
+      body_type: 'none',
+      body_content: '',
+      extract_rules: '[]',
+      description: '',
+      expect_status: 200,
+      poll_config: '',
+      protocol: 'http',
+      created_at: '',
+      updated_at: '',
+    } as CollectionItem)
   }
 
   // 删除链
@@ -274,8 +291,10 @@ export default function CollectionOverview({ collection, tree }: Props) {
           id: created.id,
           url: editReq.url,
           headers: editReq.headers,
+          queryParams: editReq.query_params,
           bodyType: editReq.body_type,
           bodyContent: editReq.body_content,
+          extractRules: editReq.extract_rules,
           description: editReq.description,
           expectStatus: editReq.expect_status,
         })
@@ -586,6 +605,7 @@ function EditForm({ req, onChange, onSave, onCancel }: {
               <KeyValueTable
                 value={(() => { try { const p = JSON.parse(req.body_content || '[]'); return Array.isArray(p) ? p : [] } catch { return [] } })()}
                 onChange={(v) => set('body_content', JSON.stringify(v))}
+                allowFiles={req.body_type === 'form-data'}
               />
             </div>
           ) : req.body_type === 'json' ? (
@@ -633,6 +653,12 @@ function EditForm({ req, onChange, onSave, onCancel }: {
           onChange={(rules) => set('extract_rules', JSON.stringify(rules))}
         />
       </div>
+
+      {/* 轮询配置 */}
+      <PollConfigEditor
+        value={(() => { try { return req.poll_config ? JSON.parse(req.poll_config) : null } catch { return null } })()}
+        onChange={(cfg) => set('poll_config', cfg ? JSON.stringify(cfg) : '')}
+      />
 
       {/* 按钮 */}
       <div className="flex justify-end gap-2 pt-2">
@@ -878,6 +904,64 @@ function ExtractRulesEditor({ value, onChange }: {
       </button>
       {value.length > 0 && (
         <p className="text-[10px] text-muted-foreground/60">提取的变量可在后续步骤中通过 {'{{变量名}}'} 引用</p>
+      )}
+    </div>
+  )
+}
+
+// ─── 轮询配置编辑器 ──────────────────────────
+function PollConfigEditor({ value, onChange }: {
+  value: { field: string; target: string; interval_seconds: number; max_seconds: number } | null
+  onChange: (cfg: { field: string; target: string; interval_seconds: number; max_seconds: number } | null) => void
+}) {
+  const enabled = value !== null
+
+  const toggle = () => {
+    if (enabled) {
+      onChange(null)
+    } else {
+      onChange({ field: '', target: '', interval_seconds: 5, max_seconds: 60 })
+    }
+  }
+
+  const update = (field: string, val: string | number) => {
+    if (!value) return
+    onChange({ ...value, [field]: val })
+  }
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-1.5">
+        <label className="text-xs text-muted-foreground">轮询等待配置</label>
+        <button
+          onClick={toggle}
+          className={`px-2 py-0.5 rounded-md text-[10px] font-medium cursor-pointer transition-colors ${enabled ? 'bg-amber-500/15 text-amber-500' : 'bg-overlay/[0.04] text-muted-foreground hover:text-foreground'}`}
+        >
+          {enabled ? '已启用' : '未启用'}
+        </button>
+      </div>
+      {enabled && value && (
+        <div className="grid grid-cols-2 gap-2 p-3 rounded-xl border border-overlay/[0.06] bg-overlay/[0.02]">
+          <div>
+            <label className="text-[10px] text-muted-foreground mb-0.5 block">检查字段</label>
+            <Input value={value.field} onChange={(e) => update('field', e.target.value)} className="h-7 text-xs" placeholder="如 status" />
+          </div>
+          <div>
+            <label className="text-[10px] text-muted-foreground mb-0.5 block">目标值</label>
+            <Input value={value.target} onChange={(e) => update('target', e.target.value)} className="h-7 text-xs" placeholder="如 completed" />
+          </div>
+          <div>
+            <label className="text-[10px] text-muted-foreground mb-0.5 block">轮询间隔（秒）</label>
+            <Input type="number" value={value.interval_seconds} onChange={(e) => update('interval_seconds', Number(e.target.value))} className="h-7 text-xs" />
+          </div>
+          <div>
+            <label className="text-[10px] text-muted-foreground mb-0.5 block">最大等待（秒）</label>
+            <Input type="number" value={value.max_seconds} onChange={(e) => update('max_seconds', Number(e.target.value))} className="h-7 text-xs" />
+          </div>
+          <p className="col-span-2 text-[10px] text-muted-foreground/60">
+            每隔 {value.interval_seconds}s 请求一次，检查响应 JSON 中 "{value.field}" 是否等于 "{value.target}"，最多等待 {value.max_seconds}s
+          </p>
+        </div>
       )}
     </div>
   )

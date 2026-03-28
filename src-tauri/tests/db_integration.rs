@@ -270,7 +270,7 @@ fn test_assertion_header_case_insensitive() {
 
     let response = HttpResponse {
         status: 200, status_text: "OK".into(),
-        headers: vec![KeyValuePair { key: "content-type".into(), value: "application/json".into(), enabled: true }],
+        headers: vec![KeyValuePair { key: "content-type".into(), value: "application/json".into(), enabled: true, field_type: String::new() }],
         body: "{}".into(), time_ms: 50, size_bytes: 2,
     };
 

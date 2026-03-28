@@ -1,4 +1,5 @@
 use std::time::Instant;
+use base64::Engine;
 use uuid::Uuid;
 
 use crate::models::execution::{Execution, ExecutionResult};
@@ -56,7 +57,22 @@ pub async fn execute(client: &reqwest::Client, item: &CollectionItem) -> Result<
                 serde_json::from_str(&item.body_content).unwrap_or_default();
             let mut multipart = reqwest::multipart::Form::new();
             for kv in form_data.iter().filter(|kv| kv.enabled) {
-                multipart = multipart.text(kv.key.clone(), kv.value.clone());
+                if kv.field_type == "file" && !kv.value.is_empty() {
+                    let file_bytes = tokio::fs::read(&kv.value).await?;
+                    let filename = std::path::Path::new(&kv.value)
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string();
+                    let mime = mime_from_filename(&filename);
+                    let part = reqwest::multipart::Part::bytes(file_bytes)
+                        .file_name(filename)
+                        .mime_str(&mime)
+                        .unwrap();
+                    multipart = multipart.part(kv.key.clone(), part);
+                } else {
+                    multipart = multipart.text(kv.key.clone(), kv.value.clone());
+                }
             }
             builder = builder.multipart(multipart);
         }
@@ -76,11 +92,36 @@ pub async fn execute(client: &reqwest::Client, item: &CollectionItem) -> Result<
             key: k.to_string(),
             value: v.to_str().unwrap_or("").to_string(),
             enabled: true,
+            field_type: String::new(),
         })
         .collect();
 
-    let body = resp.text().await?;
-    let size_bytes = body.len() as u64;
+    // 检测二进制响应（音频等），base64 编码以便前端播放
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+
+    let is_binary = content_type.starts_with("audio/")
+        || content_type.starts_with("image/")
+        || content_type == "application/octet-stream";
+
+    let (body, size_bytes) = if is_binary {
+        let bytes = resp.bytes().await?;
+        let size = bytes.len() as u64;
+        let encoded = format!(
+            "data:{};base64,{}",
+            content_type,
+            base64::engine::general_purpose::STANDARD.encode(&bytes)
+        );
+        (encoded, size)
+    } else {
+        let text = resp.text().await?;
+        let size = text.len() as u64;
+        (text, size)
+    };
 
     let execution_id = Uuid::new_v4().to_string();
 
@@ -107,6 +148,24 @@ pub async fn execute(client: &reqwest::Client, item: &CollectionItem) -> Result<
         assertion_results: vec![],
         error_message: None,
     })
+}
+
+fn mime_from_filename(filename: &str) -> String {
+    let ext = filename.rsplit('.').next().unwrap_or("").to_lowercase();
+    match ext.as_str() {
+        "wav" => "audio/wav",
+        "mp3" => "audio/mpeg",
+        "ogg" => "audio/ogg",
+        "webm" => "audio/webm",
+        "flac" => "audio/flac",
+        "m4a" => "audio/mp4",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "pdf" => "application/pdf",
+        _ => "application/octet-stream",
+    }
+    .to_string()
 }
 
 pub fn to_execution(item: &CollectionItem, result: &ExecutionResult) -> Execution {

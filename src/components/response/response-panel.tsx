@@ -119,9 +119,24 @@ export default function ResponsePanel() {
           )}
         </TabsList>
         <TabsContent value="body">
-          <pre className="font-mono text-xs leading-relaxed whitespace-pre-wrap break-all max-h-[400px] overflow-y-auto bg-card p-4 rounded-xl border border-overlay/[0.06]">
-            {prettyBody}
-          </pre>
+          {response.body?.startsWith('data:audio/') ? (
+            <div className="p-4 rounded-xl border border-overlay/[0.06] bg-card space-y-3">
+              <audio controls src={response.body} className="w-full" />
+              <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                <span>{formatSize(response.size_bytes)}</span>
+                <span>{response.body.split(';')[0].replace('data:', '')}</span>
+              </div>
+            </div>
+          ) : response.body?.startsWith('data:image/') ? (
+            <div className="p-4 rounded-xl border border-overlay/[0.06] bg-card space-y-3">
+              <img src={response.body} alt="Response" className="max-w-full rounded-lg" />
+              <div className="text-xs text-muted-foreground">{formatSize(response.size_bytes)}</div>
+            </div>
+          ) : (
+            <pre className="font-mono text-xs leading-relaxed whitespace-pre-wrap break-all max-h-[400px] overflow-y-auto bg-card p-4 rounded-xl border border-overlay/[0.06]">
+              {prettyBody}
+            </pre>
+          )}
         </TabsContent>
         <TabsContent value="headers">
           <div className="rounded-xl border border-overlay/[0.06] overflow-hidden">

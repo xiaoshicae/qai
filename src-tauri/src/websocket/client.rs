@@ -177,8 +177,8 @@ pub async fn execute(item: &CollectionItem) -> Result<ExecutionResult, anyhow::E
             status: status_code,
             status_text: if is_success { "OK".into() } else { "No Data".into() },
             headers: vec![
-                KeyValuePair { key: "x-ws-binary-bytes".into(), value: total_binary_bytes.to_string(), enabled: true },
-                KeyValuePair { key: "x-ws-text-messages".into(), value: text_messages.len().to_string(), enabled: true },
+                KeyValuePair { key: "x-ws-binary-bytes".into(), value: total_binary_bytes.to_string(), enabled: true, field_type: String::new() },
+                KeyValuePair { key: "x-ws-text-messages".into(), value: text_messages.len().to_string(), enabled: true, field_type: String::new() },
             ],
             body,
             time_ms,

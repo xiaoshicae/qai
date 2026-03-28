@@ -295,7 +295,7 @@ mod tests {
         }];
         let response = HttpResponse {
             status: 200, status_text: "OK".into(),
-            headers: vec![KeyValuePair { key: "x-request-id".into(), value: "rid-123".into(), enabled: true }],
+            headers: vec![KeyValuePair { key: "x-request-id".into(), value: "rid-123".into(), enabled: true, field_type: String::new() }],
             body: String::new(), time_ms: 50, size_bytes: 0,
         };
         let vars = extract_variables(&rules, &response);

@@ -53,7 +53,7 @@ export default function EnvSelector() {
     <div ref={ref} className="relative">
       <button
         onClick={(e) => { e.stopPropagation(); setOpen(!open) }}
-        className="flex items-center gap-1 h-5 text-[10px] text-muted-foreground/50 hover:text-muted-foreground cursor-pointer transition-colors"
+        className="flex items-center gap-1.5 h-6 px-2 rounded-lg text-[11px] text-muted-foreground hover:text-foreground border border-overlay/[0.06] hover:border-overlay/[0.1] cursor-pointer transition-all duration-200"
       >
         {active ? (
           <>

@@ -535,9 +535,41 @@ function EditForm({ req, onChange, onSave, onCancel }: {
   onCancel: () => void
 }) {
   const set = (field: string, value: any) => onChange({ ...req, [field]: value })
+  const [showCurlImport, setShowCurlImport] = useState(false)
+  const [curlInput, setCurlInput] = useState('')
 
   const formatBody = () => {
     try { set('body_content', JSON.stringify(JSON.parse(req.body_content), null, 2)) } catch {}
+  }
+
+  const importFromCurl = async () => {
+    if (!curlInput.trim()) return
+    try {
+      const parsed = await invoke<any>('parse_curl', { curlCommand: curlInput })
+      onChange({
+        ...req,
+        method: parsed.method || req.method,
+        url: parsed.url || req.url,
+        headers: JSON.stringify(parsed.headers || []),
+        body_type: parsed.body_type || req.body_type,
+        body_content: parsed.body_content || req.body_content,
+      })
+      setShowCurlImport(false)
+      setCurlInput('')
+    } catch (e: any) {
+      alert(`解析失败: ${e}`)
+    }
+  }
+
+  const exportToCurl = () => {
+    const headers: { key: string; value: string; enabled: boolean }[] = (() => { try { return JSON.parse(req.headers || '[]') } catch { return [] } })()
+    const parts = [`curl -X ${req.method}`, `  '${req.url}'`]
+    for (const h of headers.filter((h) => h.enabled)) parts.push(`  -H '${h.key}: ${h.value}'`)
+    if (req.body_type !== 'none' && req.body_content) {
+      try { parts.push(`  -d '${JSON.stringify(JSON.parse(req.body_content))}'`) } catch { parts.push(`  -d '${req.body_content}'`) }
+    }
+    const curl = parts.join(' \\\n')
+    navigator.clipboard.writeText(curl)
   }
 
   // Tab 键插入 2 空格缩进
@@ -664,10 +696,42 @@ function EditForm({ req, onChange, onSave, onCancel }: {
         onChange={(cfg) => set('poll_config', cfg ? JSON.stringify(cfg) : '')}
       />
 
+      {/* curl 导入 */}
+      {showCurlImport && (
+        <div className="space-y-2 p-3 rounded-lg border border-overlay/[0.08] bg-overlay/[0.02]">
+          <label className="text-xs text-muted-foreground">粘贴 curl 命令</label>
+          <textarea
+            value={curlInput}
+            onChange={(e) => setCurlInput(e.target.value)}
+            rows={4}
+            className="w-full rounded-lg border border-overlay/[0.08] bg-transparent px-3 py-2 text-xs resize-y outline-none focus:border-primary/50"
+            style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}
+            placeholder={'curl -X POST https://api.example.com \\\n  -H \'Content-Type: application/json\' \\\n  -d \'{"key":"value"}\''}
+            autoFocus
+          />
+          <div className="flex gap-2">
+            <Button size="sm" onClick={importFromCurl} disabled={!curlInput.trim()}>解析导入</Button>
+            <Button variant="outline" size="sm" onClick={() => setShowCurlImport(false)}>取消</Button>
+          </div>
+        </div>
+      )}
+
       {/* 按钮 */}
-      <div className="flex justify-end gap-2 pt-2">
-        <Button variant="outline" size="sm" onClick={onCancel}>取消</Button>
-        <Button size="sm" onClick={onSave}>保存</Button>
+      <div className="flex items-center justify-between pt-2">
+        <div className="flex gap-2">
+          <button onClick={() => setShowCurlImport(!showCurlImport)} className="text-xs text-muted-foreground hover:text-foreground cursor-pointer transition-colors">
+            从 curl 导入
+          </button>
+          {req.id && req.url && (
+            <button onClick={exportToCurl} className="text-xs text-muted-foreground hover:text-foreground cursor-pointer transition-colors">
+              复制 curl
+            </button>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={onCancel}>取消</Button>
+          <Button size="sm" onClick={onSave}>保存</Button>
+        </div>
       </div>
     </div>
   )

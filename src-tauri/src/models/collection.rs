@@ -6,6 +6,7 @@ pub struct Collection {
     pub name: String,
     pub description: String,
     pub group_id: Option<String>,
+    pub sort_order: i32,
     pub created_at: String,
     pub updated_at: String,
 }

@@ -12,8 +12,9 @@ fn collection_from_row(row: &Row) -> Result<Collection, rusqlite::Error> {
         name: row.get(1)?,
         description: row.get(2)?,
         group_id: row.get(3)?,
-        created_at: row.get(4).unwrap_or_default(),
-        updated_at: row.get(5).unwrap_or_default(),
+        sort_order: row.get(4).unwrap_or(0),
+        created_at: row.get(5).unwrap_or_default(),
+        updated_at: row.get(6).unwrap_or_default(),
     })
 }
 
@@ -48,6 +49,7 @@ pub fn update(
     name: Option<&str>,
     description: Option<&str>,
     group_id: Option<Option<&str>>,
+    sort_order: Option<i32>,
 ) -> Result<Collection, rusqlite::Error> {
     let mut sets: Vec<String> = Vec::new();
     let mut values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -63,6 +65,10 @@ pub fn update(
     if let Some(gid) = group_id {
         sets.push(format!("group_id = ?{}", values.len() + 1));
         values.push(Box::new(gid.map(|s| s.to_string())));
+    }
+    if let Some(so) = sort_order {
+        sets.push(format!("sort_order = ?{}", values.len() + 1));
+        values.push(Box::new(so));
     }
     if !sets.is_empty() {
         sets.push("updated_at = datetime('now', 'localtime')".to_string());

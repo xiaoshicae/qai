@@ -20,7 +20,7 @@ fn test_collection_crud() {
     let all = qai_lib::db::collection::list_all(&conn).unwrap();
     assert_eq!(all.len(), 1);
 
-    let updated = qai_lib::db::collection::update(&conn, &col.id, Some("Updated"), Some("new desc"), None).unwrap();
+    let updated = qai_lib::db::collection::update(&conn, &col.id, Some("Updated"), Some("new desc"), None, None).unwrap();
     assert_eq!(updated.name, "Updated");
     assert_eq!(updated.description, "new desc");
 

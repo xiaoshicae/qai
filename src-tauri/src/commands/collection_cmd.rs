@@ -34,11 +34,12 @@ pub fn update_collection(
     name: Option<String>,
     description: Option<String>,
     group_id: Option<Option<String>>,
+    sort_order: Option<i32>,
 ) -> Result<Collection, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     let gid = group_id.map(|outer| outer.as_deref().map(|s| s.to_string()));
     let gid_ref = gid.as_ref().map(|o| o.as_deref());
-    crate::db::collection::update(&conn, &id, name.as_deref(), description.as_deref(), gid_ref)
+    crate::db::collection::update(&conn, &id, name.as_deref(), description.as_deref(), gid_ref, sort_order)
         .map_err(|e| e.to_string())
 }
 
@@ -92,4 +93,39 @@ pub fn update_group(
 pub fn delete_group(db: State<'_, DbState>, id: String) -> Result<(), String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     crate::db::group::delete(&conn, &id).map_err(|e| e.to_string())
+}
+
+#[derive(serde::Deserialize)]
+pub struct GroupOrder {
+    pub id: String,
+    pub sort_order: i32,
+}
+
+#[derive(serde::Deserialize)]
+pub struct CollectionOrder {
+    pub id: String,
+    pub group_id: Option<String>,
+    pub sort_order: i32,
+}
+
+#[tauri::command]
+pub fn reorder_sidebar(
+    db: State<'_, DbState>,
+    groups: Vec<GroupOrder>,
+    collections: Vec<CollectionOrder>,
+) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    for g in &groups {
+        conn.execute(
+            "UPDATE groups SET sort_order = ?1 WHERE id = ?2",
+            rusqlite::params![g.sort_order, g.id],
+        ).map_err(|e| e.to_string())?;
+    }
+    for c in &collections {
+        conn.execute(
+            "UPDATE collections SET sort_order = ?1, group_id = ?2 WHERE id = ?3",
+            rusqlite::params![c.sort_order, c.group_id, c.id],
+        ).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }

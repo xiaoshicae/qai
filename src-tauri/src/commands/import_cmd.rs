@@ -133,6 +133,7 @@ fn import_single_case(
                 None,
                 None,
                 Some(Some(&group_id)),
+                None,
             ).map_err(|e| e.to_string())?;
             result.collections_updated += 1;
             id

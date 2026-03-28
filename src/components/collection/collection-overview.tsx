@@ -15,7 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from '@
 import { useCollectionStore } from '@/stores/collection-store'
 import type {
   Collection, CollectionTreeNode, ItemLastStatus,
-  BatchResult, TestProgress, ExecutionResult, CollectionItem,
+  BatchResult, TestProgress, ExecutionResult, CollectionItem, HttpResponse,
 } from '@/types'
 
 const BODY_TYPES = [
@@ -685,9 +685,7 @@ function ScenarioRow({ r, stepLabel, indent, getResult, getStatus: _getStatus, s
               </div>
               {/* Tab 内容 */}
               {respTab === 'body' ? (
-                <pre className="px-3 py-2.5 text-xs font-mono whitespace-pre-wrap break-all max-h-52 overflow-y-auto">
-                  {resp ? (() => { try { return JSON.stringify(JSON.parse(resp.body), null, 2) } catch { return resp.body } })() : '尚未运行'}
-                </pre>
+                <ResponseBody resp={resp} />
               ) : (
                 <div className="max-h-52 overflow-y-auto">
                   {resp && resp.headers.length > 0 ? (
@@ -773,5 +771,66 @@ function ExtractRulesEditor({ value, onChange }: {
         <p className="text-[10px] text-muted-foreground/60">提取的变量可在后续步骤中通过 {'{{变量名}}'} 引用</p>
       )}
     </div>
+  )
+}
+
+function ResponseBody({ resp }: { resp: HttpResponse | null | undefined }) {
+  if (!resp) return <div className="px-3 py-6 text-center text-xs text-muted-foreground/40">尚未运行</div>
+
+  const contentType = resp.headers.find((h: { key: string }) => h.key.toLowerCase() === 'content-type')?.value?.toLowerCase() || ''
+
+  // 图片
+  if (contentType.startsWith('image/')) {
+    const blob = new Blob([Uint8Array.from(atob(resp.body), c => c.charCodeAt(0))], { type: contentType })
+    const url = URL.createObjectURL(blob)
+    return (
+      <div className="p-3 flex items-center justify-center max-h-64 overflow-hidden">
+        <img src={url} alt="response" className="max-h-56 max-w-full object-contain rounded" onLoad={() => URL.revokeObjectURL(url)} />
+      </div>
+    )
+  }
+
+  // 音频
+  if (contentType.startsWith('audio/')) {
+    return (
+      <div className="p-3 flex items-center justify-center">
+        <audio controls className="w-full max-w-md">
+          <source type={contentType} />
+          浏览器不支持音频播放
+        </audio>
+      </div>
+    )
+  }
+
+  // 视频
+  if (contentType.startsWith('video/')) {
+    return (
+      <div className="p-3 flex items-center justify-center">
+        <video controls className="max-h-56 max-w-full rounded">
+          <source type={contentType} />
+          浏览器不支持视频播放
+        </video>
+      </div>
+    )
+  }
+
+  // HTML
+  if (contentType.includes('text/html')) {
+    return (
+      <div className="max-h-52 overflow-y-auto">
+        <iframe srcDoc={resp.body} className="w-full h-52 border-0" sandbox="" title="HTML Preview" />
+      </div>
+    )
+  }
+
+  // JSON（默认尝试格式化）
+  const formatted = (() => {
+    try { return JSON.stringify(JSON.parse(resp.body), null, 2) } catch { return resp.body }
+  })()
+
+  return (
+    <pre className="px-3 py-2.5 text-xs font-mono whitespace-pre-wrap break-all max-h-52 overflow-y-auto">
+      {formatted}
+    </pre>
   )
 }

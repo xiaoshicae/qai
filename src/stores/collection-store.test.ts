@@ -11,15 +11,15 @@ function makeTree(): CollectionTreeNode {
     id: 'col-1',
     name: 'Test Collection',
     node_type: 'collection',
-    method: null,
-    expect_status: null,
+    method: undefined,
+    expect_status: undefined,
     children: [
       {
         id: 'folder-1',
         name: 'Auth',
         node_type: 'folder',
-        method: null,
-        expect_status: null,
+        method: undefined,
+        expect_status: undefined,
         children: [
           {
             id: 'req-1',

@@ -43,6 +43,7 @@ export interface CollectionItem {
   description: string
   expect_status: number
   poll_config: string
+  protocol: string // 'http' | 'websocket'
   created_at: string
   updated_at: string
 }

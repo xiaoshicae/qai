@@ -5,6 +5,7 @@ pub mod models;
 pub mod runner;
 pub mod ai;
 mod report;
+pub mod websocket;
 pub mod pty;
 
 use db::init::initialize_database;

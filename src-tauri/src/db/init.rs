@@ -14,6 +14,7 @@ pub fn initialize_database(app: &AppHandle) -> Result<(), Box<dyn std::error::Er
     conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
     create_tables(&conn)?;
     migrate_if_needed(&conn)?;
+    migrate_add_columns(&conn)?;
 
     app.manage(DbState(Mutex::new(conn)));
     app.manage(HttpClient(
@@ -268,5 +269,16 @@ fn migrate_if_needed(conn: &Connection) -> Result<(), rusqlite::Error> {
     let _ = conn.execute("DELETE FROM settings WHERE key = 'category_order'", []);
 
     log::info!("数据迁移完成");
+    Ok(())
+}
+
+/// 增量列迁移：新增字段时在此添加 ALTER TABLE，已存在的列会被忽略
+pub fn migrate_add_columns(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let alterations = [
+        "ALTER TABLE collection_items ADD COLUMN protocol TEXT NOT NULL DEFAULT 'http'",
+    ];
+    for sql in &alterations {
+        let _ = conn.execute(sql, []);
+    }
     Ok(())
 }

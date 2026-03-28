@@ -42,6 +42,7 @@ pub fn update_item(
     description: Option<String>,
     expect_status: Option<u16>,
     parent_id: Option<Option<String>>,
+    protocol: Option<String>,
 ) -> Result<CollectionItem, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     let pid = parent_id.map(|outer| outer.as_deref().map(|s| s.to_string()));
@@ -60,6 +61,7 @@ pub fn update_item(
         description.as_deref(),
         expect_status,
         pid_ref,
+        protocol.as_deref(),
     )
     .map_err(|e| e.to_string())
 }
@@ -137,7 +139,11 @@ pub async fn send_request(
         (item, assertions)
     };
 
-    let mut result = crate::http::client::execute(&http.0, &item).await.map_err(|e| e.to_string())?;
+    let mut result = if item.protocol == "websocket" {
+        crate::websocket::client::execute(&item).await.map_err(|e| e.to_string())?
+    } else {
+        crate::http::client::execute(&http.0, &item).await.map_err(|e| e.to_string())?
+    };
 
     // 执行断言
     if let Some(ref response) = result.response {

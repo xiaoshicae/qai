@@ -22,6 +22,7 @@ const mockItem: CollectionItem = {
   description: '',
   expect_status: 200,
   poll_config: '',
+  protocol: 'http',
   created_at: '',
   updated_at: '',
 }

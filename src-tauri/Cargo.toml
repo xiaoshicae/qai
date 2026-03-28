@@ -40,3 +40,4 @@ portable-pty = "0.9.0"
 base64 = "0.22.1"
 libc = "0.2.183"
 serde_yaml = "0.9"
+tokio-tungstenite = { version = "0.26", features = ["native-tls"] }

@@ -24,19 +24,27 @@ export function VarHighlight({ text, vars = {}, className }: Props) {
 }
 
 function VarTag({ name, value }: { name: string; value?: string }) {
-  const [show, setShow] = useState(false)
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
+
+  const handleEnter = (e: React.MouseEvent) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    setPos({ x: rect.left, y: rect.bottom + 4 })
+  }
 
   return (
     <span
-      className="relative inline-block"
-      onMouseEnter={() => setShow(true)}
-      onMouseLeave={() => setShow(false)}
+      className="inline-block"
+      onMouseEnter={handleEnter}
+      onMouseLeave={() => setPos(null)}
     >
       <span className="text-cyan-400 bg-cyan-500/10 rounded px-0.5 cursor-help">
         {`{{${name}}}`}
       </span>
-      {show && (
-        <span className="absolute z-50 bottom-full left-0 mb-1 px-2 py-1 rounded-lg text-[10px] font-mono bg-card border border-overlay/[0.1] shadow-lg whitespace-nowrap max-w-xs truncate">
+      {pos && (
+        <span
+          className="fixed z-[9999] px-2 py-1 rounded-lg text-[10px] font-mono bg-card border border-overlay/[0.1] shadow-lg whitespace-nowrap max-w-xs truncate"
+          style={{ left: pos.x, top: pos.y }}
+        >
           <span className="text-muted-foreground">{name} = </span>
           <span className="text-foreground">{value ?? <span className="text-red-400 italic">未定义</span>}</span>
         </span>

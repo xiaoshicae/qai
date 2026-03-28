@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use crate::models::item::CollectionItem;
 
-const ITEM_COLS: &str = "id, collection_id, parent_id, type, name, sort_order, method, url, headers, query_params, body_type, body_content, extract_rules, description, expect_status, poll_config, created_at, updated_at";
+const ITEM_COLS: &str = "id, collection_id, parent_id, type, name, sort_order, method, url, headers, query_params, body_type, body_content, extract_rules, description, expect_status, poll_config, protocol, created_at, updated_at";
 
 pub fn item_from_row(row: &Row) -> Result<CollectionItem, rusqlite::Error> {
     Ok(CollectionItem {
@@ -23,8 +23,9 @@ pub fn item_from_row(row: &Row) -> Result<CollectionItem, rusqlite::Error> {
         description: row.get(13)?,
         expect_status: row.get::<_, u16>(14).unwrap_or(200),
         poll_config: row.get(15).unwrap_or_default(),
-        created_at: row.get(16)?,
-        updated_at: row.get(17)?,
+        protocol: row.get(16).unwrap_or_else(|_| "http".to_string()),
+        created_at: row.get(17)?,
+        updated_at: row.get(18)?,
     })
 }
 
@@ -98,6 +99,7 @@ pub fn update(
     description: Option<&str>,
     expect_status: Option<u16>,
     parent_id: Option<Option<&str>>,
+    protocol: Option<&str>,
 ) -> Result<CollectionItem, rusqlite::Error> {
     let mut sets: Vec<String> = Vec::new();
     let mut values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -120,6 +122,7 @@ pub fn update(
     push_field!(body_content, "body_content");
     push_field!(extract_rules, "extract_rules");
     push_field!(description, "description");
+    push_field!(protocol, "protocol");
     if let Some(es) = expect_status {
         sets.push(format!("expect_status = ?{}", values.len() + 1));
         values.push(Box::new(es as i32));

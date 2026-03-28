@@ -21,6 +21,7 @@ pub struct CollectionItem {
     pub description: String,
     pub expect_status: u16,
     pub poll_config: String,
+    pub protocol: String, // "http" | "websocket"
     pub created_at: String,
     pub updated_at: String,
 }

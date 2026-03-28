@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { JsonHighlight } from '@/components/ui/json-highlight'
+import { JsonEditor } from '@/components/ui/json-editor'
 import { VarHighlight } from '@/components/ui/var-highlight'
 import KeyValueTable from '@/components/request/key-value-table'
 import { Progress } from '@/components/ui/progress'
@@ -194,34 +195,22 @@ export default function CollectionOverview({ collection, tree }: Props) {
       description: '',
       expect_status: 200,
       poll_config: '',
+      protocol: 'http',
       created_at: '',
       updated_at: '',
     })
   }
 
-  // 添加链：弹框填信息
-  const addChain = () => {
-    setIsNewReq(true)
-    setEditReq({
-      id: '',
-      collection_id: collection.id,
-      parent_id: null,
-      type: 'chain',
-      name: '',
-      sort_order: 0,
-      method: 'GET',
-      url: '',
-      headers: '[]',
-      query_params: '[]',
-      body_type: 'none',
-      body_content: '',
-      extract_rules: '[]',
-      description: '',
-      expect_status: 200,
-      poll_config: '',
-      created_at: '',
-      updated_at: '',
-    })
+  // 添加链：简单弹框只填名称+描述
+  const [showChainDialog, setShowChainDialog] = useState(false)
+  const [chainName, setChainName] = useState('')
+  const [chainDesc, setChainDesc] = useState('')
+  const addChain = () => { setChainName(''); setChainDesc(''); setShowChainDialog(true) }
+  const saveChain = async () => {
+    if (!chainName.trim()) return
+    await invoke('create_item', { collectionId: collection.id, parentId: null, itemType: 'chain', name: chainName.trim(), method: 'GET' })
+    await loadTree(collection.id)
+    setShowChainDialog(false)
   }
 
   // 添加链步骤
@@ -482,8 +471,33 @@ export default function CollectionOverview({ collection, tree }: Props) {
       <Dialog open={!!editReq} onOpenChange={() => { setEditReq(null); setIsNewReq(false) }}>
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogClose onClose={() => { setEditReq(null); setIsNewReq(false) }} />
-          <DialogHeader><DialogTitle>{isNewReq ? (editReq?.type === 'chain' ? '新建链式请求' : '新建测试用例') : '编辑测试用例'}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{isNewReq ? '新建测试用例' : '编辑测试用例'}</DialogTitle></DialogHeader>
           {editReq && <EditForm req={editReq} onChange={setEditReq} onSave={saveEdit} onCancel={() => { setEditReq(null); setIsNewReq(false) }} />}
+        </DialogContent>
+      </Dialog>
+
+      {/* 新建链弹窗 — 简洁版 */}
+      <Dialog open={showChainDialog} onOpenChange={setShowChainDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogClose onClose={() => setShowChainDialog(false)} />
+          <DialogHeader><DialogTitle>新建链式请求</DialogTitle></DialogHeader>
+          <div className="space-y-3 pt-2">
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">链名称</label>
+              <Input value={chainName} onChange={(e) => setChainName(e.target.value)} className="h-8 text-sm" placeholder="如：自定义音色 TTS" autoFocus onKeyDown={(e) => e.key === 'Enter' && saveChain()} />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">描述</label>
+              <Input value={chainDesc} onChange={(e) => setChainDesc(e.target.value)} className="h-8 text-sm" placeholder="多步依赖：上传→生成" />
+            </div>
+            <p className="text-[10px] text-muted-foreground/60 leading-relaxed">
+              创建后可在表格中展开链，通过"+ 添加步骤"逐个添加请求。步骤间通过变量提取规则（Extract）传递数据，后续步骤用 {'{{变量名}}'} 引用。
+            </p>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button variant="outline" size="sm" onClick={() => setShowChainDialog(false)}>取消</Button>
+              <Button size="sm" onClick={saveChain} disabled={!chainName.trim()}>创建</Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
@@ -574,25 +588,30 @@ function EditForm({ req, onChange, onSave, onCancel }: {
                 onChange={(v) => set('body_content', JSON.stringify(v))}
               />
             </div>
-          ) : (
+          ) : req.body_type === 'json' ? (
             <>
-              <textarea
+              <JsonEditor
                 value={req.body_content}
-                onChange={(e) => set('body_content', e.target.value)}
-                onKeyDown={handleBodyKeyDown}
-                style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}
-                className="w-full h-full min-h-0 rounded-xl border border-overlay/[0.08] bg-overlay/[0.03] px-3 py-2 text-xs leading-relaxed resize-none outline-none hover:border-overlay/[0.12] focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/20 transition-all duration-200"
+                onChange={(v) => set('body_content', v)}
+                className="w-full h-full"
                 placeholder='{ "key": "value" }'
               />
-              {req.body_type === 'json' && (
-                <button
-                  onClick={formatBody}
-                  className="absolute top-2 right-2 px-2 py-0.5 rounded-md text-[10px] font-medium text-muted-foreground hover:text-foreground bg-overlay/[0.06] hover:bg-overlay/[0.1] cursor-pointer transition-colors"
-                >
-                  Format
-                </button>
-              )}
+              <button
+                onClick={formatBody}
+                className="absolute top-2 right-2 px-2 py-0.5 rounded-md text-[10px] font-medium text-muted-foreground hover:text-foreground bg-overlay/[0.06] hover:bg-overlay/[0.1] cursor-pointer transition-colors z-20"
+              >
+                Format
+              </button>
             </>
+          ) : (
+            <textarea
+              value={req.body_content}
+              onChange={(e) => set('body_content', e.target.value)}
+              onKeyDown={handleBodyKeyDown}
+              style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}
+              className="w-full h-full min-h-0 rounded-xl border border-overlay/[0.08] bg-overlay/[0.03] px-3 py-2 text-xs leading-relaxed resize-none outline-none hover:border-overlay/[0.12] focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/20 transition-all duration-200"
+              placeholder="请求体内容"
+            />
           )}
         </div>
       </div>

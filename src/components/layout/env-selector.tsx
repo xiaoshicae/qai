@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
-import { Globe, Check, ChevronDown } from 'lucide-react'
+import { Check, ChevronDown } from 'lucide-react'
 
 interface Env {
   id: string
@@ -53,13 +53,17 @@ export default function EnvSelector() {
     <div ref={ref} className="relative">
       <button
         onClick={(e) => { e.stopPropagation(); setOpen(!open) }}
-        className="flex items-center gap-1.5 h-6 px-2 rounded-lg text-[11px] hover:bg-overlay/[0.06] cursor-pointer transition-colors"
+        className="flex items-center gap-1 h-5 text-[10px] text-muted-foreground/50 hover:text-muted-foreground cursor-pointer transition-colors"
       >
-        <Globe className="h-3 w-3 text-muted-foreground/60" />
-        <span className={active ? 'text-emerald-500 font-medium' : 'text-muted-foreground/60'}>
-          {active?.name ?? 'No Environment'}
-        </span>
-        <ChevronDown className="h-2.5 w-2.5 text-muted-foreground/40" />
+        {active ? (
+          <>
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500/60" />
+            <span>{active.name}</span>
+          </>
+        ) : (
+          <span className="italic">No Env</span>
+        )}
+        <ChevronDown className="h-2.5 w-2.5" />
       </button>
 
       {open && (

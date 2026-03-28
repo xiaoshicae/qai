@@ -169,3 +169,16 @@ pub async fn send_request(
 
     Ok(result)
 }
+
+#[tauri::command]
+pub fn parse_curl(curl_command: String) -> Result<crate::http::curl::CurlParseResult, String> {
+    crate::http::curl::parse_curl(&curl_command)
+}
+
+#[tauri::command]
+pub fn export_curl(db: State<'_, DbState>, id: String) -> Result<String, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let item = crate::db::item::get(&conn, &id).map_err(|e| e.to_string())?;
+    let headers: Vec<crate::models::item::KeyValuePair> = serde_json::from_str(&item.headers).unwrap_or_default();
+    Ok(crate::http::curl::to_curl(&item.method, &item.url, &headers, &item.body_type, &item.body_content))
+}

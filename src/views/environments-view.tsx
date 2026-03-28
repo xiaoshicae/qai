@@ -111,14 +111,6 @@ export default function EnvironmentsView() {
     })
   }
 
-  const toggleEnabled = (index: number, checked: boolean) => {
-    setVariables((prev) => {
-      const next = prev.map((v, i) => i === index ? { ...v, enabled: checked } : v)
-      autoSave(next)
-      return next
-    })
-  }
-
   // 确保始终有一个空行
   const displayVars = variables.length === 0 || (variables[variables.length - 1]?.key.trim() || variables[variables.length - 1]?.value.trim())
     ? [...variables, { id: '', environment_id: selectedId ?? '', key: '', value: '', enabled: true, sort_order: variables.length }]
@@ -196,7 +188,6 @@ export default function EnvironmentsView() {
 
               {/* 表头 */}
               <div className="flex items-center gap-2 px-1">
-                <span className="w-4" />
                 <span className="flex-1 text-[10px] text-muted-foreground uppercase tracking-wider">变量名</span>
                 <span className="flex-1 text-[10px] text-muted-foreground uppercase tracking-wider">值</span>
                 <span className="w-7" />
@@ -208,12 +199,6 @@ export default function EnvironmentsView() {
                 const isLast = i === displayVars.length - 1 && isEmpty
                 return (
                   <div key={i} className={`flex items-center gap-2 group ${isLast ? 'opacity-50 focus-within:opacity-100 transition-opacity' : ''}`}>
-                    <input
-                      type="checkbox"
-                      checked={v.enabled}
-                      onChange={(e) => toggleEnabled(i, e.target.checked)}
-                      className="h-3.5 w-3.5 rounded accent-primary cursor-pointer"
-                    />
                     <Input
                       value={v.key}
                       onChange={(e) => updateVariable(i, 'key', e.target.value)}

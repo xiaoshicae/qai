@@ -11,6 +11,7 @@ import { Select } from '@/components/ui/select'
 import { JsonHighlight } from '@/components/ui/json-highlight'
 import { JsonEditor } from '@/components/ui/json-editor'
 import { VarHighlight } from '@/components/ui/var-highlight'
+import EnvSelector from '@/components/layout/env-selector'
 import KeyValueTable from '@/components/request/key-value-table'
 import { Progress } from '@/components/ui/progress'
 import { useConfirmStore } from '@/components/ui/confirm-dialog'
@@ -373,6 +374,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
 
       {/* 操作栏 */}
       <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-1">
         {running ? (
           <Button onClick={stopRun} size="sm" variant="destructive" className="gap-1.5">
             <Square className="h-3 w-3" /> 停止
@@ -424,6 +426,8 @@ export default function CollectionOverview({ collection, tree }: Props) {
           <Link2 className="h-3.5 w-3.5" /> 添加链
         </Button>
         {batchResult && <Button variant="outline" size="sm" onClick={exportHtml} className="gap-1.5"><Download className="h-3.5 w-3.5" /> 导出报告</Button>}
+        </div>
+        <EnvSelector />
       </div>
 
       {running && <div className="space-y-1.5"><div className="flex justify-between text-xs text-muted-foreground"><span>执行中...</span><span>{progressPercent}%</span></div><Progress value={progressPercent} /></div>}

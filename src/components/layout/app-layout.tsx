@@ -4,7 +4,6 @@ import { Sparkles } from 'lucide-react'
 import Sidebar from './sidebar'
 import AIPanel from '@/components/ai/ai-panel'
 import TerminalPanel from '@/components/terminal/terminal-panel'
-import EnvSelector from '@/components/layout/env-selector'
 import { useAIStore } from '@/stores/ai-store'
 
 function useResizable(initial: number, min: number, max: number) {
@@ -96,10 +95,8 @@ export default function AppLayout() {
 
       {/* 主内容区 */}
       <main className="flex-1 overflow-hidden bg-background relative min-w-[300px]">
-        {/* 顶部拖拽区域（macOS 标题栏）+ 环境选择器 */}
-        <div className="h-8 shrink-0 flex items-center justify-end pr-3" data-tauri-drag-region="">
-          <EnvSelector />
-        </div>
+        {/* 顶部拖拽区域（macOS 标题栏） */}
+        <div className="h-8 shrink-0" data-tauri-drag-region="" />
         <div className="h-[calc(100%-2rem)] overflow-hidden">
           <Outlet />
         </div>

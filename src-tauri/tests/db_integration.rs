@@ -514,3 +514,90 @@ fn test_execution_get_last_status() {
     let s2 = statuses.iter().find(|s| s.item_id == item2.id).unwrap();
     assert_eq!(s2.status, "success");
 }
+
+// ─── WebSocket protocol 字段 ────────────────────────────────
+
+#[test]
+fn test_item_protocol_default_http() {
+    let conn = setup_db();
+    let col = qai_lib::db::collection::create(&conn, "Col", "", None).unwrap();
+    let item = qai_lib::db::item::create(&conn, &col.id, None, "request", "HTTP Req", "GET").unwrap();
+    assert_eq!(item.protocol, "http");
+}
+
+#[test]
+fn test_item_protocol_update_to_websocket() {
+    let conn = setup_db();
+    let col = qai_lib::db::collection::create(&conn, "Col", "", None).unwrap();
+    let item = qai_lib::db::item::create(&conn, &col.id, None, "request", "WS Test", "GET").unwrap();
+    assert_eq!(item.protocol, "http");
+
+    let updated = qai_lib::db::item::update(
+        &conn, &item.id, None, None, Some("wss://api.example.com/ws"),
+        None, None, Some("json"), Some(r#"{"text":"hello"}"#), None, None, None, None,
+        Some("websocket"),
+    ).unwrap();
+    assert_eq!(updated.protocol, "websocket");
+    assert_eq!(updated.url, "wss://api.example.com/ws");
+    assert_eq!(updated.body_type, "json");
+}
+
+#[test]
+fn test_item_protocol_persists_on_reload() {
+    let conn = setup_db();
+    let col = qai_lib::db::collection::create(&conn, "Col", "", None).unwrap();
+    let item = qai_lib::db::item::create(&conn, &col.id, None, "request", "WS", "GET").unwrap();
+
+    qai_lib::db::item::update(
+        &conn, &item.id, None, None, None, None, None, None, None, None, None, None, None,
+        Some("websocket"),
+    ).unwrap();
+
+    // 重新读取验证持久化
+    let reloaded = qai_lib::db::item::get(&conn, &item.id).unwrap();
+    assert_eq!(reloaded.protocol, "websocket");
+}
+
+#[test]
+fn test_item_protocol_unaffected_by_other_updates() {
+    let conn = setup_db();
+    let col = qai_lib::db::collection::create(&conn, "Col", "", None).unwrap();
+    let item = qai_lib::db::item::create(&conn, &col.id, None, "request", "WS", "GET").unwrap();
+
+    // 先设为 websocket
+    qai_lib::db::item::update(
+        &conn, &item.id, None, None, None, None, None, None, None, None, None, None, None,
+        Some("websocket"),
+    ).unwrap();
+
+    // 只更新 name，不传 protocol
+    let updated = qai_lib::db::item::update(
+        &conn, &item.id, Some("Renamed"), None, None, None, None, None, None, None, None, None, None,
+        None,
+    ).unwrap();
+    assert_eq!(updated.name, "Renamed");
+    assert_eq!(updated.protocol, "websocket"); // protocol 不变
+}
+
+#[test]
+fn test_websocket_item_in_collection_tree() {
+    let conn = setup_db();
+    let col = qai_lib::db::collection::create(&conn, "API", "", None).unwrap();
+
+    // 创建一个 HTTP 请求和一个 WebSocket 请求
+    qai_lib::db::item::create(&conn, &col.id, None, "request", "HTTP Health", "GET").unwrap();
+    let ws_item = qai_lib::db::item::create(&conn, &col.id, None, "request", "WS TTS", "GET").unwrap();
+    qai_lib::db::item::update(
+        &conn, &ws_item.id, None, None, Some("wss://api.example.com/ws"),
+        None, None, None, None, None, None, None, None, Some("websocket"),
+    ).unwrap();
+
+    let tree = qai_lib::db::collection::get_tree(&conn, &col.id).unwrap();
+    assert_eq!(tree.children.len(), 2);
+
+    // list_requests_by_collection 包含两者（不按 protocol 过滤）
+    let requests = qai_lib::db::item::list_requests_by_collection(&conn, &col.id).unwrap();
+    assert_eq!(requests.len(), 2);
+    let ws = requests.iter().find(|r| r.name == "WS TTS").unwrap();
+    assert_eq!(ws.protocol, "websocket");
+}

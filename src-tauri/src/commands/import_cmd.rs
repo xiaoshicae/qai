@@ -174,6 +174,7 @@ fn import_single_case(
                     scenario.description.as_deref(),
                     Some(expect_status),
                     None, // parent_id
+                    None, // protocol
                 ).map_err(|e| e.to_string())?;
                 result.requests_updated += 1;
             }
@@ -202,6 +203,7 @@ fn import_single_case(
                     scenario.description.as_deref(),
                     Some(expect_status),
                     None, // parent_id
+                    None, // protocol
                 ).map_err(|e| e.to_string())?;
 
                 // 为 status_code 断言自动创建

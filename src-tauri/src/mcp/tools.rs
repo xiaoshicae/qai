@@ -167,7 +167,7 @@ pub fn call_tool(conn: &Connection, name: &str, args: &Value) -> Result<String, 
             let expect_status = args.get("expect_status").and_then(|v| v.as_u64()).map(|v| v as u16);
 
             let updated = qai_lib::db::item::update(
-                conn, &item.id, None, None, url, headers, None, body_type, body_content, None, description, expect_status, None,
+                conn, &item.id, None, None, url, headers, None, body_type, body_content, None, description, expect_status, None, None,
             ).map_err(|e| e.to_string())?;
 
             Ok(serde_json::to_string_pretty(&updated).unwrap())
@@ -187,6 +187,7 @@ pub fn call_tool(conn: &Connection, name: &str, args: &Value) -> Result<String, 
                 None,
                 args.get("description").and_then(|v| v.as_str()),
                 args.get("expect_status").and_then(|v| v.as_u64()).map(|v| v as u16),
+                None,
                 None,
             ).map_err(|e| e.to_string())?;
             Ok(serde_json::to_string_pretty(&updated).unwrap())

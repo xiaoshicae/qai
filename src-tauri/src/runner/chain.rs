@@ -43,8 +43,10 @@ pub async fn run_chain(
             None
         };
 
-        // 执行请求（含轮询）
-        let result = if let Some(ref poll) = poll_config {
+        // 执行请求（协议感知 + 轮询）
+        let result = if item.protocol == "websocket" {
+            crate::websocket::client::execute(&item).await
+        } else if let Some(ref poll) = poll_config {
             execute_with_poll(client, &item, poll).await
         } else {
             crate::http::client::execute(client, &item).await

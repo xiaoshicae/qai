@@ -94,6 +94,7 @@ Groups 是纯 UI 组织结构，删除 group 不影响测试数据（`ON DELETE 
 | description | TEXT | 描述 |
 | expect_status | INTEGER | 期望 HTTP 状态码 |
 | poll_config | TEXT | JSON: 轮询配置 |
+| protocol | TEXT | 'http' / 'websocket'（默认 'http'） |
 | created_at | TEXT | 创建时间 |
 | updated_at | TEXT | 更新时间 |
 

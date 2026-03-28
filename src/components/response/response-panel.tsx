@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ArrowDownToLine, Clock, HardDrive } from 'lucide-react'
+import { ArrowDownToLine, Clock, HardDrive, Plug } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useRequestStore } from '@/stores/request-store'
@@ -17,7 +17,8 @@ function formatTime(ms: number): string {
 }
 
 export default function ResponsePanel() {
-  const { currentResponse, streaming, streamContent, streamChunks } = useRequestStore()
+  const { currentRequest, currentResponse, streaming, streamContent, streamChunks } = useRequestStore()
+  const isWebSocket = currentRequest?.protocol === 'websocket'
   const [activeTab, setActiveTab] = useState('body')
 
   const response = currentResponse?.response
@@ -83,7 +84,14 @@ export default function ResponsePanel() {
   return (
     <div>
       <div className="flex items-center gap-2 mb-4 flex-wrap">
-        <Badge variant={statusColor}>{response.status} {response.status_text}</Badge>
+        {isWebSocket ? (
+          <Badge variant={currentResponse.status === 'success' ? 'success' : 'destructive'}>
+            <Plug className="h-3 w-3 mr-1" />
+            {currentResponse.status === 'success' ? 'Connected' : 'Failed'}
+          </Badge>
+        ) : (
+          <Badge variant={statusColor}>{response.status} {response.status_text}</Badge>
+        )}
         <div className="flex items-center gap-1 text-xs text-muted-foreground">
           <Clock className="h-3 w-3" />
           <span>{formatTime(response.time_ms)}</span>
@@ -104,8 +112,8 @@ export default function ResponsePanel() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
-          <TabsTrigger value="body">Body</TabsTrigger>
-          <TabsTrigger value="headers">Headers ({response.headers.length})</TabsTrigger>
+          <TabsTrigger value="body">{isWebSocket ? 'Messages' : 'Body'}</TabsTrigger>
+          <TabsTrigger value="headers">{isWebSocket ? 'Info' : 'Headers'} ({response.headers.length})</TabsTrigger>
           {assertionResults.length > 0 && (
             <TabsTrigger value="tests">Tests ({passedCount}/{assertionResults.length})</TabsTrigger>
           )}

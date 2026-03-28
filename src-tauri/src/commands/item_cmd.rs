@@ -93,10 +93,14 @@ pub async fn send_request_stream(
         (item, assertions)
     };
 
-    let app_clone = app.clone();
-    let mut result = crate::http::stream::execute_stream(&http.0, &item, move |chunk| {
-        let _ = app_clone.emit("stream-chunk", &chunk);
-    }).await.map_err(|e| e.to_string())?;
+    let mut result = if item.protocol == "websocket" {
+        crate::websocket::client::execute(&item).await.map_err(|e| e.to_string())?
+    } else {
+        let app_clone = app.clone();
+        crate::http::stream::execute_stream(&http.0, &item, move |chunk| {
+            let _ = app_clone.emit("stream-chunk", &chunk);
+        }).await.map_err(|e| e.to_string())?
+    };
 
     if let Some(ref response) = result.response {
         if !assertions.is_empty() {

@@ -11,6 +11,7 @@ interface RequestUpdates {
   queryParams?: string
   bodyType?: string
   bodyContent?: string
+  protocol?: string
 }
 
 interface RequestState {

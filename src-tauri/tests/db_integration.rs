@@ -44,7 +44,7 @@ fn test_item_crud() {
     let updated = qai_lib::db::item::update(
         &conn, &item.id,
         Some("List Users"), Some("POST"), Some("http://example.com/users"),
-        None, None, Some("json"), Some(r#"{"page":1}"#), None, None, None, None,
+        None, None, Some("json"), Some(r#"{"page":1}"#), None, None, None, None, None,
     ).unwrap();
     assert_eq!(updated.name, "List Users");
     assert_eq!(updated.method, "POST");
@@ -187,7 +187,7 @@ fn test_item_partial_update() {
     let item = qai_lib::db::item::create(&conn, &col.id, None, "request", "Req", "GET").unwrap();
 
     let updated = qai_lib::db::item::update(
-        &conn, &item.id, None, None, Some("http://test.com"), None, None, None, None, None, None, None, None,
+        &conn, &item.id, None, None, Some("http://test.com"), None, None, None, None, None, None, None, None, None,
     ).unwrap();
     assert_eq!(updated.name, "Req");
     assert_eq!(updated.method, "GET");

@@ -60,7 +60,12 @@ pub async fn run_batch(
                 total,
             });
 
-            let mut result = match crate::http::client::execute(&client, &item).await {
+            let exec_future = if item.protocol == "websocket" {
+                crate::websocket::client::execute(&item).await
+            } else {
+                crate::http::client::execute(&client, &item).await
+            };
+            let mut result = match exec_future {
                 Ok(r) => r,
                 Err(e) => ExecutionResult {
                     execution_id: Uuid::new_v4().to_string(),

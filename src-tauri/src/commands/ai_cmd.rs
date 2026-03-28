@@ -61,6 +61,7 @@ pub async fn ai_generate_tests(
                 None,
                 None,
                 None,
+                None, // protocol
             ).map_err(|e| e.to_string())?;
 
             for assertion in &tc.assertions {

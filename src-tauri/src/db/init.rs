@@ -63,6 +63,7 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
             description    TEXT NOT NULL DEFAULT '',
             expect_status  INTEGER NOT NULL DEFAULT 200,
             poll_config    TEXT NOT NULL DEFAULT '',
+            protocol       TEXT NOT NULL DEFAULT 'http',
             created_at     TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
             updated_at     TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
         );

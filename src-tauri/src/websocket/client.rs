@@ -42,7 +42,7 @@ pub async fn execute(item: &CollectionItem) -> Result<ExecutionResult, anyhow::E
     // 2. 发送认证消息（如果有 Authorization header）
     if let Some(token) = extract_token(&item.headers) {
         let auth_msg = serde_json::json!({"token": token});
-        write.send(Message::Text(auth_msg.to_string())).await?;
+        write.send(Message::Text(auth_msg.to_string().into())).await?;
 
         // 等待认证响应
         if let Some(Ok(msg)) = read.next().await {
@@ -59,7 +59,7 @@ pub async fn execute(item: &CollectionItem) -> Result<ExecutionResult, anyhow::E
 
     // 3. 发送 payload（body_content 作为 JSON 消息）
     if !item.body_content.is_empty() {
-        write.send(Message::Text(item.body_content.clone())).await?;
+        write.send(Message::Text(item.body_content.clone().into())).await?;
     }
 
     // 4. 接收循环：收集二进制数据和文本消息

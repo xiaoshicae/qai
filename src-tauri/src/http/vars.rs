@@ -134,6 +134,7 @@ mod tests {
             description: String::new(),
             expect_status: 200,
             poll_config: String::new(),
+            protocol: "http".into(),
             created_at: String::new(),
             updated_at: String::new(),
         }

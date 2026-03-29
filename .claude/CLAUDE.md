@@ -30,5 +30,7 @@
 ├── security.md            # 敏感信息、前端安全、Rust 端安全
 ├── git-workflow.md        # 分支策略、提交规范、禁止操作
 ├── testing.md             # 测试策略、Rust 测试、手动验收
-└── code-review-strategy.md # 代码审查方法论（边界情况优先）
+├── code-review-strategy.md # 代码审查方法论（边界情况优先）
+├── database.md            # 数据库设计规范（统一节点表、分组）
+└── i18n.md                # 国际化规范（react-i18next、翻译 key 命名）
 ```

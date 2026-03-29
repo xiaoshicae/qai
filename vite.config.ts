@@ -26,10 +26,24 @@ export default defineConfig({
     },
   },
   envPrefix: ['VITE_', 'TAURI_ENV_*'],
+  optimizeDeps: {
+    include: ['monaco-editor'],
+  },
+  worker: {
+    format: 'es' as const,
+  },
   build: {
     target: 'esnext',
     minify: !process.env.TAURI_ENV_DEBUG ? 'esbuild' : false,
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
+    chunkSizeWarningLimit: 4000,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          monaco: ['monaco-editor'],
+        },
+      },
+    },
   },
   test: {
     globals: true,

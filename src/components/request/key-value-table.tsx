@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Plus, Trash2, FileUp, Type } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,6 +15,7 @@ interface KeyValueTableProps {
 }
 
 export default function KeyValueTable({ value, onChange, allowFiles, envVars }: KeyValueTableProps) {
+  const { t } = useTranslation()
   const addRow = () => onChange([...value, { key: '', value: '', enabled: true }])
   const addFileRow = () => onChange([...value, { key: '', value: '', enabled: true, fieldType: 'file' }])
   const removeRow = (index: number) => onChange(value.filter((_, i) => i !== index))
@@ -69,7 +71,7 @@ export default function KeyValueTable({ value, onChange, allowFiles, envVars }: 
                 className={`h-7 w-7 flex items-center justify-center rounded-lg text-xs transition-colors cursor-pointer ${
                   isFile ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-overlay/[0.04]'
                 }`}
-                title={isFile ? '文件字段（点击切换为文本）' : '文本字段（点击切换为文件）'}
+                title={isFile ? t('request.file_field') : t('request.text_field')}
               >
                 {isFile ? <FileUp className="h-3 w-3" /> : <Type className="h-3 w-3" />}
               </button>
@@ -84,7 +86,7 @@ export default function KeyValueTable({ value, onChange, allowFiles, envVars }: 
               <button
                 onClick={() => pickFile(index)}
                 className="h-7 rounded-lg border border-dashed border-overlay/[0.08] bg-overlay/[0.03] px-3 text-xs text-left truncate cursor-pointer hover:border-overlay/[0.12] transition-colors"
-                title={item.value || '点击选择文件'}
+                title={item.value || t('request.click_select_file')}
               >
                 {item.value ? (
                   <span className="text-foreground">{fileName(item.value)}</span>

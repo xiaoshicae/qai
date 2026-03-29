@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { invoke } from '@tauri-apps/api/core'
 import { Send, Loader2, Radio, Braces, Copy, Check, Plug } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
+import { CodeEditor } from '@/components/ui/code-editor'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useRequestStore } from '@/stores/request-store'
 import KeyValueTable from './key-value-table'
@@ -30,6 +31,7 @@ const PROTOCOL_OPTIONS = [
 ]
 
 export default function RequestPanel() {
+  const { t } = useTranslation()
   const { currentRequest, loading, updateRequest, sendRequest, sendRequestStream } = useRequestStore()
   const [method, setMethod] = useState('GET')
   const [url, setUrl] = useState('')
@@ -158,7 +160,7 @@ export default function RequestPanel() {
         />
         <Button onClick={handleSend} disabled={loading} size="sm" className="gap-1.5 h-8">
           {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : isWebSocket ? <Plug className="h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />}
-          {isWebSocket ? '连接' : '发送'}
+          {isWebSocket ? t('request.connect') : t('request.send')}
         </Button>
         {!isWebSocket && (
           <Button
@@ -213,13 +215,13 @@ export default function RequestPanel() {
                   </div>
                 )}
               </div>
-              <Textarea
+              <CodeEditor
                 value={bodyContent}
-                onChange={(e) => setBodyContent(e.target.value)}
+                onChange={setBodyContent}
                 onBlur={() => updateRequest({ bodyContent })}
+                language="json"
                 placeholder='{ "text": "Hello", "voice": "Linda" }'
-                rows={10}
-                className="font-mono text-xs leading-relaxed"
+                className="h-[280px]"
               />
             </>
           ) : (
@@ -254,13 +256,13 @@ export default function RequestPanel() {
                 )}
               </div>
               {bodyType !== 'none' && bodyType !== 'form' && bodyType !== 'form-data' && bodyType !== 'urlencoded' && (
-                <Textarea
+                <CodeEditor
                   value={bodyContent}
-                  onChange={(e) => setBodyContent(e.target.value)}
+                  onChange={setBodyContent}
                   onBlur={() => updateRequest({ bodyContent })}
+                  language={bodyType === 'json' ? 'json' : 'plaintext'}
                   placeholder='{ "key": "value" }'
-                  rows={10}
-                  className="font-mono text-xs leading-relaxed"
+                  className="h-[280px]"
                 />
               )}
               {(bodyType === 'form' || bodyType === 'form-data' || bodyType === 'urlencoded') && (

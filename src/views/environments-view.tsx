@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { invoke } from '@tauri-apps/api/core'
 import { Plus, Trash2, Pencil, Cloud, CloudOff } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import type { Environment, EnvVariable } from '@/types'
 
 export default function EnvironmentsView() {
+  const { t } = useTranslation()
   const [envs, setEnvs] = useState<Environment[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [variables, setVariables] = useState<EnvVariable[]>([])
@@ -63,11 +65,11 @@ export default function EnvironmentsView() {
 
   const createEnv = async () => {
     try {
-      const env = await invoke<Environment>('create_environment', { name: '新环境' })
+      const env = await invoke<Environment>('create_environment', { name: t('env.new_env') })
       setEnvs((prev) => [...prev, env])
       setSelectedId(env.id)
       setEditingName(env.id)
-      setEditName('新环境')
+      setEditName(t('env.new_env'))
     } catch {}
   }
 

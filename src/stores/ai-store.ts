@@ -59,7 +59,7 @@ export const useAIStore = create<AIState>((set) => ({
         sending: false,
       }))
     } catch (e: any) {
-      const errMsg = typeof e === 'string' ? e : e.message ?? '请求失败'
+      const errMsg = typeof e === 'string' ? e : e.message ?? 'Request failed'
       set((s) => ({
         messages: s.messages.map((m) =>
           m.id === assistantMsg.id ? { ...m, content: `错误: ${errMsg}`, loading: false } : m

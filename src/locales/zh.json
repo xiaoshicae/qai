@@ -108,12 +108,51 @@
   },
   "settings": {
     "title": "设置",
+    "appearance": "外观",
     "language": "语言",
     "language_desc": "选择界面显示语言",
     "theme": "主题",
+    "dark": "深色",
+    "light": "浅色",
+    "system": "系统",
+    "ai_config": "AI 配置",
+    "provider": "提供商",
+    "other": "其它",
     "ai_provider": "AI 服务商",
     "api_key": "API Key",
-    "test_connection": "测试连接"
+    "model": "模型",
+    "test_connection": "测试连接",
+    "connection_failed": "连接失败",
+    "saving": "保存中...",
+    "saved": "已保存",
+    "save_settings": "保存设置",
+    "badge_recommended": "推荐",
+    "badge_strongest": "最强",
+    "badge_fastest": "最快",
+    "badge_economy": "经济",
+    "badge_reasoning": "推理"
+  },
+  "ai": {
+    "scan_code": "扫描代码生成用例",
+    "suggest_assertions": "建议断言规则",
+    "analyze_results": "分析测试结果",
+    "generating": "AI 正在分析...",
+    "generate": "生成测试用例",
+    "select_target": "选择目标集合",
+    "request_failed": "请求失败",
+    "generate_failed": "生成失败"
+  },
+  "request": {
+    "send": "发送",
+    "connect": "连接",
+    "just_now": "刚刚",
+    "file_field": "文件字段（点击切换为文本）",
+    "text_field": "文本字段（点击切换为文件）",
+    "click_select_file": "点击选择文件",
+    "extract_hint": "从响应中提取变量，供后续请求通过 {{变量名}} 引用"
+  },
+  "env": {
+    "new_env": "新环境"
   },
   "tree": {
     "new_request": "新请求",

@@ -17,7 +17,13 @@ pub async fn build_request(
         _ => client.get(&item.url),
     };
 
+    // form-data / json / urlencoded 由 reqwest 自动设置 Content-Type（含 boundary 等），
+    // 用户手动设置的 Content-Type 会导致冲突（如 multipart 缺 boundary），因此需要过滤掉
+    let auto_ct = matches!(item.body_type.as_str(), "form-data" | "json" | "form" | "urlencoded");
     for kv in headers.iter().filter(|kv| kv.enabled) {
+        if auto_ct && kv.key.eq_ignore_ascii_case("content-type") {
+            continue;
+        }
         builder = builder.header(&kv.key, &kv.value);
     }
 

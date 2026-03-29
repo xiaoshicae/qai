@@ -8,6 +8,7 @@ import {
   ChevronDown, ChevronRight, MoreHorizontal,
   FilePlus, FolderPlus, Play, Pencil, Trash2, GripVertical,
 } from 'lucide-react'
+import EnvSelector from '@/components/layout/env-selector'
 import { useCollectionStore } from '@/stores/collection-store'
 import { Input } from '@/components/ui/input'
 import type { Collection, Group } from '@/types'
@@ -294,6 +295,8 @@ export default function Sidebar() {
           </svg>
           <span className="text-sm font-semibold text-gradient tracking-tight">QAI</span>
           <span className="text-[9px] text-muted-foreground/40 font-medium ml-0.5">v0.1</span>
+          <div className="flex-1" />
+          <EnvSelector />
         </div>
       </div>
 

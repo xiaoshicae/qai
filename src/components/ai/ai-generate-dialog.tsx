@@ -1,11 +1,12 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Sparkles, Loader2, CheckCircle, AlertCircle } from 'lucide-react'
 import { invoke } from '@tauri-apps/api/core'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
+import { CodeEditor } from '@/components/ui/code-editor'
 import { useCollectionStore } from '@/stores/collection-store'
 
 interface AIGenerateDialogProps {
@@ -14,6 +15,7 @@ interface AIGenerateDialogProps {
 }
 
 export default function AIGenerateDialog({ open, onOpenChange }: AIGenerateDialogProps) {
+  const { t } = useTranslation()
   const { collections, loadTree } = useCollectionStore()
   const [selectedId, setSelectedId] = useState('')
   const [context, setContext] = useState('')
@@ -34,7 +36,7 @@ export default function AIGenerateDialog({ open, onOpenChange }: AIGenerateDialo
       setResult(res.message)
       await loadTree(selectedId)
     } catch (e: any) {
-      setError(typeof e === 'string' ? e : e.message ?? '生成失败')
+      setError(typeof e === 'string' ? e : e.message ?? t('ai.generate_failed'))
     } finally {
       setLoading(false)
     }
@@ -57,19 +59,19 @@ export default function AIGenerateDialog({ open, onOpenChange }: AIGenerateDialo
             <Select
               value={selectedId}
               onChange={setSelectedId}
-              options={[{ value: '', label: '选择目标集合' }, ...collections.map((c) => ({ value: c.id, label: c.name }))]}
+              options={[{ value: '', label: t('ai.select_target') }, ...collections.map((c) => ({ value: c.id, label: c.name }))]}
               placeholder="选择目标集合"
             />
           </div>
 
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground">API 代码或文档</label>
-            <Textarea
+            <CodeEditor
               value={context}
-              onChange={(e) => setContext(e.target.value)}
+              onChange={setContext}
+              language="javascript"
               placeholder={"粘贴 API 代码或文档...\n\n例如 Flask/FastAPI/Express 路由代码、OpenAPI 文档、或 API 端点描述"}
-              rows={8}
-              className="font-mono text-xs"
+              className="h-[220px]"
             />
           </div>
 
@@ -78,13 +80,13 @@ export default function AIGenerateDialog({ open, onOpenChange }: AIGenerateDialo
             <Input
               value={extraInstructions}
               onChange={(e) => setExtraInstructions(e.target.value)}
-              placeholder="例如 '重点测试权限验证' '基础 URL 是 http://localhost:8000'"
+              placeholder={t('ai.extra_instructions_placeholder', 'e.g. Focus on auth, Base URL is http://localhost:8000')}
             />
           </div>
 
           <Button onClick={generate} disabled={loading || !selectedId || !context.trim()} className="w-full gap-2">
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-            {loading ? 'AI 正在分析...' : '生成测试用例'}
+            {loading ? t('ai.generating') : t('ai.generate')}
           </Button>
 
           {result && (

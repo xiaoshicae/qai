@@ -10,10 +10,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { JsonHighlight } from '@/components/ui/json-highlight'
-import { JsonEditor } from '@/components/ui/json-editor'
+import { CodeEditor } from '@/components/ui/code-editor'
 import { VarHighlight } from '@/components/ui/var-highlight'
 import { VarInput } from '@/components/ui/var-input'
-import EnvSelector from '@/components/layout/env-selector'
 import { formatDuration } from '@/lib/formatters'
 import KeyValueTable from '@/components/request/key-value-table'
 import { Progress } from '@/components/ui/progress'
@@ -24,6 +23,7 @@ import { useCollectionStore } from '@/stores/collection-store'
 import type {
   Collection, CollectionTreeNode, ItemLastStatus,
   BatchResult, TestProgress, ExecutionResult, CollectionItem, HttpResponse,
+  ChainResult,
 } from '@/types'
 
 const BODY_TYPES = [
@@ -199,6 +199,25 @@ export default function CollectionOverview({ collection, tree }: Props) {
       }))
     } finally {
       setRunningIds((prev) => { const n = new Set(prev); n.delete(requestId); return n })
+    }
+  }
+
+  // 运行整个 chain
+  const runChain = async (chainItemId: string, stepIds: string[]) => {
+    // 标记所有 step 为运行中
+    setRunningIds((prev) => { const n = new Set(prev); stepIds.forEach((id) => n.add(id)); n.add(chainItemId); return n })
+    for (const id of stepIds) { setSingleResults((prev) => { const n = { ...prev }; delete n[id]; return n }) }
+    try {
+      const result = await invoke<ChainResult>('run_chain', { itemId: chainItemId })
+      // 将每步结果写入 singleResults
+      for (const step of result.steps) {
+        setSingleResults((prev) => ({ ...prev, [step.execution_result.item_id]: step.execution_result }))
+      }
+      loadStatuses()
+    } catch (e: any) {
+      console.error('runChain failed:', e)
+    } finally {
+      setRunningIds((prev) => { const n = new Set(prev); stepIds.forEach((id) => n.delete(id)); n.delete(chainItemId); return n })
     }
   }
 
@@ -451,7 +470,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
           </Button>
         ) : (
           <div className="relative flex items-center">
-            <Button onClick={runAll} size="sm" className="gap-1.5 pr-0 rounded-r-none border-r-0">
+            <Button onClick={runAll} size="sm" className="gap-1.5 pr-0">
               <Play className="h-3.5 w-3.5" /> {t('dashboard.run_all')}
               <span
                 role="button"
@@ -510,7 +529,6 @@ export default function CollectionOverview({ collection, tree }: Props) {
         </Button>
         {batchResult && <Button variant="outline" size="sm" onClick={exportHtml} className="gap-1.5"><Download className="h-3.5 w-3.5" /> {t('dashboard.export_report')}</Button>}
         </div>
-        <EnvSelector />
       </div>
 
       {running && <div className="space-y-1.5"><div className="flex justify-between text-xs text-muted-foreground"><span>执行中...</span><span>{progressPercent}%</span></div><Progress value={progressPercent} /></div>}
@@ -550,10 +568,15 @@ export default function CollectionOverview({ collection, tree }: Props) {
                     <span className="font-mono text-xs self-center">-</span>
                     <span />
                     <span className="flex items-center justify-end gap-0.5" onClick={(e) => e.stopPropagation()}>
-                      <button className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 hover:bg-muted transition-all cursor-pointer" onClick={() => addChainStep(item.groupId)} title="添加步骤">
+                      {(() => { const isChainRunning = runningIds.has(item.groupId); return (
+                        <button className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 hover:bg-overlay/[0.04] transition-all cursor-pointer" onClick={() => runChain(item.groupId, item.steps.map((s) => s.id))} disabled={isChainRunning} title={t('runner.run_chain')}>
+                          {isChainRunning ? <Loader2 className="h-3 w-3 animate-spin text-amber-500" /> : <Play className="h-3 w-3 text-amber-500" />}
+                        </button>
+                      ) })()}
+                      <button className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 hover:bg-overlay/[0.04] transition-all cursor-pointer" onClick={() => addChainStep(item.groupId)} title={t('chain.add_step')}>
                         <Plus className="h-3 w-3 text-amber-500" />
                       </button>
-                      <button className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 hover:bg-destructive/10 transition-all cursor-pointer" onClick={(e) => deleteChain(item.groupId, item.groupName, e)} title="删除链">
+                      <button className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 hover:bg-destructive/10 transition-all cursor-pointer" onClick={(e) => deleteChain(item.groupId, item.groupName, e)} title={t('common.delete')}>
                         <Trash2 className="h-3 w-3 text-destructive" />
                       </button>
                     </span>
@@ -595,7 +618,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
               <Input value={chainDesc} onChange={(e) => setChainDesc(e.target.value)} className="h-8 text-sm" placeholder="多步依赖：上传→生成" />
             </div>
             <p className="text-[10px] text-muted-foreground/60 leading-relaxed">
-              创建后可在表格中展开链，通过"+ 添加步骤"逐个添加请求。步骤间通过变量提取规则（Extract）传递数据，后续步骤用 {'{{变量名}}'} 引用。
+              {t('chain.chain_help')}
             </p>
             <div className="flex justify-end gap-2 pt-1">
               <Button variant="outline" size="sm" onClick={() => setShowChainDialog(false)}>{t('edit.cancel')}</Button>
@@ -622,10 +645,6 @@ function EditForm({ req, onChange, onSave, onCancel, envVars }: {
   const [showCurlImport, setShowCurlImport] = useState(false)
   const [curlInput, setCurlInput] = useState('')
   const [curlCopied, setCurlCopied] = useState(false)
-
-  const formatBody = () => {
-    try { set('body_content', JSON.stringify(JSON.parse(req.body_content), null, 2)) } catch {}
-  }
 
   const importFromCurl = async () => {
     if (!curlInput.trim()) return
@@ -665,19 +684,6 @@ function EditForm({ req, onChange, onSave, onCancel, envVars }: {
     } catch {}
   }
 
-  // Tab 键插入 2 空格缩进
-  const handleBodyKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Tab') {
-      e.preventDefault()
-      const ta = e.currentTarget
-      const start = ta.selectionStart
-      const end = ta.selectionEnd
-      const val = req.body_content
-      const newVal = val.substring(0, start) + '  ' + val.substring(end)
-      set('body_content', newVal)
-      requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = start + 2 })
-    }
-  }
 
   // Headers KV 编辑
   const headers: { key: string; value: string; enabled: boolean }[] = (() => {
@@ -804,29 +810,13 @@ function EditForm({ req, onChange, onSave, onCancel, envVars }: {
                     envVars={envVars}
                   />
                 </div>
-              ) : req.body_type === 'json' ? (
-                <>
-                  <JsonEditor
-                    value={req.body_content}
-                    onChange={(v) => set('body_content', v)}
-                    className="w-full h-full"
-                    placeholder='{ "key": "value" }'
-                  />
-                  <button
-                    onClick={formatBody}
-                    className="absolute top-2 right-2 px-2 py-0.5 rounded-md text-[10px] font-medium text-muted-foreground hover:text-foreground bg-overlay/[0.06] hover:bg-overlay/[0.1] cursor-pointer transition-colors z-20"
-                  >
-                    Format
-                  </button>
-                </>
               ) : (
-                <textarea
+                <CodeEditor
                   value={req.body_content}
-                  onChange={(e) => set('body_content', e.target.value)}
-                  onKeyDown={handleBodyKeyDown}
-                  style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}
-                  className="w-full h-full min-h-0 rounded-xl border border-overlay/[0.08] bg-overlay/[0.03] px-3 py-2 text-xs leading-relaxed resize-none outline-none hover:border-overlay/[0.12] focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/20 transition-all duration-200"
-                  placeholder="请求体内容"
+                  onChange={(v) => set('body_content', v)}
+                  language={req.body_type === 'json' ? 'json' : 'plaintext'}
+                  className="w-full h-full"
+                  placeholder='{ "key": "value" }'
                 />
               )}
             </div>
@@ -1188,7 +1178,7 @@ function ExtractRulesEditor({ value, onChange }: {
         <Plus className="h-3 w-3" /> {t('edit.add_extract')}
       </button>
       {value.length > 0 && (
-        <p className="text-[10px] text-muted-foreground/60">提取的变量可在后续步骤中通过 {'{{变量名}}'} 引用</p>
+        <p className="text-[10px] text-muted-foreground/60">{t("common.extract_hint")}</p>
       )}
     </div>
   )

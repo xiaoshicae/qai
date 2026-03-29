@@ -108,12 +108,51 @@
   },
   "settings": {
     "title": "Settings",
+    "appearance": "Appearance",
     "language": "Language",
     "language_desc": "Choose display language",
     "theme": "Theme",
+    "dark": "Dark",
+    "light": "Light",
+    "system": "System",
+    "ai_config": "AI Configuration",
+    "provider": "Provider",
+    "other": "Other",
     "ai_provider": "AI Provider",
     "api_key": "API Key",
-    "test_connection": "Test Connection"
+    "model": "Model",
+    "test_connection": "Test Connection",
+    "connection_failed": "Connection failed",
+    "saving": "Saving...",
+    "saved": "Saved",
+    "save_settings": "Save Settings",
+    "badge_recommended": "Recommended",
+    "badge_strongest": "Strongest",
+    "badge_fastest": "Fastest",
+    "badge_economy": "Economy",
+    "badge_reasoning": "Reasoning"
+  },
+  "ai": {
+    "scan_code": "Scan code for test cases",
+    "suggest_assertions": "Suggest assertions",
+    "analyze_results": "Analyze test results",
+    "generating": "AI is analyzing...",
+    "generate": "Generate test cases",
+    "select_target": "Select target collection",
+    "request_failed": "Request failed",
+    "generate_failed": "Generation failed"
+  },
+  "request": {
+    "send": "Send",
+    "connect": "Connect",
+    "just_now": "Just now",
+    "file_field": "File field (click to switch to text)",
+    "text_field": "Text field (click to switch to file)",
+    "click_select_file": "Click to select file",
+    "extract_hint": "Extract variables from response, reference as {{variable}} in subsequent requests"
+  },
+  "env": {
+    "new_env": "New Environment"
   },
   "tree": {
     "new_request": "New Request",

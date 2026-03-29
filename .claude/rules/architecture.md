@@ -21,20 +21,23 @@ src/                     # React 前端 (UI 层)
 └── lib/                 # 工具函数
 
 src-tauri/src/           # Rust 后端 (核心引擎)
-├── commands/            # Tauri 命令 (前后端桥接, 薄层)
+├── commands/            # Tauri 命令 (前后端桥接, 薄层, 9 个模块)
 ├── db/                  # 数据库 CRUD (SQLite)
-├── models/              # 数据模型 (Serialize/Deserialize)
-├── http/                # HTTP 客户端 (reqwest)
-├── runner/              # 测试执行引擎 (断言评估, 批量执行)
+├── models/              # 数据模型 + 领域常量 (status, item_type)
+├── http/                # HTTP 客户端 (client, stream, request_builder, curl, vars)
+├── runner/              # 测试执行引擎 (断言评估, 批量执行, 链式执行)
 ├── ai/                  # AI 集成 (Claude API, Prompt, 解析)
-└── report/              # 报告生成 (HTML)
+├── report/              # 报告生成 (HTML)
+├── websocket/           # WebSocket 客户端
+├── pty/                 # 伪终端会话管理
+└── mcp/                 # MCP 服务器 (独立二进制)
 ```
 
 ## 依赖方向
 
 ```
-commands → db, http, runner, ai, report → models
-                                        ↑ (models 无依赖)
+commands → db, http, runner, ai, report, websocket, pty → models
+                                                        ↑ (models 无依赖)
 ```
 
 **禁止反向依赖**：

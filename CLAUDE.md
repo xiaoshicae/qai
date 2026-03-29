@@ -3,7 +3,7 @@
 ## 项目概览
 
 **定位**: 类似 Postman 的桌面 API 测试工具，核心亮点是通过 AI 自动分析代码/文档并生成测试用例。
-**技术栈**: Tauri 2.0, Rust, React 19, TypeScript, Vite, Tailwind CSS 4, Zustand, SQLite
+**技术栈**: Tauri 2.0, Rust, React 19, TypeScript, Vite, Tailwind CSS 4, Zustand, SQLite, i18next, xterm.js, dnd-kit
 
 ## 项目结构
 
@@ -15,54 +15,58 @@ qai/
 ├── src/                  # React 前端
 │   ├── main.tsx          # 入口
 │   ├── App.tsx           # 根组件, 路由, 主题初始化, ConfirmDialog 挂载
+│   ├── i18n.ts           # 国际化配置
 │   ├── index.css         # 全局样式, 主题变量, 效果类 (glass-card, btn-gradient 等)
 │   ├── stores/           # Zustand 状态管理
-│   │   ├── collection-store.ts  # 集合/树 CRUD
+│   │   ├── collection-store.ts  # 集合/树/分组 CRUD
 │   │   ├── request-store.ts     # 当前请求状态
 │   │   ├── ai-store.ts          # AI 面板状态和消息
 │   │   ├── theme-store.ts       # 主题切换 (dark/light/system)
 │   │   ├── tabs-store.ts        # 标签页
 │   │   └── status-store.ts      # 执行状态
 │   ├── components/
-│   │   ├── ui/           # 基础 UI 组件 (CVA + Tailwind)
-│   │   │   ├── button.tsx        # 按钮 (btn-gradient 默认变体)
-│   │   │   ├── input.tsx         # 输入框 (overlay 系统)
-│   │   │   ├── textarea.tsx      # 文本域
-│   │   │   ├── select.tsx        # 自定义下拉选择（替代原生 select）
-│   │   │   ├── confirm-dialog.tsx # 自定义确认弹窗（替代 tauri-plugin-dialog）
-│   │   │   ├── dialog.tsx        # 通用弹窗 (glass-card)
-│   │   │   ├── card.tsx          # 卡片 (glass-card)
-│   │   │   ├── badge.tsx         # 标签
-│   │   │   ├── tabs.tsx          # 标签页
-│   │   │   └── progress.tsx      # 进度条
-│   │   ├── layout/       # AppLayout (三栏可拖拽), Sidebar
+│   │   ├── ui/           # 基础 UI 组件 (CVA + Tailwind, 15 个)
+│   │   │   ├── button.tsx, input.tsx, textarea.tsx, select.tsx
+│   │   │   ├── confirm-dialog.tsx, dialog.tsx, context-menu.tsx
+│   │   │   ├── card.tsx, badge.tsx, tabs.tsx, progress.tsx, empty-state.tsx
+│   │   │   ├── json-highlight.tsx, json-editor.tsx
+│   │   │   └── var-highlight.tsx, var-input.tsx
+│   │   ├── layout/       # AppLayout (三栏可拖拽), Sidebar, EnvSelector
 │   │   ├── request/      # RequestPanel, KeyValueTable, RunsTab, ExtractRulesEditor
 │   │   ├── response/     # ResponsePanel
 │   │   ├── assertion/    # AssertionEditor, AssertionResult
 │   │   ├── collection/   # CollectionOverview (编辑弹窗, 批量执行)
 │   │   ├── runner/       # RunnerPanel, ChainRunnerPanel
 │   │   ├── tree/         # CollectionTree
+│   │   ├── terminal/     # TerminalPanel (xterm.js)
 │   │   └── ai/           # AIPanel, AIGenerateDialog
+│   ├── hooks/            # React Hooks (use-inline-edit)
 │   ├── views/            # 路由页面
 │   │   ├── workbench-view.tsx    # 主工作台
-│   │   ├── settings-view.tsx     # 设置 (主题切换 + AI 配置)
+│   │   ├── settings-view.tsx     # 设置 (主题/语言/AI 配置)
 │   │   ├── environments-view.tsx # 环境变量管理
 │   │   ├── history-view.tsx      # 请求历史
 │   │   └── runner-view.tsx       # 批量执行入口
+│   ├── locales/          # 国际化翻译
+│   │   ├── zh.json       # 中文
+│   │   └── en.json       # 英文
 │   ├── types/            # TypeScript 类型定义
-│   └── lib/              # 工具函数 (cn)
+│   └── lib/              # 工具函数 (cn, formatters, syntax)
 ├── src-tauri/            # Rust 后端
-│   ├── Cargo.toml        # tauri2, reqwest0.12, rusqlite0.32, uuid, chrono, regex
+│   ├── Cargo.toml        # tauri2, reqwest0.12, rusqlite0.32, tokio, serde, uuid, chrono, regex, portable-pty 等
 │   ├── tauri.conf.json   # 窗口 1280x800, titleBarStyle: Overlay
 │   └── src/
-│       ├── lib.rs        # Tauri Builder, 33 个命令注册
-│       ├── models/       # Collection, ApiRequest, Assertion, Execution
-│       ├── db/           # SQLite CRUD (init, collection, request, assertion, execution, env)
-│       ├── http/         # reqwest 客户端 (execute, to_execution)
+│       ├── lib.rs        # Tauri Builder, 51 个命令注册
+│       ├── models/       # Group, Collection, CollectionItem, Assertion, Execution, Environment + 常量模块
+│       ├── db/           # SQLite CRUD (init, collection, item, group, assertion, execution, environment)
+│       ├── http/         # reqwest 客户端 (client, stream, request_builder, curl, vars)
 │       ├── runner/       # 断言评估引擎, 批量执行器, 链式执行
 │       ├── ai/           # AI API 客户端, Prompt 模板, JSON 解析器
 │       ├── report/       # HTML 报告生成
-│       └── commands/     # Tauri 命令 (collection, request, assertion, runner, ai, env)
+│       ├── websocket/    # WebSocket 客户端
+│       ├── pty/          # 伪终端会话管理
+│       ├── mcp/          # MCP 服务器 (独立二进制)
+│       └── commands/     # Tauri 命令 (collection, item, assertion, runner, ai, env, pty, claude, import)
 └── package.json
 ```
 
@@ -74,27 +78,29 @@ qai/
 | 窗口大小 | 1280x800 | Tauri 窗口 |
 | 标题栏 | Overlay + hiddenTitle | macOS 原生融合 |
 | 数据库 | qai.db | SQLite WAL 模式, Tauri app data 目录 |
-| 打包体积 | ~6.6MB | DMG |
 
 ## 数据库表
 
-- `collections` (id, name, description, category, endpoint, created_at, updated_at)
-- `folders` (id, collection_id, parent_folder_id, name, sort_order)
-- `requests` (id, collection_id, folder_id, name, method, url, headers JSON, query_params JSON, body_type, body_content, expect_status, description, sort_order)
-- `assertions` (id, request_id, type, expression, operator, expected, enabled)
-- `executions` (id, request_id, batch_id, status, response_*, assertion_results JSON)
+- `groups` (id, name, parent_id, sort_order) — 侧边栏分组，支持嵌套
+- `collections` (id, name, description, group_id, sort_order, created_at, updated_at) — 测试集
+- `collection_items` (id, collection_id, parent_id, type, name, sort_order, method, url, headers, query_params, body_type, body_content, extract_rules, description, expect_status, poll_config, protocol, created_at, updated_at) — 统一节点 (folder/chain/request)
+- `assertions` (id, item_id, type, expression, operator, expected, enabled, sort_order)
+- `executions` (id, item_id, collection_id, batch_id, status, request_url, request_method, response_status, response_headers, response_body, response_time_ms, response_size, assertion_results, error_message, executed_at)
 - `environments` (id, name, is_active, created_at, updated_at)
-- `env_variables` (id, environment_id, key, value, enabled)
-- `settings` (key, value)
+- `env_variables` (id, environment_id, key, value, enabled, sort_order)
+- `settings` (key, value, updated_at)
 
-## Tauri 命令 (共 33 个)
+## Tauri 命令 (共 51 个)
 
-集合: list_collections, create_collection, update_collection, update_collection_meta, delete_collection, get_collection_tree, create_folder, get_folder, update_folder, delete_folder
-请求: create_request, get_request, update_request, delete_request, send_request, send_request_stream
+集合/分组: list_collections, create_collection, update_collection, delete_collection, get_collection_tree, list_groups, create_group, update_group, delete_group, reorder_sidebar
+节点: create_item, get_item, update_item, delete_item, send_request, send_request_stream, parse_curl, export_curl, read_file_preview
 断言: list_assertions, create_assertion, update_assertion, delete_assertion
-执行: run_collection, run_chain, export_report_html, list_history, list_request_runs, get_collection_status
+执行: run_collection, run_chain, export_report_html, list_history, list_item_runs, get_collection_status
 AI: ai_generate_tests, ai_suggest_assertions, ai_chat, save_setting, get_setting_cmd, test_ai_connection
 环境: list_environments, create_environment, update_environment, delete_environment, set_active_environment, get_environment_with_vars, save_env_variables
+终端: pty_spawn, pty_write, pty_resize, pty_kill, prepare_mcp_config
+Claude: claude_send, claude_stop, claude_reset_session
+导入: import_yaml_cases
 
 ## 断言系统
 
@@ -126,6 +132,7 @@ npm run build                       # 仅构建前端
 @.claude/rules/code-review-strategy.md
 @.claude/rules/ui-design.md
 @.claude/rules/database.md
+@.claude/rules/i18n.md
 
 ## UI 设计
 
@@ -169,14 +176,11 @@ npm run build                       # 仅构建前端
 
 ## 当前状态 (v0.1.0)
 
-已完成: HTTP 客户端, 集合管理, 断言系统, 批量执行, 链式执行, HTML 报告, AI 生成用例, 环境变量, 请求历史, 深色/浅色主题切换, 自定义 UI 组件系统
+已完成: HTTP 客户端, 集合管理, 分组管理, 断言系统, 批量执行, 链式执行, HTML 报告, AI 生成用例, 环境变量及 `{{variable}}` 替换, 变量提取, 请求历史, 深色/浅色主题切换, 自定义 UI 组件系统, i18n 国际化(中英文), curl 导入/导出, WebSocket 支持, 终端/PTY, MCP 服务器, 拖拽排序, 流式响应
 
 ## 待做 (后续迭代)
 
 - 多标签页系统
 - 快捷键 (Cmd+Enter 发送)
 - Postman 导入
-- 环境变量 `{{variable}}` 替换
 - Monaco Editor 代码高亮
-- AI 流式响应 (SSE)
-- 拖拽排序

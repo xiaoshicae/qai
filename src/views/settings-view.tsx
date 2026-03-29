@@ -11,26 +11,26 @@ const PROVIDERS = [
   { id: 'claude', label: 'Claude', icon: 'A' },
   { id: 'openai', label: 'OpenAI', icon: 'O' },
   { id: 'gemini', label: 'Gemini', icon: 'G' },
-  { id: 'other', label: '其它', icon: '…' },
+  { id: 'other', label: 'other', icon: '…' },
 ] as const
 
 const MODEL_OPTIONS: Record<string, { label: string; value: string; badge?: string }[]> = {
   claude: [
-    { label: 'Claude Sonnet 4', value: 'claude-sonnet-4-20250514', badge: '推荐' },
-    { label: 'Claude Opus 4', value: 'claude-opus-4-20250514', badge: '最强' },
-    { label: 'Claude Haiku 4.5', value: 'claude-haiku-4-5-20251001', badge: '最快' },
+    { label: 'Claude Sonnet 4', value: 'claude-sonnet-4-20250514', badge: 'recommended' },
+    { label: 'Claude Opus 4', value: 'claude-opus-4-20250514', badge: 'strongest' },
+    { label: 'Claude Haiku 4.5', value: 'claude-haiku-4-5-20251001', badge: 'fastest' },
   ],
   openai: [
-    { label: 'GPT-5', value: 'gpt-5', badge: '最强' },
-    { label: 'GPT-5 mini', value: 'gpt-5-mini', badge: '推荐' },
-    { label: 'GPT-4.1', value: 'gpt-4.1', badge: '经济' },
-    { label: 'o3-pro', value: 'o3-pro', badge: '推理' },
-    { label: 'o4-mini', value: 'o4-mini', badge: '推理' },
+    { label: 'GPT-5', value: 'gpt-5', badge: 'strongest' },
+    { label: 'GPT-5 mini', value: 'gpt-5-mini', badge: 'recommended' },
+    { label: 'GPT-4.1', value: 'gpt-4.1', badge: 'economy' },
+    { label: 'o3-pro', value: 'o3-pro', badge: 'reasoning' },
+    { label: 'o4-mini', value: 'o4-mini', badge: 'reasoning' },
   ],
   gemini: [
-    { label: 'Gemini 3 Pro', value: 'gemini-3-pro', badge: '最强' },
-    { label: 'Gemini 3 Flash', value: 'gemini-3-flash', badge: '推荐' },
-    { label: 'Gemini 2.5 Pro', value: 'gemini-2.5-pro', badge: '经济' },
+    { label: 'Gemini 3 Pro', value: 'gemini-3-pro', badge: 'strongest' },
+    { label: 'Gemini 3 Flash', value: 'gemini-3-flash', badge: 'recommended' },
+    { label: 'Gemini 2.5 Pro', value: 'gemini-2.5-pro', badge: 'economy' },
     { label: 'Gemini 2.5 Flash', value: 'gemini-2.5-flash' },
   ],
   other: [],
@@ -51,9 +51,9 @@ const KEY_HINTS: Record<string, string> = {
 }
 
 const THEME_OPTIONS = [
-  { id: 'dark', label: '深色', icon: Moon },
-  { id: 'light', label: '浅色', icon: Sun },
-  { id: 'system', label: '系统', icon: Monitor },
+  { id: 'dark', label: 'dark', icon: Moon },
+  { id: 'light', label: 'light', icon: Sun },
+  { id: 'system', label: 'system', icon: Monitor },
 ] as const
 
 type TestStatus = 'idle' | 'testing' | 'success' | 'error'
@@ -185,7 +185,7 @@ export default function SettingsView() {
       setTestStatus('success')
     } catch (e: any) {
       setTestStatus('error')
-      setTestError(typeof e === 'string' ? e : e.message ?? '连接失败')
+      setTestError(typeof e === 'string' ? e : e.message ?? t('settings.connection_failed'))
     }
   }
 
@@ -201,12 +201,12 @@ export default function SettingsView() {
             <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-overlay/[0.06]">
               <Globe className="h-3.5 w-3.5 text-primary" />
             </div>
-            <h2 className="text-sm font-semibold">{t('settings.appearance', '外观')}</h2>
+            <h2 className="text-sm font-semibold">{t('settings.appearance')}</h2>
           </div>
 
           {/* 主题 */}
           <div className="space-y-3">
-            <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{t('settings.theme', '主题')}</label>
+            <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{t('settings.theme')}</label>
             <div className="grid grid-cols-3 gap-2">
               {THEME_OPTIONS.map((opt) => {
                 const active = themeMode === opt.id
@@ -222,7 +222,7 @@ export default function SettingsView() {
                     onClick={() => setThemeMode(opt.id)}
                   >
                     <Icon className="h-3.5 w-3.5" />
-                    <span>{opt.label}</span>
+                    <span>{t(`settings.${opt.label}`)}</span>
                   </button>
                 )
               })}
@@ -262,12 +262,12 @@ export default function SettingsView() {
             <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-overlay/[0.06]">
               <Bot className="h-3.5 w-3.5 text-primary" />
             </div>
-            <h2 className="text-sm font-semibold">{t('settings.ai_config', 'AI 配置')}</h2>
+            <h2 className="text-sm font-semibold">{t('settings.ai_config')}</h2>
           </div>
 
           {/* 提供商 */}
           <div className="space-y-3">
-            <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{t('settings.provider', '提供商')}</label>
+            <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{t('settings.provider')}</label>
             <div className="grid grid-cols-4 gap-2">
               {PROVIDERS.map((p) => {
                 const active = provider === p.id
@@ -283,7 +283,7 @@ export default function SettingsView() {
                     onClick={() => handleProviderChange(p.id)}
                   >
                     <span className={`text-sm font-bold leading-none ${active ? '' : 'text-muted-foreground'}`}>{p.icon}</span>
-                    <span className="text-[10px] font-medium">{p.label}</span>
+                    <span className="text-[10px] font-medium">{p.id === 'other' ? t('settings.other') : p.label}</span>
                     {isSaved && (
                       <span className={`absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full ${active ? 'bg-white' : 'bg-emerald-400'}`} title="当前使用" />
                     )}
@@ -317,7 +317,7 @@ export default function SettingsView() {
                    <Wifi className="h-3 w-3" />}
                   {testStatus === 'testing' ? '测试中' :
                    testStatus === 'success' ? '已连通' :
-                   testStatus === 'error' ? '连接失败' : '测试连通'}
+                   testStatus === 'error' ? t('settings.connection_failed') : '测试连通'}
                 </button>
               )}
             </div>
@@ -348,7 +348,7 @@ export default function SettingsView() {
 
           {/* 模型 */}
           <div className="space-y-3">
-            <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{t('settings.model', '模型')}</label>
+            <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{t('settings.model')}</label>
             {modelOptions.length > 0 ? (
               <div className="space-y-1">
                 {modelOptions.map((m) => {
@@ -372,7 +372,7 @@ export default function SettingsView() {
                       {m.badge && (
                         <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium transition-colors ${
                           active ? 'bg-primary/15 text-primary' : 'bg-overlay/[0.06] text-muted-foreground'
-                        }`}>{m.badge}</span>
+                        }`}>{t(`settings.badge_${m.badge}`)}</span>
                       )}
                     </div>
                   )
@@ -428,7 +428,7 @@ export default function SettingsView() {
               <Save className="h-3.5 w-3.5" />
             )}
             <span className="text-xs">
-              {saving ? '保存中...' : justSaved ? '已保存' : hasChanges ? '保存设置' : '已保存'}
+              {saving ? t('settings.saving') : justSaved ? t('settings.saved') : hasChanges ? t('settings.save_settings') : t('settings.saved')}
             </span>
           </Button>
         </section>

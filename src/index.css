@@ -183,7 +183,7 @@ body {
   user-select: none;
 }
 
-input, textarea, pre, code {
+input, textarea, pre, code, .monaco-editor, .monaco-editor * {
   user-select: text;
 }
 

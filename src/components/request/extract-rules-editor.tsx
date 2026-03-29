@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Plus, Trash2 } from 'lucide-react'
 import { invoke } from '@tauri-apps/api/core'
 import { Button } from '@/components/ui/button'
@@ -18,6 +19,7 @@ interface Props {
 }
 
 export default function ExtractRulesEditor({ requestId }: Props) {
+  const { t } = useTranslation()
   const { currentRequest } = useRequestStore()
   const [rules, setRules] = useState<ExtractRule[]>([])
 
@@ -63,7 +65,7 @@ export default function ExtractRulesEditor({ requestId }: Props) {
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">
-          从响应中提取变量，供后续请求通过 {'{{变量名}}'} 引用
+          {t("request.extract_hint")}
         </p>
         <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={addRule}>
           <Plus className="h-3 w-3" />

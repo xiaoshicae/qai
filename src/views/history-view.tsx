@@ -35,7 +35,7 @@ export default function HistoryView() {
   const handleClick = (entry: HistoryEntry) => {
     if (entry.item_id) {
       selectNode(entry.item_id)
-      openTab(entry.item_id, entry.request_url || '请求', entry.request_method)
+      openTab(entry.item_id, entry.request_url || 'Request', entry.request_method)
     }
   }
 

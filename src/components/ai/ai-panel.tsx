@@ -1,16 +1,17 @@
 import { useState, useRef, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Sparkles, Send, Loader2, Trash2, X, FolderSearch, Play, ListChecks } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useAIStore, type ChatMessage } from '@/stores/ai-store'
 
-const QUICK_ACTIONS = [
-  { icon: FolderSearch, label: '扫描代码生成用例', prompt: '请分析以下代码并生成 API 测试用例。我会提供代码内容。' },
-  { icon: ListChecks, label: '建议断言规则', prompt: '请根据以下 API 响应建议合适的断言规则。我会提供响应体。' },
-  { icon: Play, label: '分析测试结果', prompt: '请分析以下测试执行结果，找出问题并提供修复建议。' },
-]
-
 export default function AIPanel() {
+  const { t } = useTranslation()
   const { open, messages, sending, sendMessage, clearMessages, setOpen } = useAIStore()
+  const QUICK_ACTIONS = [
+    { icon: FolderSearch, label: t('ai.scan_code'), prompt: 'Please analyze the following code and generate API test cases.' },
+    { icon: ListChecks, label: t('ai.suggest_assertions'), prompt: 'Please suggest appropriate assertions for this API response.' },
+    { icon: Play, label: t('ai.analyze_results'), prompt: 'Please analyze the test results and suggest fixes.' },
+  ]
   const [input, setInput] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)

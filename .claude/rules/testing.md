@@ -6,7 +6,7 @@
 |------|------|---------|
 | Rust 单元测试 | `cargo test` | 断言引擎、AI 解析器、JSON Path |
 | Rust 集成测试 | `cargo test` + wiremock | HTTP 客户端、批量执行 |
-| 前端组件测试 | Vitest + @vue/test-utils | 组件渲染和交互 |
+| 前端组件测试 | Vitest + @testing-library/react | 组件渲染和交互 |
 | 手动验收 | httpbin.org | 端到端流程 |
 
 ## Rust 测试

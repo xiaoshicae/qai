@@ -142,12 +142,26 @@ export interface ItemLastStatus {
 export interface HistoryEntry {
   id: string
   item_id: string
+  item_name: string
   status: string
   request_url: string
   request_method: string
   response_status: number | null
+  response_headers: string
+  response_body: string | null
   response_time_ms: number
+  response_size: number
+  assertion_results: string
+  error_message: string | null
   executed_at: string
+}
+
+export interface HistoryStats {
+  total: number
+  success_count: number
+  failed_count: number
+  error_count: number
+  avg_time_ms: number
 }
 
 // ─── Environment ─────────────────────

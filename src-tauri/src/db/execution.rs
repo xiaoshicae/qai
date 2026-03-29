@@ -7,12 +7,27 @@ use crate::models::execution::Execution;
 pub struct HistoryEntry {
     pub id: String,
     pub item_id: String,
+    pub item_name: String,
     pub status: String,
     pub request_url: String,
     pub request_method: String,
     pub response_status: Option<u16>,
+    pub response_headers: String,
+    pub response_body: Option<String>,
     pub response_time_ms: u64,
+    pub response_size: u64,
+    pub assertion_results: String,
+    pub error_message: Option<String>,
     pub executed_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HistoryStats {
+    pub total: u64,
+    pub success_count: u64,
+    pub failed_count: u64,
+    pub error_count: u64,
+    pub avg_time_ms: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,23 +57,111 @@ pub struct ItemLastStatus {
 }
 
 pub fn list_recent(conn: &Connection, limit: u32) -> Result<Vec<HistoryEntry>, rusqlite::Error> {
-    let mut stmt = conn.prepare(
-        "SELECT id, item_id, status, request_url, request_method, response_status, response_time_ms, executed_at
-         FROM executions ORDER BY executed_at DESC LIMIT ?1",
-    )?;
-    let rows = stmt.query_map(params![limit], |row| {
+    list_filtered(conn, None, None, None, limit, 0)
+}
+
+/// 带筛选/分页的历史查询
+pub fn list_filtered(
+    conn: &Connection,
+    status: Option<&str>,
+    method: Option<&str>,
+    keyword: Option<&str>,
+    limit: u32,
+    offset: u32,
+) -> Result<Vec<HistoryEntry>, rusqlite::Error> {
+    let mut sql = String::from(
+        "SELECT e.id, e.item_id, COALESCE(ci.name, '') as item_name, e.status, e.request_url, e.request_method,
+                e.response_status, e.response_headers, e.response_body, e.response_time_ms, e.response_size,
+                e.assertion_results, e.error_message, e.executed_at
+         FROM executions e
+         LEFT JOIN collection_items ci ON e.item_id = ci.id
+         WHERE 1=1",
+    );
+    let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
+    if let Some(s) = status {
+        params_vec.push(Box::new(s.to_string()));
+        sql.push_str(&format!(" AND e.status = ?{}", params_vec.len()));
+    }
+    if let Some(m) = method {
+        params_vec.push(Box::new(m.to_string()));
+        sql.push_str(&format!(" AND e.request_method = ?{}", params_vec.len()));
+    }
+    if let Some(kw) = keyword {
+        let like = format!("%{}%", kw);
+        params_vec.push(Box::new(like.clone()));
+        let idx1 = params_vec.len();
+        params_vec.push(Box::new(like));
+        let idx2 = params_vec.len();
+        sql.push_str(&format!(
+            " AND (e.request_url LIKE ?{} OR ci.name LIKE ?{})",
+            idx1, idx2
+        ));
+    }
+
+    params_vec.push(Box::new(limit));
+    let limit_idx = params_vec.len();
+    params_vec.push(Box::new(offset));
+    let offset_idx = params_vec.len();
+    sql.push_str(&format!(
+        " ORDER BY e.executed_at DESC LIMIT ?{} OFFSET ?{}",
+        limit_idx, offset_idx
+    ));
+
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(params_refs.as_slice(), |row| {
         Ok(HistoryEntry {
             id: row.get(0)?,
             item_id: row.get(1)?,
-            status: row.get(2)?,
-            request_url: row.get(3)?,
-            request_method: row.get(4)?,
-            response_status: row.get(5)?,
-            response_time_ms: row.get::<_, i64>(6)? as u64,
-            executed_at: row.get(7)?,
+            item_name: row.get(2)?,
+            status: row.get(3)?,
+            request_url: row.get(4)?,
+            request_method: row.get(5)?,
+            response_status: row.get(6)?,
+            response_headers: row.get(7)?,
+            response_body: row.get(8)?,
+            response_time_ms: row.get::<_, i64>(9)? as u64,
+            response_size: row.get::<_, i64>(10)? as u64,
+            assertion_results: row.get(11)?,
+            error_message: row.get(12)?,
+            executed_at: row.get(13)?,
         })
     })?;
     rows.collect()
+}
+
+/// 统计信息（全局或带筛选）
+pub fn get_stats(conn: &Connection) -> Result<HistoryStats, rusqlite::Error> {
+    let mut stmt = conn.prepare(
+        "SELECT COUNT(*),
+                SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END),
+                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END),
+                SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END),
+                COALESCE(AVG(response_time_ms), 0)
+         FROM executions",
+    )?;
+    stmt.query_row([], |row| {
+        Ok(HistoryStats {
+            total: row.get::<_, i64>(0)? as u64,
+            success_count: row.get::<_, i64>(1)? as u64,
+            failed_count: row.get::<_, i64>(2)? as u64,
+            error_count: row.get::<_, i64>(3)? as u64,
+            avg_time_ms: row.get::<_, f64>(4)? as u64,
+        })
+    })
+}
+
+/// 删除单条历史记录
+pub fn delete_one(conn: &Connection, id: &str) -> Result<(), rusqlite::Error> {
+    conn.execute("DELETE FROM executions WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
+/// 清空全部历史记录
+pub fn clear_all(conn: &Connection) -> Result<u64, rusqlite::Error> {
+    let deleted = conn.execute("DELETE FROM executions", [])?;
+    Ok(deleted as u64)
 }
 
 pub fn list_by_item(conn: &Connection, item_id: &str, limit: u32) -> Result<Vec<RunRecord>, rusqlite::Error> {

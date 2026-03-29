@@ -161,6 +161,8 @@ mod tests {
             execution_id: "12345678-abcd".into(),
             item_id: "i1".into(),
             item_name: "test".into(),
+            request_url: "http://example.com".into(),
+            request_method: "GET".into(),
             status: status.into(),
             response: Some(HttpResponse {
                 status: resp_status,

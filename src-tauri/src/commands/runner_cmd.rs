@@ -275,6 +275,52 @@ pub fn list_history(
 }
 
 #[tauri::command]
+pub fn list_history_filtered(
+    db: State<'_, DbState>,
+    status: Option<String>,
+    method: Option<String>,
+    keyword: Option<String>,
+    limit: Option<u32>,
+    offset: Option<u32>,
+) -> Result<Vec<crate::db::execution::HistoryEntry>, String> {
+    let conn = db.conn()?;
+    crate::db::execution::list_filtered(
+        &conn,
+        status.as_deref(),
+        method.as_deref(),
+        keyword.as_deref(),
+        limit.unwrap_or(50),
+        offset.unwrap_or(0),
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn history_stats(
+    db: State<'_, DbState>,
+) -> Result<crate::db::execution::HistoryStats, String> {
+    let conn = db.conn()?;
+    crate::db::execution::get_stats(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_history(
+    db: State<'_, DbState>,
+    id: String,
+) -> Result<(), String> {
+    let conn = db.conn()?;
+    crate::db::execution::delete_one(&conn, &id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn clear_history(
+    db: State<'_, DbState>,
+) -> Result<u64, String> {
+    let conn = db.conn()?;
+    crate::db::execution::clear_all(&conn).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn list_item_runs(
     db: State<'_, DbState>,
     item_id: String,

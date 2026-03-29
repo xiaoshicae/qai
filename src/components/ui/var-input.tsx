@@ -8,6 +8,8 @@ interface VarInputProps {
   placeholder?: string
   className?: string
   envVars?: Record<string, string>
+  /** 是否在链式请求中（未解析变量显示为链式变量样式） */
+  isChainStep?: boolean
 }
 
 const MONO = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
@@ -76,7 +78,7 @@ export function VarInput({ value, onChange, onBlur, placeholder, className = '',
                     className={`rounded-sm px-0.5 ${
                       seg.resolved
                         ? 'bg-cyan-500/15 text-cyan-600 dark:text-cyan-400'
-                        : 'bg-red-500/15 text-red-500'
+                        : 'bg-overlay/[0.06] text-muted-foreground'
                     }`}
                   >
                     {seg.text}

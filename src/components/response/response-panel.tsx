@@ -8,6 +8,7 @@ import AssertionResult from '@/components/assertion/assertion-result'
 import { save } from '@tauri-apps/plugin-dialog'
 import { writeFile } from '@tauri-apps/plugin-fs'
 import { formatDuration, formatSize } from '@/lib/formatters'
+import { extractBase64Media, redactBase64Fields } from '@/lib/media'
 
 /** 从 data URI 中提取 MIME 和扩展名 */
 function parseDataUri(body: string) {
@@ -90,10 +91,22 @@ export default function ResponsePanel() {
     || response?.body?.startsWith('data:video/')
     || (response?.body?.startsWith('data:') && response?.body?.includes(';base64,'))
 
+  // JSON 内嵌 base64 媒体检测
+  const embeddedMedia = useMemo(() => {
+    if (!response?.body || isMediaResponse) return []
+    try {
+      return extractBase64Media(JSON.parse(response.body))
+    } catch { return [] }
+  }, [response?.body, isMediaResponse])
+
   const prettyBody = useMemo(() => {
     if (!response?.body || isMediaResponse) return ''
-    try { return JSON.stringify(JSON.parse(response.body), null, 2) } catch { return response.body }
-  }, [response?.body, isMediaResponse])
+    try {
+      const parsed = JSON.parse(response.body)
+      const display = embeddedMedia.length > 0 ? redactBase64Fields(parsed, embeddedMedia) : parsed
+      return JSON.stringify(display, null, 2)
+    } catch { return response.body }
+  }, [response?.body, isMediaResponse, embeddedMedia])
 
   const statusColor = useMemo(() => {
     if (!response) return 'secondary' as const
@@ -186,9 +199,26 @@ export default function ResponsePanel() {
           {isMediaResponse ? (
             <MediaPreview body={response.body} sizeBytes={response.size_bytes} />
           ) : (
-            <pre className="font-mono text-xs leading-relaxed whitespace-pre-wrap break-all max-h-[400px] overflow-y-auto bg-card p-4 rounded-xl border border-overlay/[0.06]">
-              {prettyBody}
-            </pre>
+            <div>
+              {embeddedMedia.length > 0 && (
+                <div className="space-y-2 mb-3">
+                  {embeddedMedia.map((m, i) => (
+                    <div key={i} className="flex items-start gap-3 rounded-xl border border-overlay/[0.06] bg-overlay/[0.02] p-3 overflow-hidden">
+                      {m.type === 'image' && <img src={m.dataUrl} alt={m.path} className="max-h-40 max-w-[240px] object-contain rounded-lg shrink-0" />}
+                      {m.type === 'audio' && <audio controls src={m.dataUrl} className="w-full max-w-sm shrink-0" />}
+                      {m.type === 'video' && <video controls src={m.dataUrl} className="max-h-40 max-w-[240px] rounded-lg shrink-0" />}
+                      <div className="text-xs text-muted-foreground min-w-0">
+                        <div className="font-mono truncate">{m.path}</div>
+                        <div className="mt-0.5">{formatSize(m.sizeBytes)}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <pre className="font-mono text-xs leading-relaxed whitespace-pre-wrap break-all max-h-[400px] overflow-y-auto bg-card p-4 rounded-xl border border-overlay/[0.06]">
+                {prettyBody}
+              </pre>
+            </div>
           )}
         </TabsContent>
         <TabsContent value="headers">

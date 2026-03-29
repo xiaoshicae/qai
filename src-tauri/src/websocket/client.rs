@@ -135,6 +135,8 @@ pub async fn execute(item: &CollectionItem) -> Result<ExecutionResult, anyhow::E
             execution_id,
             item_id: item.id.clone(),
             item_name: item.name.clone(),
+            request_url: item.url.clone(),
+            request_method: "WS".to_string(),
             status: crate::models::status::FAILED.to_string(),
             response: Some(HttpResponse {
                 status: 0,
@@ -172,6 +174,8 @@ pub async fn execute(item: &CollectionItem) -> Result<ExecutionResult, anyhow::E
         execution_id,
         item_id: item.id.clone(),
         item_name: item.name.clone(),
+        request_url: item.url.clone(),
+        request_method: "WS".to_string(),
         status: result_status.to_string(),
         response: Some(HttpResponse {
             status: status_code,
@@ -194,6 +198,8 @@ fn make_error_result(execution_id: &str, item: &CollectionItem, start: Instant, 
         execution_id: execution_id.to_string(),
         item_id: item.id.clone(),
         item_name: item.name.clone(),
+        request_url: item.url.clone(),
+        request_method: "WS".to_string(),
         status: crate::models::status::ERROR.to_string(),
         response: Some(HttpResponse {
             status: 0,

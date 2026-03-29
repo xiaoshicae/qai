@@ -119,6 +119,8 @@ pub async fn execute_stream(
         execution_id,
         item_id: item.id.clone(),
         item_name: item.name.clone(),
+        request_url: item.url.clone(),
+        request_method: item.method.clone(),
         status: if status >= 200 && status < 400 {
             crate::models::status::SUCCESS.to_string()
         } else {
@@ -133,7 +135,7 @@ pub async fn execute_stream(
             size_bytes,
         }),
         assertion_results: vec![],
-        error_message: Some(format!("TTFB: {}ms | Chunks: {}", ttfb, chunk_index)),
+        error_message: None,
     })
 }
 

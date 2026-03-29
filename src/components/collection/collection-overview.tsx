@@ -13,7 +13,8 @@ import { JsonHighlight } from '@/components/ui/json-highlight'
 import { CodeEditor } from '@/components/ui/code-editor'
 import { VarHighlight } from '@/components/ui/var-highlight'
 import { VarInput } from '@/components/ui/var-input'
-import { formatDuration } from '@/lib/formatters'
+import { formatDuration, formatSize } from '@/lib/formatters'
+import { extractBase64Media, redactBase64Fields, extractSSEContent } from '@/lib/media'
 import KeyValueTable from '@/components/request/key-value-table'
 import { Progress } from '@/components/ui/progress'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -23,8 +24,22 @@ import { useCollectionStore } from '@/stores/collection-store'
 import type {
   Collection, CollectionTreeNode, ItemLastStatus,
   BatchResult, TestProgress, ExecutionResult, CollectionItem, HttpResponse,
-  ChainResult,
+  ChainResult, ChainProgress, StreamChunk,
 } from '@/types'
+
+function formatRelativeTime(dateStr: string, t: (key: string, opts?: any) => string): string {
+  const date = new Date(dateStr.replace(' ', 'T'))
+  const now = Date.now()
+  const diffMs = now - date.getTime()
+  if (diffMs < 0 || isNaN(diffMs)) return '-'
+  const mins = Math.floor(diffMs / 60000)
+  if (mins < 1) return t('scenario.just_now')
+  if (mins < 60) return t('scenario.minutes_ago', { n: mins })
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return t('scenario.hours_ago', { n: hours })
+  const days = Math.floor(hours / 24)
+  return t('scenario.days_ago', { n: days })
+}
 
 const BODY_TYPES = [
   { id: 'none', label: 'None' },
@@ -60,6 +75,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
   const [delayMs, setDelayMs] = useState(3000)
   const [showRunSettings, setShowRunSettings] = useState(false)
   const [envVars, setEnvVars] = useState<Record<string, string>>({})
+  const [streamingContents, setStreamingContents] = useState<Record<string, string>>({})
   const unlistenRef = useRef<(() => void) | null>(null)
 
   useEffect(() => { return () => { unlistenRef.current?.() } }, [])
@@ -130,7 +146,10 @@ export default function CollectionOverview({ collection, tree }: Props) {
   const passed = allRequests.filter((r) => getStatus(r.id) === 'success').length
   const failed = allRequests.filter((r) => { const s = getStatus(r.id); return s && s !== 'success' }).length
   const passRate = (passed + failed) > 0 ? Math.round((passed / (passed + failed)) * 100) : 0
-  const progressPercent = batchResult ? 100 : progress.length > 0 ? Math.round((progress.filter((p) => p.status !== 'running').length / (progress[0]?.total ?? 1)) * 100) : 0
+  const progressPercent = batchResult ? 100
+    : progress.length > 0 ? Math.round((progress.filter((p) => p.status !== 'running').length / (progress[0]?.total ?? 1)) * 100)
+    : running && total > 0 ? Math.round((Object.keys(singleResults).length / total) * 100)
+    : 0
   const getResult = (id: string): ExecutionResult | undefined => singleResults[id] ?? batchResult?.results.find((x) => x.item_id === id)
 
   // 批量运行
@@ -140,20 +159,33 @@ export default function CollectionOverview({ collection, tree }: Props) {
     setRunning(true); setProgress([]); setBatchResult(null); setSingleResults({}); setError(null); setExpandedRows(new Set())
 
     if (runMode === 'sequential') {
-      // 顺序执行 + delay
+      // 顺序执行 + 流式显示 + delay
+      const contents: Record<string, string> = {}
+      const unlisten = await listen<StreamChunk>('stream-chunk', (event) => {
+        const { chunk, done, item_id } = event.payload
+        if (abortRef.current || done || chunk === '[DONE]') return
+        const delta = extractSSEContent(chunk)
+        contents[item_id] = (contents[item_id] ?? '') + (delta ?? chunk + '\n')
+        setStreamingContents({ ...contents })
+      })
       for (const item of allRequests) {
         if (abortRef.current) break
+        contents[item.id] = ''
         setRunningIds((prev) => new Set(prev).add(item.id))
+        setStreamingContents({ ...contents })
         try {
-          const result = await invoke<ExecutionResult>('send_request', { id: item.id })
+          const result = await invoke<ExecutionResult>('send_request_stream', { id: item.id })
           setSingleResults((prev) => ({ ...prev, [item.id]: result }))
         } catch {}
+        delete contents[item.id]
+        setStreamingContents({ ...contents })
         setRunningIds((prev) => { const n = new Set(prev); n.delete(item.id); return n })
-        // delay
         if (delayMs > 0 && !abortRef.current) {
           await new Promise((r) => setTimeout(r, delayMs))
         }
       }
+      unlisten()
+      setStreamingContents({})
       setRunning(false)
       loadStatuses()
     } else {
@@ -174,21 +206,30 @@ export default function CollectionOverview({ collection, tree }: Props) {
     abortRef.current = true
     setRunning(false)
     setProgress([])
+    setStreamingContents({})
     unlistenRef.current?.()
     unlistenRef.current = null
     loadStatuses()
   }
 
-  // 单个运行
+  // 单个运行（流式）
   const runSingle = async (requestId: string) => {
     setSingleResults((prev) => { const n = { ...prev }; delete n[requestId]; return n })
     setRunningIds((prev) => new Set(prev).add(requestId))
+    setStreamingContents((prev) => ({ ...prev, [requestId]: '' }))
+    let content = ''
+    const unlisten = await listen<StreamChunk>('stream-chunk', (event) => {
+      const { chunk, done, item_id } = event.payload
+      if (item_id !== requestId || done || chunk === '[DONE]') return
+      const delta = extractSSEContent(chunk)
+      content += delta ?? chunk + '\n'
+      setStreamingContents((prev) => ({ ...prev, [requestId]: content }))
+    })
     try {
-      const result = await invoke<ExecutionResult>('send_request', { id: requestId })
+      const result = await invoke<ExecutionResult>('send_request_stream', { id: requestId })
       setSingleResults((prev) => ({ ...prev, [requestId]: result }))
       loadStatuses()
     } catch (e: any) {
-      console.error('runSingle failed:', e)
       setSingleResults((prev) => ({
         ...prev,
         [requestId]: {
@@ -198,18 +239,33 @@ export default function CollectionOverview({ collection, tree }: Props) {
         },
       }))
     } finally {
+      unlisten()
+      setStreamingContents((prev) => { const n = { ...prev }; delete n[requestId]; return n })
       setRunningIds((prev) => { const n = new Set(prev); n.delete(requestId); return n })
     }
   }
 
   // 运行整个 chain
   const runChain = async (chainItemId: string, stepIds: string[]) => {
-    // 标记所有 step 为运行中
-    setRunningIds((prev) => { const n = new Set(prev); stepIds.forEach((id) => n.add(id)); n.add(chainItemId); return n })
-    for (const id of stepIds) { setSingleResults((prev) => { const n = { ...prev }; delete n[id]; return n }) }
+    // 标记 chain 为运行中，清除所有 step 的旧结果和旧状态
+    setRunningIds((prev) => new Set(prev).add(chainItemId))
+    setSingleResults((prev) => { const n = { ...prev }; for (const id of stepIds) delete n[id]; return n })
+    setStatuses((prev) => { const n = { ...prev }; for (const id of stepIds) delete n[id]; return n })
+
+    // 监听 chain-progress 事件，逐步标记当前执行的 step
+    const unlisten = await listen<ChainProgress>('chain-progress', (event) => {
+      const p = event.payload
+      const stepId = stepIds[p.step_index]
+      if (!stepId) return
+      if (p.status === 'running') {
+        setRunningIds((prev) => new Set(prev).add(stepId))
+      } else {
+        setRunningIds((prev) => { const n = new Set(prev); n.delete(stepId); return n })
+      }
+    })
+
     try {
       const result = await invoke<ChainResult>('run_chain', { itemId: chainItemId })
-      // 将每步结果写入 singleResults
       for (const step of result.steps) {
         setSingleResults((prev) => ({ ...prev, [step.execution_result.item_id]: step.execution_result }))
       }
@@ -217,6 +273,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
     } catch (e: any) {
       console.error('runChain failed:', e)
     } finally {
+      unlisten()
       setRunningIds((prev) => { const n = new Set(prev); stepIds.forEach((id) => n.delete(id)); n.delete(chainItemId); return n })
     }
   }
@@ -224,7 +281,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
   // 添加测试用例：先弹编辑框，保存时才创建记录
   const addTestCase = () => {
     setIsNewReq(true)
-    setEditReq({
+    const initial: CollectionItem = {
       id: '',
       collection_id: collection.id,
       parent_id: null,
@@ -244,8 +301,9 @@ export default function CollectionOverview({ collection, tree }: Props) {
       protocol: 'http',
       created_at: '',
       updated_at: '',
-    })
-    editReqSnapshot.current = ''
+    }
+    setEditReq(initial)
+    editReqSnapshot.current = JSON.stringify(initial)
   }
 
   // 添加链：简单弹框只填名称+描述
@@ -271,7 +329,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
       return n
     })
     setIsNewReq(true)
-    setEditReq({
+    const initial = {
       id: '',
       collection_id: collection.id,
       parent_id: chainId,
@@ -291,8 +349,9 @@ export default function CollectionOverview({ collection, tree }: Props) {
       protocol: 'http',
       created_at: '',
       updated_at: '',
-    } as CollectionItem)
-    editReqSnapshot.current = ''
+    } as CollectionItem
+    setEditReq(initial)
+    editReqSnapshot.current = JSON.stringify(initial)
   }
 
   // 删除链
@@ -336,9 +395,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
   const closeEditDialog = async () => {
     if (editReq) {
       const current = JSON.stringify(editReq)
-      const hasChanges = isNewReq
-        ? !!(editReq.name || editReq.url || editReq.body_content)
-        : current !== editReqSnapshot.current
+      const hasChanges = current !== editReqSnapshot.current
       if (hasChanges) {
         const ok = await confirm(t('common.confirm_discard'), { title: t('common.close_confirm'), kind: 'warning' })
         if (!ok) return
@@ -536,8 +593,8 @@ export default function CollectionOverview({ collection, tree }: Props) {
 
       {/* 场景表格 */}
       <div className="rounded-xl border border-overlay/[0.06] overflow-hidden">
-        <div className="grid grid-cols-[minmax(0,1fr)_80px_80px_64px_72px] gap-2 px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 border-b border-overlay/[0.04]">
-          <span>{t('scenario.scenario')}</span><span>{t('scenario.status')}</span><span>{t('scenario.http')}</span><span>{t('scenario.total_time')}</span><span />
+        <div className="grid grid-cols-[minmax(0,1fr)_80px_64px_64px_80px_72px] gap-2 px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 border-b border-overlay/[0.04]">
+          <span>{t('scenario.scenario')}</span><span>{t('scenario.status')}</span><span>{t('scenario.http')}</span><span>{t('scenario.total_time')}</span><span>{t('scenario.last_run')}</span><span />
         </div>
         <div className="max-h-[calc(100vh-420px)] overflow-y-auto divide-y divide-overlay/[0.04]">
           {tableItems.length === 0 ? (
@@ -555,7 +612,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
                 <div key={`group-${itemIdx}`}>
                   {/* Group 头 */}
                   <div
-                    className="grid grid-cols-[minmax(0,1fr)_80px_80px_64px_72px] gap-2 px-4 py-2.5 text-sm bg-amber-500/5 hover:bg-amber-500/10 cursor-pointer transition-colors group"
+                    className="grid grid-cols-[minmax(0,1fr)_80px_64px_64px_80px_72px] gap-2 px-4 py-2.5 text-sm bg-amber-500/5 hover:bg-amber-500/10 cursor-pointer transition-colors group"
                     onClick={() => { const key = `group-${itemIdx}`; setExpandedRows((p) => { const n = new Set(p); n.has(key) ? n.delete(key) : n.add(key); return n }) }}
                   >
                     <span className="flex items-center gap-1.5 min-w-0">
@@ -566,6 +623,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
                     </span>
                     <span className={`flex items-center gap-1 font-bold text-xs ${groupColor}`}>{groupLabel}</span>
                     <span className="font-mono text-xs self-center">-</span>
+                    <span />
                     <span />
                     <span className="flex items-center justify-end gap-0.5" onClick={(e) => e.stopPropagation()}>
                       {(() => { const isChainRunning = runningIds.has(item.groupId); return (
@@ -583,13 +641,13 @@ export default function CollectionOverview({ collection, tree }: Props) {
                   </div>
                   {/* Group 内的 Steps */}
                   {groupExpanded && item.steps.map((r, stepIdx) => (
-                    <ScenarioRow key={r.id} r={r} stepLabel={`Step ${stepIdx + 1}`} indent envVars={envVars} getResult={getResult} getStatus={getStatus} statuses={statuses} progress={progress} runningIds={runningIds} expandedRows={expandedRows} detailData={detailData} loadDetail={loadDetail} toggleRow={toggleRow} runSingle={runSingle} openEdit={openEdit} deleteRequest={deleteRequest} />
+                    <ScenarioRow key={r.id} r={r} stepLabel={`Step ${stepIdx + 1}`} indent envVars={envVars} getResult={getResult} getStatus={getStatus} statuses={statuses} progress={progress} runningIds={runningIds} expandedRows={expandedRows} detailData={detailData} loadDetail={loadDetail} toggleRow={toggleRow} runSingle={runSingle} openEdit={openEdit} deleteRequest={deleteRequest} streamingContent={streamingContents[r.id]} />
                   ))}
                 </div>
               )
             }
             // ─── 普通请求 ───
-            return <ScenarioRow key={item.id} r={item} envVars={envVars} getResult={getResult} getStatus={getStatus} statuses={statuses} progress={progress} runningIds={runningIds} expandedRows={expandedRows} detailData={detailData} loadDetail={loadDetail} toggleRow={toggleRow} runSingle={runSingle} openEdit={openEdit} deleteRequest={deleteRequest} />
+            return <ScenarioRow key={item.id} r={item} envVars={envVars} getResult={getResult} getStatus={getStatus} statuses={statuses} progress={progress} runningIds={runningIds} expandedRows={expandedRows} detailData={detailData} loadDetail={loadDetail} toggleRow={toggleRow} runSingle={runSingle} openEdit={openEdit} deleteRequest={deleteRequest} streamingContent={streamingContents[item.id]} />
           })}
         </div>
       </div>
@@ -641,7 +699,7 @@ function EditForm({ req, onChange, onSave, onCancel, envVars }: {
 }) {
   const { t } = useTranslation()
   const set = (field: string, value: any) => onChange({ ...req, [field]: value })
-  const [activeTab, setActiveTab] = useState<'body' | 'headers' | 'advanced'>('body')
+  const [activeTab, setActiveTab] = useState<'body' | 'headers' | 'expect' | 'extract' | 'poll'>('body')
   const [showCurlImport, setShowCurlImport] = useState(false)
   const [curlInput, setCurlInput] = useState('')
   const [curlCopied, setCurlCopied] = useState(false)
@@ -691,10 +749,8 @@ function EditForm({ req, onChange, onSave, onCancel, envVars }: {
   })()
   const setHeaders = (h: typeof headers) => set('headers', JSON.stringify(h))
 
-  // 高级选项是否有内容（用于 tab 上的小圆点提示）
   const extractRules = (() => { try { const p = JSON.parse(req.extract_rules || '[]'); return Array.isArray(p) ? p : [] } catch { return [] } })()
   const hasPollConfig = !!req.poll_config && req.poll_config !== '{}'
-  const hasAdvanced = extractRules.length > 0 || hasPollConfig
 
   return (
     <div className="space-y-4">
@@ -767,7 +823,9 @@ function EditForm({ req, onChange, onSave, onCancel, envVars }: {
         {([
           { key: 'body' as const, label: t('edit.body') },
           { key: 'headers' as const, label: 'Headers', count: headers.filter(h => h.key).length },
-          { key: 'advanced' as const, label: t('edit.expect_status'), dot: hasAdvanced },
+          { key: 'expect' as const, label: t('edit.expect_status') },
+          { key: 'extract' as const, label: t('edit.extract_tab'), dot: extractRules.length > 0 },
+          { key: 'poll' as const, label: t('edit.poll_config'), dot: hasPollConfig },
         ]).map((tab) => (
           <button
             key={tab.key}
@@ -832,30 +890,28 @@ function EditForm({ req, onChange, onSave, onCancel, envVars }: {
           />
         )}
 
-        {/* 高级 Tab */}
-        {activeTab === 'advanced' && (
-          <div className="space-y-5">
-            {/* 期望状态码 */}
-            <div className="flex items-center gap-3">
-              <label className="text-xs text-muted-foreground w-20">{t('edit.expect_status')}</label>
-              <Input type="number" value={req.expect_status} onChange={(e) => set('expect_status', Number(e.target.value))} className="h-8 w-24 text-sm text-center" />
-            </div>
-
-            {/* Extract Rules */}
-            <div>
-              <label className="text-xs text-muted-foreground mb-1.5 block">{t('edit.extract_rules')}</label>
-              <ExtractRulesEditor
-                value={extractRules}
-                onChange={(rules) => set('extract_rules', JSON.stringify(rules))}
-              />
-            </div>
-
-            {/* 轮询配置 */}
-            <PollConfigEditor
-              value={(() => { try { return req.poll_config ? JSON.parse(req.poll_config) : null } catch { return null } })()}
-              onChange={(cfg) => set('poll_config', cfg ? JSON.stringify(cfg) : '')}
-            />
+        {/* 期望状态码 Tab */}
+        {activeTab === 'expect' && (
+          <div className="flex items-center gap-3 pt-1">
+            <label className="text-xs text-muted-foreground">{t('edit.expect_status')}</label>
+            <Input type="number" value={req.expect_status} onChange={(e) => set('expect_status', Number(e.target.value))} className="h-8 w-24 text-sm text-center" />
           </div>
+        )}
+
+        {/* 变量提取 Tab */}
+        {activeTab === 'extract' && (
+          <ExtractRulesEditor
+            value={extractRules}
+            onChange={(rules) => set('extract_rules', JSON.stringify(rules))}
+          />
+        )}
+
+        {/* 轮询配置 Tab */}
+        {activeTab === 'poll' && (
+          <PollConfigEditor
+            value={(() => { try { return req.poll_config ? JSON.parse(req.poll_config) : null } catch { return null } })()}
+            onChange={(cfg) => set('poll_config', cfg ? JSON.stringify(cfg) : '')}
+          />
         )}
       </div>
 
@@ -915,11 +971,12 @@ function InlineEdit({ value, placeholder, onSave }: { value: string; placeholder
 }
 
 // ─── 场景行 ──────────────────────────
-function ScenarioRow({ r, stepLabel, indent, envVars = {}, getResult, getStatus: _getStatus, statuses, progress, runningIds, expandedRows, detailData, loadDetail, toggleRow, runSingle, openEdit, deleteRequest }: {
+function ScenarioRow({ r, stepLabel, indent, envVars = {}, getResult, getStatus: _getStatus, statuses, progress, runningIds, expandedRows, detailData, loadDetail, toggleRow, runSingle, openEdit, deleteRequest, streamingContent }: {
   r: { id: string; name: string; method: string; folder?: string; expect_status?: number }
   stepLabel?: string
   indent?: boolean
   envVars?: Record<string, string>
+  streamingContent?: string
   getResult: (id: string) => ExecutionResult | undefined
   getStatus: (id: string) => string | undefined
   statuses: Record<string, ItemLastStatus>
@@ -940,11 +997,39 @@ function ScenarioRow({ r, stepLabel, indent, envVars = {}, getResult, getStatus:
   const result = getResult(r.id)
   const prog = progress.find((p) => p.item_id === r.id)
   const old = statuses[r.id]
-  const resp = result?.response
   const expanded = expandedRows.has(r.id)
   const isRunning = runningIds.has(r.id) || prog?.status === 'running'
   const status = isRunning ? 'running' : (result?.status ?? prog?.status ?? old?.status)
   const detail = detailData[r.id]
+
+  // 展开时加载历史执行记录（当前会话无结果时回退显示最近一次 response）
+  const [lastRun, setLastRun] = useState<{
+    resp: HttpResponse
+    assertions: { passed: boolean; actual: string; message: string }[]
+    error?: string
+  } | null>(null)
+
+  useEffect(() => {
+    if (!expanded || result) return
+    invoke<any[]>('list_item_runs', { itemId: r.id, limit: 1 }).then((runs) => {
+      if (runs.length > 0) {
+        const run = runs[0]
+        let headers: { key: string; value: string; enabled: boolean }[] = []
+        try { headers = (JSON.parse(run.response_headers || '[]') as any[]).map((h: any) => ({ key: h.key ?? '', value: h.value ?? '', enabled: true })) } catch {}
+        let assertions: { passed: boolean; actual: string; message: string }[] = []
+        try { assertions = JSON.parse(run.assertion_results || '[]') } catch {}
+        setLastRun({
+          resp: { status: run.response_status ?? 0, status_text: '', headers, body: run.response_body ?? '', time_ms: run.response_time_ms ?? 0, size_bytes: run.response_size ?? 0 },
+          assertions,
+          error: run.error_message || undefined,
+        })
+      }
+    }).catch(() => {})
+  }, [expanded, result, r.id])
+
+  const resp = isRunning ? null : (result?.response ?? lastRun?.resp ?? null)
+  const displayAssertions = isRunning ? [] : (result?.assertion_results ?? lastRun?.assertions ?? [])
+  const displayError = isRunning ? null : (result?.error_message ?? lastRun?.error ?? null)
 
   // 链式步骤里不在环境变量中的变量视为链式提取变量
   const chainVars = useMemo(() => {
@@ -971,10 +1056,11 @@ function ScenarioRow({ r, stepLabel, indent, envVars = {}, getResult, getStatus:
 
   return (
     <div>
-      <div className={`grid grid-cols-[minmax(0,1fr)_80px_80px_64px_72px] gap-2 px-4 py-2.5 text-sm hover:bg-overlay/[0.03] cursor-pointer transition-colors group ${indent ? 'pl-10 bg-overlay/[0.02]' : ''}`} onClick={() => toggleRow(r.id)}>
+      <div className={`grid grid-cols-[minmax(0,1fr)_80px_64px_64px_80px_72px] gap-2 px-4 py-2.5 text-sm hover:bg-overlay/[0.03] cursor-pointer transition-colors group ${indent ? 'pl-10 bg-overlay/[0.02]' : ''}`} onClick={() => toggleRow(r.id)}>
         <span className="flex items-center gap-1.5 min-w-0">
           {expanded ? <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" /> : <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" />}
           {stepLabel && <span className="text-[10px] text-amber-500/70 font-mono shrink-0">{stepLabel}</span>}
+          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0 ${r.method === 'GET' ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10' : r.method === 'POST' ? 'text-amber-600 dark:text-amber-400 bg-amber-500/10' : r.method === 'PUT' ? 'text-sky-600 dark:text-sky-400 bg-sky-500/10' : r.method === 'DELETE' ? 'text-red-600 dark:text-red-400 bg-red-500/10' : 'text-purple-600 dark:text-purple-400 bg-purple-500/10'}`}>{r.method}</span>
           <span className="font-medium truncate">{r.name}</span>
         </span>
         <span className={`flex items-center gap-1 font-bold text-xs ${sd.color}`}>{sd.icon}{sd.label}</span>
@@ -984,6 +1070,7 @@ function ScenarioRow({ r, stepLabel, indent, envVars = {}, getResult, getStatus:
             : <span className="text-muted-foreground">{r.expect_status || 200}</span>}
         </span>
         <span className="text-xs text-muted-foreground self-center tabular-nums">{resp ? formatDuration(resp.time_ms) : old ? formatDuration(old.response_time_ms) : '-'}</span>
+        <span className="text-[10px] text-muted-foreground/60 self-center tabular-nums">{old?.executed_at ? formatRelativeTime(old.executed_at, t) : '-'}</span>
         <span className="flex items-center justify-end gap-0.5" onClick={(e) => e.stopPropagation()}>
           <button className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 hover:bg-muted transition-all cursor-pointer" onClick={() => runSingle(r.id)} disabled={isRunning} title="运行">
             {isRunning ? <Loader2 className="h-3 w-3 animate-spin text-blue-500" /> : <Play className="h-3 w-3 text-muted-foreground" />}
@@ -1092,7 +1179,13 @@ function ScenarioRow({ r, stepLabel, indent, envVars = {}, getResult, getStatus:
               </div>
               {/* Tab 内容 */}
               {respTab === 'body' ? (
-                <ResponseBody resp={resp} />
+                isRunning && streamingContent ? (
+                  <div className="px-3 py-2.5 max-h-52 overflow-y-auto">
+                    <pre className="font-mono text-xs leading-relaxed whitespace-pre-wrap break-all text-foreground/80">
+                      {streamingContent}<span className="animate-pulse text-primary">|</span>
+                    </pre>
+                  </div>
+                ) : <ResponseBody resp={resp} />
               ) : (
                 <div className="max-h-52 overflow-y-auto">
                   {resp && resp.headers.length > 0 ? (
@@ -1121,10 +1214,10 @@ function ScenarioRow({ r, stepLabel, indent, envVars = {}, getResult, getStatus:
               )}
             </div>
           </div>
-          {result && result.assertion_results.length > 0 && (
+          {displayAssertions.length > 0 && (
             <div className="rounded-lg border border-overlay/[0.06] overflow-hidden">
-              <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 border-b border-overlay/[0.04]">ASSERTIONS ({result.assertion_results.filter((a) => a.passed).length}/{result.assertion_results.length})</div>
-              <div className="px-3 py-2 space-y-1">{result.assertion_results.map((a, i) => (
+              <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 border-b border-overlay/[0.04]">ASSERTIONS ({displayAssertions.filter((a) => a.passed).length}/{displayAssertions.length})</div>
+              <div className="px-3 py-2 space-y-1">{displayAssertions.map((a, i) => (
                 <div key={i} className="flex items-start gap-1.5 text-xs">
                   {a.passed ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5" /> : <XCircle className="h-3.5 w-3.5 text-red-500 shrink-0 mt-0.5" />}
                   <span>{a.message}</span>{!a.passed && a.actual && <span className="text-muted-foreground">(actual: {a.actual})</span>}
@@ -1132,7 +1225,7 @@ function ScenarioRow({ r, stepLabel, indent, envVars = {}, getResult, getStatus:
               ))}</div>
             </div>
           )}
-          {result?.error_message && <div className="flex items-start gap-1.5 text-xs text-red-500"><AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />{result.error_message}</div>}
+          {displayError && <div className="flex items-start gap-1.5 text-xs text-red-500"><AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />{displayError}</div>}
           <div className="flex items-center gap-4 text-[10px] text-muted-foreground/80 pt-1">
             {detail?.created_at && <span>创建: {detail.created_at}</span>}
             {detail?.updated_at && <span>更新: {detail.updated_at}</span>}
@@ -1247,44 +1340,30 @@ function ResponseBody({ resp }: { resp: HttpResponse | null | undefined }) {
   const { t } = useTranslation()
   if (!resp) return <div className="px-3 py-6 text-center text-xs text-muted-foreground/40">{t('scenario.not_run')}</div>
 
-  const contentType = resp.headers.find((h: { key: string }) => h.key.toLowerCase() === 'content-type')?.value?.toLowerCase() || ''
-
-  // 图片
-  if (contentType.startsWith('image/')) {
-    const blob = new Blob([Uint8Array.from(atob(resp.body), c => c.charCodeAt(0))], { type: contentType })
-    const url = URL.createObjectURL(blob)
-    return (
+  // 1. Data URL 二进制响应（Rust 端已编码为 data:mime;base64,...）
+  if (resp.body.startsWith('data:')) {
+    const isImage = resp.body.startsWith('data:image/')
+    const isAudio = resp.body.startsWith('data:audio/')
+    const isVideo = resp.body.startsWith('data:video/')
+    if (isImage) return (
       <div className="p-3 flex items-center justify-center max-h-64 overflow-hidden">
-        <img src={url} alt="response" className="max-h-56 max-w-full object-contain rounded" onLoad={() => URL.revokeObjectURL(url)} />
+        <img src={resp.body} alt="response" className="max-h-56 max-w-full object-contain rounded-lg" />
       </div>
     )
-  }
-
-  // 音频
-  if (contentType.startsWith('audio/')) {
-    return (
+    if (isAudio) return (
       <div className="p-3 flex items-center justify-center">
-        <audio controls className="w-full max-w-md">
-          <source type={contentType} />
-          浏览器不支持音频播放
-        </audio>
+        <audio controls className="w-full max-w-md" src={resp.body} />
       </div>
     )
-  }
-
-  // 视频
-  if (contentType.startsWith('video/')) {
-    return (
+    if (isVideo) return (
       <div className="p-3 flex items-center justify-center">
-        <video controls className="max-h-56 max-w-full rounded">
-          <source type={contentType} />
-          浏览器不支持视频播放
-        </video>
+        <video controls className="max-h-56 max-w-full rounded-lg" src={resp.body} />
       </div>
     )
   }
 
-  // HTML
+  // 2. HTML
+  const contentType = resp.headers.find((h: { key: string }) => h.key.toLowerCase() === 'content-type')?.value?.toLowerCase() || ''
   if (contentType.includes('text/html')) {
     return (
       <div className="max-h-52 overflow-y-auto">
@@ -1293,12 +1372,38 @@ function ResponseBody({ resp }: { resp: HttpResponse | null | undefined }) {
     )
   }
 
-  // JSON（默认尝试格式化）
-  const formatted = (() => {
-    try { return JSON.stringify(JSON.parse(resp.body), null, 2) } catch { return resp.body }
-  })()
+  // 3. JSON — 检测内嵌 base64 媒体字段
+  let parsed: unknown = null
+  try { parsed = JSON.parse(resp.body) } catch {}
 
-  return <JsonHighlight code={formatted} className="px-3 py-2.5 max-h-52 overflow-y-auto" />
+  if (parsed) {
+    const mediaFields = extractBase64Media(parsed)
+    if (mediaFields.length > 0) {
+      const redacted = redactBase64Fields(parsed, mediaFields)
+      return (
+        <div className="max-h-64 overflow-y-auto">
+          <div className="px-3 pt-2.5 space-y-2">
+            {mediaFields.map((m, i) => (
+              <div key={i} className="flex items-start gap-3 rounded-xl border border-overlay/[0.06] bg-overlay/[0.02] p-2.5 overflow-hidden">
+                {m.type === 'image' && <img src={m.dataUrl} alt={m.path} className="max-h-28 max-w-[180px] object-contain rounded-lg flex-shrink-0" />}
+                {m.type === 'audio' && <audio controls src={m.dataUrl} className="w-full max-w-xs flex-shrink-0" />}
+                {m.type === 'video' && <video controls src={m.dataUrl} className="max-h-28 max-w-[180px] rounded-lg flex-shrink-0" />}
+                <div className="text-xs text-muted-foreground min-w-0">
+                  <div className="font-mono truncate">{m.path}</div>
+                  <div className="mt-0.5">{formatSize(m.sizeBytes)}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <JsonHighlight code={JSON.stringify(redacted, null, 2)} className="px-3 py-2.5" />
+        </div>
+      )
+    }
+    return <JsonHighlight code={JSON.stringify(parsed, null, 2)} className="px-3 py-2.5 max-h-52 overflow-y-auto" />
+  }
+
+  // 4. 纯文本
+  return <JsonHighlight code={resp.body} className="px-3 py-2.5 max-h-52 overflow-y-auto" />
 }
 
 // ─── 本地文件预览按钮 + 弹窗 ──────────────

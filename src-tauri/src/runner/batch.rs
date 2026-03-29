@@ -72,6 +72,8 @@ pub async fn run_batch(
                     execution_id: Uuid::new_v4().to_string(),
                     item_id: item.id.clone(),
                     item_name: item.name.clone(),
+                    request_url: item.url.clone(),
+                    request_method: item.method.clone(),
                     status: crate::models::status::ERROR.to_string(),
                     response: None,
                     assertion_results: vec![],

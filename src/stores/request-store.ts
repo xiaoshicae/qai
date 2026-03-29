@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import type { CollectionItem, ExecutionResult, StreamChunk } from '@/types'
+import { extractSSEContent } from '@/lib/media'
 
 interface RequestUpdates {
   name?: string
@@ -82,20 +83,8 @@ export const useRequestStore = create<RequestState>((set, get) => ({
       const { chunk, done, item_id } = event.payload
       if (item_id !== currentRequest.id) return
       if (!done && chunk !== '[DONE]') {
-        // 尝试从 SSE JSON 中提取 content
-        try {
-          const json = JSON.parse(chunk)
-          const delta = json.choices?.[0]?.delta?.content
-          if (delta) {
-            content += delta
-            chunks++
-            set({ streamContent: content, streamChunks: chunks })
-            return
-          }
-        } catch {
-          // 非 JSON 格式，直接追加
-        }
-        content += chunk + '\n'
+        const delta = extractSSEContent(chunk)
+        content += delta ?? chunk + '\n'
         chunks++
         set({ streamContent: content, streamChunks: chunks })
       }

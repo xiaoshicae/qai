@@ -60,6 +60,8 @@ pub async fn run_chain(
                     execution_id: uuid::Uuid::new_v4().to_string(),
                     item_id: item.id.clone(),
                     item_name: item.name.clone(),
+                    request_url: item.url.clone(),
+                    request_method: item.method.clone(),
                     status: crate::models::status::ERROR.to_string(),
                     response: None,
                     assertion_results: vec![],

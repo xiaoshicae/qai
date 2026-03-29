@@ -25,6 +25,8 @@ pub struct ExecutionResult {
     pub execution_id: String,
     pub item_id: String,
     pub item_name: String,
+    pub request_url: String,
+    pub request_method: String,
     pub status: String,
     pub response: Option<super::item::HttpResponse>,
     pub assertion_results: Vec<super::assertion::AssertionResult>,

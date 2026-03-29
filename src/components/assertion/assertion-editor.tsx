@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Plus, Trash2 } from 'lucide-react'
 import { invoke } from '@tauri-apps/api/core'
 import { Button } from '@/components/ui/button'
@@ -6,30 +7,38 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import type { Assertion } from '@/types'
 
-const TYPE_OPTIONS = [
-  { label: '状态码', value: 'status_code' },
-  { label: 'JSON Path', value: 'json_path' },
-  { label: '响应体包含', value: 'body_contains' },
-  { label: '响应时间', value: 'response_time' },
-  { label: 'Header', value: 'header_contains' },
-]
+function useTypeOptions() {
+  const { t } = useTranslation()
+  return [
+    { label: t('assertion.status_code'), value: 'status_code' },
+    { label: 'JSON Path', value: 'json_path' },
+    { label: t('assertion.body_contains'), value: 'body_contains' },
+    { label: t('assertion.response_time'), value: 'response_time' },
+    { label: 'Header', value: 'header_contains' },
+  ]
+}
 
-const OPERATOR_OPTIONS = [
-  { label: '等于', value: 'eq' },
-  { label: '不等于', value: 'neq' },
-  { label: '大于', value: 'gt' },
-  { label: '小于', value: 'lt' },
-  { label: '包含', value: 'contains' },
-  { label: '不包含', value: 'not_contains' },
-  { label: '存在', value: 'exists' },
-  { label: '正则', value: 'matches' },
-]
+function useOperatorOptions() {
+  const { t } = useTranslation()
+  return [
+    { label: t('assertion.eq'), value: 'eq' },
+    { label: t('assertion.neq'), value: 'neq' },
+    { label: t('assertion.gt'), value: 'gt' },
+    { label: t('assertion.lt'), value: 'lt' },
+    { label: t('assertion.contains'), value: 'contains' },
+    { label: t('assertion.not_contains'), value: 'not_contains' },
+    { label: t('assertion.exists'), value: 'exists' },
+    { label: t('assertion.matches'), value: 'matches' },
+  ]
+}
 
 function needsExpression(type: string) {
   return type === 'json_path' || type === 'header_contains'
 }
 
 export default function AssertionEditor({ requestId }: { requestId: string }) {
+  const TYPE_OPTIONS = useTypeOptions()
+  const OPERATOR_OPTIONS = useOperatorOptions()
   const [assertions, setAssertions] = useState<Assertion[]>([])
 
   const load = useCallback(async () => {

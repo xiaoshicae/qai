@@ -1,4 +1,5 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { ChevronRight, ChevronDown, Folder, FolderOpen, Play, Plus, FolderPlus, Trash2, Pencil, MoreHorizontal, Link2 } from 'lucide-react'
 import { invoke } from '@tauri-apps/api/core'
@@ -36,6 +37,7 @@ interface ContextMenu {
 }
 
 export default function CollectionTree({ collections, trees, selectedNodeId, onSelect }: CollectionTreeProps) {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const { loadTree, createItem, createFolder, deleteCollection, renameCollection, selectNode } = useCollectionStore()
@@ -94,7 +96,7 @@ export default function CollectionTree({ collections, trees, selectedNodeId, onS
     switch (action) {
       case 'add-request': {
         expand(type === 'collection' ? collectionId : id)
-        const reqId = await createItem(collectionId, type === 'folder' ? id : null, '新请求', 'GET')
+        const reqId = await createItem(collectionId, type === 'folder' ? id : null, t('tree.new_request'), 'GET')
         if (reqId) {
           selectNode(reqId)
           onSelect(reqId)
@@ -103,11 +105,11 @@ export default function CollectionTree({ collections, trees, selectedNodeId, onS
       }
       case 'add-folder':
         expand(type === 'collection' ? collectionId : id)
-        await createFolder(collectionId, type === 'folder' ? id : null, '新文件夹')
+        await createFolder(collectionId, type === 'folder' ? id : null, t('tree.new_folder'))
         break
       case 'add-chain':
         expand(type === 'collection' ? collectionId : id)
-        await createItem(collectionId, type === 'folder' ? id : null, '新请求链', 'GET', 'chain')
+        await createItem(collectionId, type === 'folder' ? id : null, t('tree.new_chain'), 'GET', 'chain')
         break
       case 'rename':
         startRename(id, name)
@@ -178,7 +180,7 @@ export default function CollectionTree({ collections, trees, selectedNodeId, onS
       {/* 右键菜单 */}
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)}>
-          {getMenuItems(menu.type, menu.isChain).map((item) =>
+          {getMenuItems(menu.type, menu.isChain, t).map((item) =>
             item.separator ? (
               <div key={item.key} className={menuDividerClass} />
             ) : (
@@ -198,17 +200,17 @@ export default function CollectionTree({ collections, trees, selectedNodeId, onS
   )
 }
 
-function getMenuItems(type: ContextMenu['type'], _isChain?: boolean) {
+function getMenuItems(type: ContextMenu['type'], _isChain: boolean | undefined, t: (key: string) => string) {
   const items: { key: string; label?: string; icon?: React.ReactNode; danger?: boolean; separator?: boolean }[] = []
   if (type === 'collection' || type === 'folder') {
-    items.push({ key: 'add-request', label: '添加请求', icon: <Plus className="h-3.5 w-3.5" /> })
-    items.push({ key: 'add-folder', label: '添加文件夹', icon: <FolderPlus className="h-3.5 w-3.5" /> })
-    items.push({ key: 'add-chain', label: '添加请求链', icon: <Link2 className="h-3.5 w-3.5" /> })
-    items.push({ key: 'run', label: '运行全部', icon: <Play className="h-3.5 w-3.5" /> })
+    items.push({ key: 'add-request', label: t('tree.add_request'), icon: <Plus className="h-3.5 w-3.5" /> })
+    items.push({ key: 'add-folder', label: t('tree.add_folder'), icon: <FolderPlus className="h-3.5 w-3.5" /> })
+    items.push({ key: 'add-chain', label: t('tree.add_chain'), icon: <Link2 className="h-3.5 w-3.5" /> })
+    items.push({ key: 'run', label: t('tree.run_all'), icon: <Play className="h-3.5 w-3.5" /> })
     items.push({ key: 'sep1', separator: true })
   }
-  items.push({ key: 'rename', label: '重命名', icon: <Pencil className="h-3.5 w-3.5" /> })
-  items.push({ key: 'delete', label: '删除', icon: <Trash2 className="h-3.5 w-3.5" />, danger: true })
+  items.push({ key: 'rename', label: t('tree.rename'), icon: <Pencil className="h-3.5 w-3.5" /> })
+  items.push({ key: 'delete', label: t('tree.delete'), icon: <Trash2 className="h-3.5 w-3.5" />, danger: true })
   return items
 }
 

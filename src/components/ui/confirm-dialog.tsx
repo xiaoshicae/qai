@@ -26,7 +26,7 @@ export const useConfirmStore = create<ConfirmState & ConfirmActions>((set, get) 
     return new Promise<boolean>((resolve) => {
       set({
         open: true,
-        title: options?.title ?? '确认',
+        title: options?.title ?? 'Confirm',
         message,
         kind: options?.kind ?? 'info',
         resolve,

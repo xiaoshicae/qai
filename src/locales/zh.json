@@ -115,16 +115,64 @@
     "api_key": "API Key",
     "test_connection": "测试连接"
   },
+  "tree": {
+    "new_request": "新请求",
+    "new_folder": "新文件夹",
+    "new_chain": "新请求链",
+    "add_request": "添加请求",
+    "add_folder": "添加文件夹",
+    "add_chain": "添加请求链",
+    "run_all": "运行全部",
+    "rename": "重命名",
+    "delete": "删除"
+  },
+  "runner": {
+    "select_collection": "选择集合",
+    "running": "执行中...",
+    "run_chain": "运行链"
+  },
+  "assertion": {
+    "status_code": "状态码",
+    "json_path": "JSON Path",
+    "body_contains": "响应体包含",
+    "response_time": "响应时间",
+    "header_contains": "Header 包含",
+    "eq": "等于",
+    "neq": "不等于",
+    "gt": "大于",
+    "lt": "小于",
+    "gte": "大于等于",
+    "lte": "小于等于",
+    "contains": "包含",
+    "not_contains": "不包含",
+    "exists": "存在",
+    "matches": "正则匹配",
+    "enabled": "已启用",
+    "disabled": "未启用"
+  },
   "common": {
+    "confirm": "确认",
     "confirm_delete": "确定删除「{{name}}」？此操作不可撤销。",
     "confirm_delete_group": "确定删除分组「{{name}}」及其下所有测试集？此操作不可撤销。",
+    "confirm_discard": "有未保存的修改，确定放弃？",
+    "close_confirm": "关闭确认",
+    "save_failed": "保存失败",
     "none": "无",
     "add": "添加",
     "edit": "编辑",
     "delete": "删除",
     "run": "运行",
+    "select": "选择...",
     "pass": "PASS",
     "fail": "FAIL",
-    "error": "ERR"
+    "error": "ERR",
+    "new_step": "新步骤",
+    "new_test_case": "新测试用例",
+    "new_test_suite": "新测试集",
+    "suite_name_placeholder": "测试集名称",
+    "subgroup_name_placeholder": "子分组名称",
+    "extract_hint": "提取的变量可在后续步骤中通过 {{变量名}} 引用",
+    "var_chain_hint": "运行时由前置步骤提取",
+    "var_undefined": "未定义"
   }
 }

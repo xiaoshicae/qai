@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { useTranslation } from 'react-i18next'
 
 interface Props {
   text: string
@@ -26,6 +27,7 @@ export function VarHighlight({ text, vars = {}, chainVars, className }: Props) {
 }
 
 function VarTag({ name, value, isChainVar }: { name: string; value?: string; isChainVar?: boolean }) {
+  const { t } = useTranslation()
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
   const resolved = value !== undefined
 
@@ -38,8 +40,8 @@ function VarTag({ name, value, isChainVar }: { name: string; value?: string; isC
   const tooltip = resolved
     ? value
     : isChainVar
-    ? '运行时由前置步骤提取'
-    : '未定义'
+    ? t('common.var_chain_hint')
+    : t('common.var_undefined')
 
   const handleEnter = (e: React.MouseEvent) => {
     const rect = e.currentTarget.getBoundingClientRect()

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Play, Download, CheckCircle2, XCircle, Timer, Zap, ChevronDown, ChevronRight, AlertCircle } from 'lucide-react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
@@ -10,8 +11,10 @@ import { Progress } from '@/components/ui/progress'
 import { useCollectionStore } from '@/stores/collection-store'
 import type { BatchResult, TestProgress, ExecutionResult } from '@/types'
 import { formatDuration, formatSize } from '@/lib/formatters'
+import { EmptyState } from '@/components/ui/empty-state'
 
 export default function RunnerPanel() {
+  const { t } = useTranslation()
   const { collections } = useCollectionStore()
   const [selectedId, setSelectedId] = useState<string>('')
   const [concurrency, setConcurrency] = useState(5)
@@ -101,7 +104,7 @@ export default function RunnerPanel() {
         <Select
           value={selectedId}
           onChange={setSelectedId}
-          options={[{ value: '', label: '选择集合' }, ...collections.map((c) => ({ value: c.id, label: c.name }))]}
+          options={[{ value: '', label: t('runner.select_collection') }, ...collections.map((c) => ({ value: c.id, label: c.name }))]}
           className="flex-1 min-w-0"
           placeholder="选择集合"
         />
@@ -200,12 +203,7 @@ export default function RunnerPanel() {
 
       {/* 空状态 */}
       {!running && !batchResult && progress.length === 0 && (
-        <div className="flex flex-col items-center justify-center text-center py-20">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-muted mb-4">
-            <Play className="h-5 w-5 text-muted-foreground" />
-          </div>
-          <p className="text-sm text-muted-foreground">选择集合并点击运行</p>
-        </div>
+        <EmptyState icon={Play} title="选择集合并点击运行" />
       )}
     </div>
   )

@@ -38,7 +38,7 @@ export function Select({ value, onChange, options, className, placeholder }: Sel
         onClick={() => setOpen(!open)}
       >
         <span className={selected ? 'text-foreground font-medium' : 'text-muted-foreground'}>
-          {selected?.label ?? placeholder ?? '选择...'}
+          {selected?.label ?? placeholder ?? 'u9009u62e9...'}
         </span>
         <ChevronDown className={cn('h-3.5 w-3.5 text-muted-foreground transition-transform duration-200', open && 'rotate-180')} />
       </button>

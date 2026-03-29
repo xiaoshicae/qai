@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { Clock } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { EmptyState } from '@/components/ui/empty-state'
 import { useCollectionStore } from '@/stores/collection-store'
 import { useTabsStore } from '@/stores/tabs-store'
 import type { HistoryEntry } from '@/types'
@@ -54,12 +55,7 @@ export default function HistoryView() {
       <h1 className="text-lg font-semibold mb-6">历史记录</h1>
 
       {entries.length === 0 ? (
-        <div className="flex flex-col items-center justify-center text-center py-20">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-muted mb-4">
-            <Clock className="h-5 w-5 text-muted-foreground" />
-          </div>
-          <p className="text-sm text-muted-foreground">暂无请求历史</p>
-        </div>
+        <EmptyState icon={Clock} title="暂无请求历史" description="发送请求后将自动记录在此" />
       ) : (
         <div className="rounded-xl border border-overlay/[0.06] overflow-hidden">
           {entries.map((entry, i) => {

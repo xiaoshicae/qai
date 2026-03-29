@@ -115,16 +115,64 @@
     "api_key": "API Key",
     "test_connection": "Test Connection"
   },
+  "tree": {
+    "new_request": "New Request",
+    "new_folder": "New Folder",
+    "new_chain": "New Chain",
+    "add_request": "Add Request",
+    "add_folder": "Add Folder",
+    "add_chain": "Add Chain",
+    "run_all": "Run All",
+    "rename": "Rename",
+    "delete": "Delete"
+  },
+  "runner": {
+    "select_collection": "Select Collection",
+    "running": "Running...",
+    "run_chain": "Run Chain"
+  },
+  "assertion": {
+    "status_code": "Status Code",
+    "json_path": "JSON Path",
+    "body_contains": "Body Contains",
+    "response_time": "Response Time",
+    "header_contains": "Header Contains",
+    "eq": "Equals",
+    "neq": "Not Equals",
+    "gt": "Greater Than",
+    "lt": "Less Than",
+    "gte": "Greater or Equal",
+    "lte": "Less or Equal",
+    "contains": "Contains",
+    "not_contains": "Not Contains",
+    "exists": "Exists",
+    "matches": "Regex Match",
+    "enabled": "Enabled",
+    "disabled": "Disabled"
+  },
   "common": {
+    "confirm": "Confirm",
     "confirm_delete": "Delete \"{{name}}\"? This cannot be undone.",
     "confirm_delete_group": "Delete group \"{{name}}\" and all its test suites? This cannot be undone.",
+    "confirm_discard": "You have unsaved changes. Discard?",
+    "close_confirm": "Confirm Close",
+    "save_failed": "Save failed",
     "none": "None",
     "add": "Add",
     "edit": "Edit",
     "delete": "Delete",
     "run": "Run",
+    "select": "Select...",
     "pass": "PASS",
     "fail": "FAIL",
-    "error": "ERR"
+    "error": "ERR",
+    "new_step": "New Step",
+    "new_test_case": "New Test Case",
+    "new_test_suite": "New Test Suite",
+    "suite_name_placeholder": "Suite name",
+    "subgroup_name_placeholder": "Subgroup name",
+    "extract_hint": "Extracted variables can be referenced as {{variable}} in subsequent steps",
+    "var_chain_hint": "Extracted from previous step at runtime",
+    "var_undefined": "Undefined"
   }
 }

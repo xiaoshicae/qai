@@ -327,3 +327,84 @@ Logo 区域:       px-4（含 drag-region，需要更多留白）
 - [ ] 有 `transition-all duration-200`
 - [ ] 条件内容不改变容器尺寸（防跳动）
 - [ ] 在深色和浅色模式下都测试过
+- [ ] 空状态使用 `<EmptyState>` 组件（`@/components/ui/empty-state`）
+- [ ] 弹窗表单关闭前检查未保存变更
+- [ ] i18n：所有用户可见文本走 `t()` 调用，禁止硬编码中文
+- [ ] 禁用态 opacity ≥ 50 + `cursor-not-allowed`
+- [ ] 右键菜单使用 `<ContextMenu>` 组件（`@/components/ui/context-menu`）
+
+## UX 交互规范
+
+### 破坏性操作保护
+
+- 删除操作必须弹 `useConfirmStore` 确认弹窗，消息用 `t('common.confirm_delete', { name })`
+- 编辑弹窗/表单关闭前，对比快照检测变更，有改动则弹确认
+- 禁止使用浏览器 `alert()` / `confirm()` — 统一用自定义弹窗
+
+```tsx
+// 编辑弹窗模式：打开时存快照，关闭时比对
+const snapshot = useRef<string>('')
+const openEdit = (item) => { setEditItem(item); snapshot.current = JSON.stringify(item) }
+const closeEdit = async () => {
+  if (JSON.stringify(editItem) !== snapshot.current) {
+    const ok = await confirm(t('common.confirm_discard'), { title: t('common.close_confirm'), kind: 'warning' })
+    if (!ok) return
+  }
+  setEditItem(null)
+}
+```
+
+### 空状态
+
+所有列表/表格/面板的空数据展示统一使用 `<EmptyState>` 组件：
+
+```tsx
+import { EmptyState } from '@/components/ui/empty-state'
+<EmptyState icon={Clock} title="暂无数据" description="补充说明文字" />
+```
+
+**禁止**各组件自行编写空状态 div。
+
+### 按钮尺寸收敛
+
+只使用两档按钮尺寸：
+
+| 场景 | size | 高度 |
+|------|------|------|
+| 表单操作、工具栏 | `sm` | h-8 |
+| 主操作、页面级按钮 | `default` | h-9 |
+
+禁止使用 `h-6`、`h-7` 等自定义高度。
+
+### Split Button（按钮带下拉）
+
+当一个按钮需要附带下拉菜单时，下拉区域必须是按钮的**内部子元素**，不能是独立按钮。
+
+```tsx
+// 正确：下拉箭头在 Button 内部
+<Button onClick={action} size="sm" className="pr-0">
+  <Play className="h-3.5 w-3.5" /> 运行
+  <span role="button" onClick={(e) => { e.stopPropagation(); toggle() }}
+    className="ml-1 pl-1.5 pr-2 h-full flex items-center border-l border-primary-foreground/20">
+    <ChevronDown className="h-3 w-3" />
+  </span>
+</Button>
+
+// 错误：两个独立元素拼接（圆角/背景不一致）
+<Button className="rounded-r-none">运行</Button>
+<button className="rounded-r-xl bg-primary">▼</button>
+```
+
+### 表格信息密度
+
+- 表格列数 ≤ 6 列（含操作列）
+- 低价值列（大多为空的 DESCRIPTION 等）不独占列，放到展开行或 tooltip 中
+- 数值列统一 `tabular-nums` 等宽数字
+- 表头用 `text-xs text-muted-foreground uppercase` 而非 `text-[10px]`
+
+### i18n 规范
+
+- 所有用户可见的文本必须使用 `t()` 调用
+- 翻译 key 结构：`<页面>.<用途>`，如 `dashboard.run_all`、`common.confirm_delete`
+- 带参数的翻译：`t('common.confirm_delete', { name })`，JSON 中用 `{{name}}` 占位
+- **禁止**模板字符串嵌套 `t()` 调用：`` `{t('key')}` `` 语法错误，应直接写 `t('key')`

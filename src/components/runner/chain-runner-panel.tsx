@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Play, Loader2, CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Link2 } from 'lucide-react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
@@ -6,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import type { ChainResult, ChainProgress, ChainStepResult } from '@/types'
 import { formatDuration } from '@/lib/formatters'
+import { EmptyState } from '@/components/ui/empty-state'
 
 interface Props {
   itemId: string
@@ -21,6 +23,7 @@ const STATUS_CONFIG: Record<string, { icon: React.ReactNode; color: string; labe
 }
 
 export default function ChainRunnerPanel({ itemId, itemName }: Props) {
+  const { t } = useTranslation()
   const [running, setRunning] = useState(false)
   const [result, setResult] = useState<ChainResult | null>(null)
   const [progress, setProgress] = useState<ChainProgress | null>(null)
@@ -85,7 +88,7 @@ export default function ChainRunnerPanel({ itemId, itemName }: Props) {
         </div>
         <Button onClick={handleRun} disabled={running} size="sm" className="gap-1.5">
           {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-          {running ? '执行中...' : '运行链'}
+          {running ? t('runner.running') : t('runner.run_chain')}
         </Button>
       </div>
 
@@ -171,9 +174,7 @@ export default function ChainRunnerPanel({ itemId, itemName }: Props) {
 
       {/* 空状态 */}
       {!running && !result && (
-        <div className="text-center py-16 text-muted-foreground text-sm">
-          点击"运行链"按顺序执行请求，变量在步骤间自动传递
-        </div>
+        <EmptyState icon={Link2} title="点击「运行链」开始执行" description="按顺序执行请求，变量在步骤间自动传递" />
       )}
     </div>
   )

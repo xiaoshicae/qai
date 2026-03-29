@@ -17,6 +17,7 @@ import EnvSelector from '@/components/layout/env-selector'
 import { formatDuration } from '@/lib/formatters'
 import KeyValueTable from '@/components/request/key-value-table'
 import { Progress } from '@/components/ui/progress'
+import { EmptyState } from '@/components/ui/empty-state'
 import { useConfirmStore } from '@/components/ui/confirm-dialog'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from '@/components/ui/dialog'
 import { useCollectionStore } from '@/stores/collection-store'
@@ -52,6 +53,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
   const [detailData, setDetailData] = useState<Record<string, CollectionItem>>({})
   const [editReq, setEditReq] = useState<CollectionItem | null>(null)
+  const editReqSnapshot = useRef<string>('')
   const [isNewReq, setIsNewReq] = useState(false)
   const [runMode, setRunMode] = useState<'concurrent' | 'sequential'>('concurrent')
   const [concurrency, setConcurrency] = useState(5)
@@ -224,6 +226,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
       created_at: '',
       updated_at: '',
     })
+    editReqSnapshot.current = ''
   }
 
   // 添加链：简单弹框只填名称+描述
@@ -254,7 +257,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
       collection_id: collection.id,
       parent_id: chainId,
       type: 'request',
-      name: '新步骤',
+      name: t('common.new_step'),
       sort_order: 0,
       method: 'POST',
       url: '',
@@ -270,12 +273,13 @@ export default function CollectionOverview({ collection, tree }: Props) {
       created_at: '',
       updated_at: '',
     } as CollectionItem)
+    editReqSnapshot.current = ''
   }
 
   // 删除链
   const deleteChain = async (id: string, name: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    const ok = await confirm(`{t('common.confirm_delete', { name: ${name} })}`, { title: t('common.delete'), kind: 'warning' })
+    const ok = await confirm(t('common.confirm_delete', { name }), { title: t('common.delete'), kind: 'warning' })
     if (!ok) return
     await invoke('delete_item', { id })
     await loadTree(collection.id)
@@ -288,7 +292,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
   // 删除测试用例
   const deleteRequest = async (id: string, name: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    const ok = await confirm(`{t('common.confirm_delete', { name: ${name} })}`, { title: t('common.delete'), kind: 'warning' })
+    const ok = await confirm(t('common.confirm_delete', { name }), { title: t('common.delete'), kind: 'warning' })
     if (!ok) return
     await invoke('delete_item', { id })
     await loadTree(collection.id)
@@ -305,7 +309,24 @@ export default function CollectionOverview({ collection, tree }: Props) {
       const req = await invoke<CollectionItem>('get_item', { id })
       setIsNewReq(false)
       setEditReq(req)
+      editReqSnapshot.current = JSON.stringify(req)
     } catch {}
+  }
+
+  // 关闭编辑弹窗（有变更时确认）
+  const closeEditDialog = async () => {
+    if (editReq) {
+      const current = JSON.stringify(editReq)
+      const hasChanges = isNewReq
+        ? !!(editReq.name || editReq.url || editReq.body_content)
+        : current !== editReqSnapshot.current
+      if (hasChanges) {
+        const ok = await confirm(t('common.confirm_discard'), { title: t('common.close_confirm'), kind: 'warning' })
+        if (!ok) return
+      }
+    }
+    setEditReq(null)
+    setIsNewReq(false)
   }
 
   // 保存编辑
@@ -360,7 +381,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
       setIsNewReq(false)
     } catch (e: any) {
       console.error('保存失败:', e)
-      setError(typeof e === 'string' ? e : e.message || '保存失败')
+      setError(typeof e === 'string' ? e : e.message || t('common.save_failed'))
     }
   }
 
@@ -429,41 +450,48 @@ export default function CollectionOverview({ collection, tree }: Props) {
             <Square className="h-3 w-3" /> {t('dashboard.stop')}
           </Button>
         ) : (
-          <div className="relative">
-            <Button onClick={runAll} size="sm" className="gap-1.5 pr-1">
+          <div className="relative flex items-center">
+            <Button onClick={runAll} size="sm" className="gap-1.5 pr-0 rounded-r-none border-r-0">
               <Play className="h-3.5 w-3.5" /> {t('dashboard.run_all')}
-              <span className="w-px h-4 bg-primary-foreground/20 mx-0.5" />
-              <span onClick={(e) => { e.stopPropagation(); setShowRunSettings(!showRunSettings) }} className="p-0.5 rounded hover:bg-primary-foreground/10 cursor-pointer">
-                <ChevronDown className="h-3 w-3" />
+              <span
+                role="button"
+                onClick={(e) => { e.stopPropagation(); setShowRunSettings(!showRunSettings) }}
+                className="ml-1 pl-1.5 pr-2 h-full flex items-center border-l border-primary-foreground/20 hover:bg-primary-foreground/10 rounded-r-lg transition-colors"
+                title={runMode === 'concurrent' ? `${t('dashboard.concurrent')} ×${concurrency}` : `${t('dashboard.sequential')}${delayMs ? ` ${delayMs / 1000}s` : ''}`}
+              >
+                <ChevronDown className={`h-3 w-3 transition-transform ${showRunSettings ? 'rotate-180' : ''}`} />
               </span>
             </Button>
+            {/* 当前模式标签 */}
+            <span className="ml-2 text-[10px] text-muted-foreground tabular-nums">
+              {runMode === 'concurrent' ? <><Zap className="h-3 w-3 inline -mt-px" /> ×{concurrency}</> : <><ListOrdered className="h-3 w-3 inline -mt-px" />{delayMs ? ` ${delayMs / 1000}s` : ''}</>}
+            </span>
             {showRunSettings && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowRunSettings(false)} />
-                <div className="absolute top-full left-0 mt-1 z-50 w-56 rounded-lg border border-overlay/[0.1] bg-background shadow-xl p-1.5 space-y-1">
-                  <button onClick={() => setRunMode('concurrent')} className={`flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs cursor-pointer transition-colors ${runMode === 'concurrent' ? 'bg-primary/10 text-primary' : 'hover:bg-overlay/[0.04]'}`}>
+                <div className="absolute top-full left-0 mt-1 z-50 w-52 rounded-xl glass-card p-1.5 shadow-2xl space-y-0.5">
+                  <button onClick={() => setRunMode('concurrent')} className={`flex items-center gap-2 w-full px-2.5 py-2 rounded-lg text-xs cursor-pointer transition-colors ${runMode === 'concurrent' ? 'bg-overlay/[0.08] text-foreground' : 'text-muted-foreground hover:bg-overlay/[0.04]'}`}>
                     <Zap className="h-3.5 w-3.5" /> {t('dashboard.concurrent')}
                   </button>
                   {runMode === 'concurrent' && (
-                    <div className="px-2.5 py-2 border-t border-overlay/[0.06] mt-1 space-y-1.5">
-                      <div className="text-[10px] text-muted-foreground">并发度</div>
+                    <div className="px-2.5 py-2 space-y-1.5">
                       <div className="flex gap-1">
                         {[1, 3, 5, 10, 20].map((n) => (
-                          <button key={n} onClick={() => setConcurrency(n)} className={`px-2 py-1 rounded text-[10px] cursor-pointer transition-colors ${concurrency === n ? 'bg-primary/15 text-primary font-medium' : 'text-muted-foreground hover:bg-overlay/[0.04]'}`}>{n}</button>
+                          <button key={n} onClick={() => setConcurrency(n)} className={`px-2.5 py-1 rounded-md text-[10px] cursor-pointer transition-colors ${concurrency === n ? 'bg-primary/15 text-primary font-medium' : 'text-muted-foreground hover:bg-overlay/[0.04]'}`}>{n}</button>
                         ))}
                       </div>
                     </div>
                   )}
-                  <button onClick={() => setRunMode('sequential')} className={`flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs cursor-pointer transition-colors ${runMode === 'sequential' ? 'bg-primary/10 text-primary' : 'hover:bg-overlay/[0.04]'}`}>
+                  <div className="h-px bg-overlay/[0.06]" />
+                  <button onClick={() => setRunMode('sequential')} className={`flex items-center gap-2 w-full px-2.5 py-2 rounded-lg text-xs cursor-pointer transition-colors ${runMode === 'sequential' ? 'bg-overlay/[0.08] text-foreground' : 'text-muted-foreground hover:bg-overlay/[0.04]'}`}>
                     <ListOrdered className="h-3.5 w-3.5" /> {t('dashboard.sequential')}
                   </button>
                   {runMode === 'sequential' && (
-                    <div className="px-2.5 py-2 border-t border-overlay/[0.06] mt-1 space-y-1.5">
-                      <div className="text-[10px] text-muted-foreground">请求间隔</div>
-                      <div className="flex gap-1">
+                    <div className="px-2.5 py-2 space-y-1.5">
+                      <div className="flex gap-1 flex-wrap">
                         {[0, 1000, 2000, 3000, 5000, 10000].map((ms) => (
-                          <button key={ms} onClick={() => setDelayMs(ms)} className={`px-2 py-1 rounded text-[10px] cursor-pointer transition-colors ${delayMs === ms ? 'bg-primary/15 text-primary font-medium' : 'text-muted-foreground hover:bg-overlay/[0.04]'}`}>
-                            {ms === 0 ? '无' : `${ms / 1000}s`}
+                          <button key={ms} onClick={() => setDelayMs(ms)} className={`px-2.5 py-1 rounded-md text-[10px] cursor-pointer transition-colors ${delayMs === ms ? 'bg-primary/15 text-primary font-medium' : 'text-muted-foreground hover:bg-overlay/[0.04]'}`}>
+                            {ms === 0 ? t('common.none') : `${ms / 1000}s`}
                           </button>
                         ))}
                       </div>
@@ -490,12 +518,12 @@ export default function CollectionOverview({ collection, tree }: Props) {
 
       {/* 场景表格 */}
       <div className="rounded-xl border border-overlay/[0.06] overflow-hidden">
-        <div className="grid grid-cols-[minmax(0,1.5fr)_minmax(0,2fr)_56px_68px_56px_64px_64px] gap-2 px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 border-b border-overlay/[0.04]">
-          <span>SCENARIO</span><span>DESCRIPTION</span><span>EXPECT</span><span>STATUS</span><span>HTTP</span><span>TOTAL</span><span />
+        <div className="grid grid-cols-[minmax(0,1fr)_80px_80px_64px_72px] gap-2 px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 border-b border-overlay/[0.04]">
+          <span>{t('scenario.scenario')}</span><span>{t('scenario.status')}</span><span>{t('scenario.http')}</span><span>{t('scenario.total_time')}</span><span />
         </div>
         <div className="max-h-[calc(100vh-420px)] overflow-y-auto divide-y divide-overlay/[0.04]">
           {tableItems.length === 0 ? (
-            <div className="px-4 py-12 text-center text-sm text-muted-foreground">暂无测试用例，点击"添加用例"创建</div>
+            <EmptyState title={t('dashboard.no_cases')} className="py-12" />
           ) : tableItems.map((item, itemIdx) => {
             if ('isChain' in item) {
               // ─── Chain Group ───
@@ -509,19 +537,17 @@ export default function CollectionOverview({ collection, tree }: Props) {
                 <div key={`group-${itemIdx}`}>
                   {/* Group 头 */}
                   <div
-                    className="grid grid-cols-[minmax(0,1.5fr)_minmax(0,2fr)_56px_68px_56px_64px_64px] gap-2 px-4 py-2.5 text-sm bg-amber-500/5 hover:bg-amber-500/10 cursor-pointer transition-colors group"
+                    className="grid grid-cols-[minmax(0,1fr)_80px_80px_64px_72px] gap-2 px-4 py-2.5 text-sm bg-amber-500/5 hover:bg-amber-500/10 cursor-pointer transition-colors group"
                     onClick={() => { const key = `group-${itemIdx}`; setExpandedRows((p) => { const n = new Set(p); n.has(key) ? n.delete(key) : n.add(key); return n }) }}
                   >
                     <span className="flex items-center gap-1.5 min-w-0">
                       {groupExpanded ? <ChevronDown className="h-3 w-3 shrink-0 text-amber-500" /> : <ChevronRight className="h-3 w-3 shrink-0 text-amber-500" />}
                       <Link2 className="h-3 w-3 shrink-0 text-amber-500" />
                       <span className="font-medium truncate text-amber-500/90">{item.groupName}</span>
-                      <span className="text-[10px] text-amber-500/50 ml-1">{item.steps.length} steps</span>
+                      <span className="text-[10px] text-amber-500/50 ml-1">{item.steps.length} {t('scenario.steps')}</span>
                     </span>
-                    <span className="text-muted-foreground truncate text-xs self-center">multi-step</span>
-                    <span className="font-mono text-xs self-center">-</span>
                     <span className={`flex items-center gap-1 font-bold text-xs ${groupColor}`}>{groupLabel}</span>
-                    <span />
+                    <span className="font-mono text-xs self-center">-</span>
                     <span />
                     <span className="flex items-center justify-end gap-0.5" onClick={(e) => e.stopPropagation()}>
                       <button className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 hover:bg-muted transition-all cursor-pointer" onClick={() => addChainStep(item.groupId)} title="添加步骤">
@@ -546,11 +572,11 @@ export default function CollectionOverview({ collection, tree }: Props) {
       </div>
 
       {/* 编辑弹窗 */}
-      <Dialog open={!!editReq} onOpenChange={() => { setEditReq(null); setIsNewReq(false) }}>
+      <Dialog open={!!editReq} onOpenChange={async (open) => { if (!open) await closeEditDialog() }}>
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-          <DialogClose onClose={() => { setEditReq(null); setIsNewReq(false) }} />
-          <DialogHeader><DialogTitle>{isNewReq ? '新建测试用例' : '编辑测试用例'}</DialogTitle></DialogHeader>
-          {editReq && <EditForm req={editReq} onChange={setEditReq} onSave={saveEdit} onCancel={() => { setEditReq(null); setIsNewReq(false) }} envVars={envVars} />}
+          <DialogClose onClose={closeEditDialog} />
+          <DialogHeader><DialogTitle>{isNewReq ? t('edit.new_case') : t('edit.edit_case')}</DialogTitle></DialogHeader>
+          {editReq && <EditForm req={editReq} onChange={setEditReq} onSave={saveEdit} onCancel={closeEditDialog} envVars={envVars} />}
         </DialogContent>
       </Dialog>
 
@@ -955,17 +981,17 @@ function ScenarioRow({ r, stepLabel, indent, envVars = {}, getResult, getStatus:
 
   return (
     <div>
-      <div className={`grid grid-cols-[minmax(0,1.5fr)_minmax(0,2fr)_56px_68px_56px_64px_64px] gap-2 px-4 py-2.5 text-sm hover:bg-overlay/[0.03] cursor-pointer transition-colors group ${indent ? 'pl-10 bg-overlay/[0.02]' : ''}`} onClick={() => toggleRow(r.id)}>
+      <div className={`grid grid-cols-[minmax(0,1fr)_80px_80px_64px_72px] gap-2 px-4 py-2.5 text-sm hover:bg-overlay/[0.03] cursor-pointer transition-colors group ${indent ? 'pl-10 bg-overlay/[0.02]' : ''}`} onClick={() => toggleRow(r.id)}>
         <span className="flex items-center gap-1.5 min-w-0">
           {expanded ? <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" /> : <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" />}
           {stepLabel && <span className="text-[10px] text-amber-500/70 font-mono shrink-0">{stepLabel}</span>}
           <span className="font-medium truncate">{r.name}</span>
         </span>
-        <span className="text-muted-foreground truncate text-xs self-center">{r.folder || '-'}</span>
-        <span className="font-mono text-xs self-center">{r.expect_status || 200}</span>
         <span className={`flex items-center gap-1 font-bold text-xs ${sd.color}`}>{sd.icon}{sd.label}</span>
-        <span className="font-mono text-xs self-center">
-          {resp ? <span className={resp.status < 300 ? 'text-emerald-500' : resp.status < 400 ? 'text-amber-500' : 'text-red-500'}>{resp.status}</span> : '-'}
+        <span className="font-mono text-xs self-center tabular-nums">
+          {resp
+            ? <span className={resp.status < 300 ? 'text-emerald-500' : resp.status < 400 ? 'text-amber-500' : 'text-red-500'}>{resp.status}</span>
+            : <span className="text-muted-foreground">{r.expect_status || 200}</span>}
         </span>
         <span className="text-xs text-muted-foreground self-center tabular-nums">{resp ? formatDuration(resp.time_ms) : old ? formatDuration(old.response_time_ms) : '-'}</span>
         <span className="flex items-center justify-end gap-0.5" onClick={(e) => e.stopPropagation()}>
@@ -1173,6 +1199,7 @@ function PollConfigEditor({ value, onChange }: {
   value: { field: string; target: string; interval_seconds: number; max_seconds: number } | null
   onChange: (cfg: { field: string; target: string; interval_seconds: number; max_seconds: number } | null) => void
 }) {
+  const { t } = useTranslation()
   const enabled = value !== null
 
   const toggle = () => {
@@ -1196,7 +1223,7 @@ function PollConfigEditor({ value, onChange }: {
           onClick={toggle}
           className={`px-2 py-0.5 rounded-md text-[10px] font-medium cursor-pointer transition-colors ${enabled ? 'bg-amber-500/15 text-amber-500' : 'bg-overlay/[0.04] text-muted-foreground hover:text-foreground'}`}
         >
-          {enabled ? '已启用' : '未启用'}
+          {enabled ? t('assertion.enabled') : t('assertion.disabled')}
         </button>
       </div>
       {enabled && value && (

@@ -225,7 +225,7 @@ export default function Sidebar() {
   const openGroupMenu = (e: React.MouseEvent, groupId: string) => { e.stopPropagation(); const rect = (e.currentTarget as HTMLElement).getBoundingClientRect(); setMenu({ x: rect.right + 4, y: rect.top, target: 'group', groupId }) }
   const openColMenu = (e: React.MouseEvent, col: Collection) => { e.stopPropagation(); const rect = (e.currentTarget as HTMLElement).getBoundingClientRect(); setMenu({ x: rect.right + 4, y: rect.top, target: 'col', col }) }
 
-  const handleGroupAddSuite = () => { if (!menu?.groupId) return; setInlineInput({ parentGroupId: menu.groupId, type: 'suite' }); setInlineValue('新测试集'); setExpanded((prev) => new Set(prev).add(menu.groupId!)); setMenu(null) }
+  const handleGroupAddSuite = () => { if (!menu?.groupId) return; setInlineInput({ parentGroupId: menu.groupId, type: 'suite' }); setInlineValue(t('common.new_test_suite')); setExpanded((prev) => new Set(prev).add(menu.groupId!)); setMenu(null) }
   const handleGroupAddSubGroup = () => { if (!menu?.groupId) return; setInlineInput({ parentGroupId: menu.groupId, type: 'group' }); setInlineValue(''); setExpanded((prev) => new Set(prev).add(menu.groupId!)); setMenu(null) }
 
   const commitInline = async () => {
@@ -263,7 +263,7 @@ export default function Sidebar() {
     await deleteGroup(groupId)
   }
 
-  const handleColAddCase = async () => { if (!menu?.col) return; const col = menu.col; setMenu(null); await invoke('create_item', { collectionId: col.id, parentId: null, itemType: 'request', name: '新测试用例', method: 'POST' }); await loadTree(col.id); handleSelect(col) }
+  const handleColAddCase = async () => { if (!menu?.col) return; const col = menu.col; setMenu(null); await invoke('create_item', { collectionId: col.id, parentId: null, itemType: 'request', name: t('common.new_test_case'), method: 'POST' }); await loadTree(col.id); handleSelect(col) }
   const handleColRename = () => { if (!menu?.col) return; setRenamingId(menu.col.id); setRenameValue(menu.col.name); setMenu(null) }
   const handleColDelete = async () => { if (!menu?.col) return; const name = menu.col.name; setMenu(null); const ok = await confirm(t('common.confirm_delete', { name }), { title: t('common.delete'), kind: 'warning' }); if (!ok) return; await deleteCollection(menu.col.id) }
   const commitRename = async () => {
@@ -413,6 +413,7 @@ interface GroupTreeNodeProps {
 }
 
 function GroupTreeNode(props: GroupTreeNodeProps) {
+  const { t } = useTranslation()
   const { node, level, expanded, selectedNodeId, renamingId, renameValue, inlineInput, inlineValue, onToggle, onSelect, onGroupMenu, onColMenu, onRenameChange, onRenameCommit, onRenameCancel, onInlineChange, onInlineCommit, onInlineCancel } = props
   const isExpanded = expanded.has(node.group.id)
   const total = countAll(node)
@@ -465,7 +466,7 @@ function GroupTreeNode(props: GroupTreeNodeProps) {
 
           {inlineInput && inlineInput.parentGroupId === node.group.id && (
             <div style={{ paddingLeft: `${(level + 1) * 12 + 8}px` }} className="pr-2 py-1">
-              <Input value={inlineValue} onChange={(e) => onInlineChange(e.target.value)} onBlur={onInlineCommit} onKeyDown={(e) => { if (e.key === 'Enter') onInlineCommit(); if (e.key === 'Escape') onInlineCancel() }} placeholder={inlineInput.type === 'suite' ? '测试集名称' : '子分组名称'} className="h-5 text-xs py-0 px-1" autoFocus />
+              <Input value={inlineValue} onChange={(e) => onInlineChange(e.target.value)} onBlur={onInlineCommit} onKeyDown={(e) => { if (e.key === 'Enter') onInlineCommit(); if (e.key === 'Escape') onInlineCancel() }} placeholder={inlineInput.type === 'suite' ? t('common.suite_name_placeholder') : t('common.subgroup_name_placeholder')} className="h-5 text-xs py-0 px-1" autoFocus />
             </div>
           )}
         </>

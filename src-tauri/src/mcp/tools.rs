@@ -167,7 +167,16 @@ pub fn call_tool(conn: &Connection, name: &str, args: &Value) -> Result<String, 
             let expect_status = args.get("expect_status").and_then(|v| v.as_u64()).map(|v| v as u16);
 
             let updated = qai_lib::db::item::update(
-                conn, &item.id, None, None, url, headers, None, body_type, body_content, None, description, expect_status, None, None,
+                conn, &item.id,
+                &qai_lib::models::item::UpdateItemPayload {
+                    url: url.map(|s| s.to_string()),
+                    headers: headers.map(|s| s.to_string()),
+                    body_type: body_type.map(|s| s.to_string()),
+                    body_content: body_content.map(|s| s.to_string()),
+                    description: description.map(|s| s.to_string()),
+                    expect_status,
+                    ..Default::default()
+                },
             ).map_err(|e| e.to_string())?;
 
             Ok(serde_json::to_string_pretty(&updated).unwrap())
@@ -177,18 +186,17 @@ pub fn call_tool(conn: &Connection, name: &str, args: &Value) -> Result<String, 
             let id = get_str(args, "id")?;
             let updated = qai_lib::db::item::update(
                 conn, &id,
-                args.get("name").and_then(|v| v.as_str()),
-                args.get("method").and_then(|v| v.as_str()),
-                args.get("url").and_then(|v| v.as_str()),
-                args.get("headers").and_then(|v| v.as_str()),
-                None,
-                args.get("body_type").and_then(|v| v.as_str()),
-                args.get("body_content").and_then(|v| v.as_str()),
-                None,
-                args.get("description").and_then(|v| v.as_str()),
-                args.get("expect_status").and_then(|v| v.as_u64()).map(|v| v as u16),
-                None,
-                None,
+                &qai_lib::models::item::UpdateItemPayload {
+                    name: args.get("name").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    method: args.get("method").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    url: args.get("url").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    headers: args.get("headers").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    body_type: args.get("body_type").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    body_content: args.get("body_content").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    description: args.get("description").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    expect_status: args.get("expect_status").and_then(|v| v.as_u64()).map(|v| v as u16),
+                    ..Default::default()
+                },
             ).map_err(|e| e.to_string())?;
             Ok(serde_json::to_string_pretty(&updated).unwrap())
         }

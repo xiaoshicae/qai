@@ -6,7 +6,7 @@ import AIPanel from '@/components/ai/ai-panel'
 import TerminalPanel from '@/components/terminal/terminal-panel'
 import { useAIStore } from '@/stores/ai-store'
 
-function useResizable(initial: number, min: number, max: number) {
+function useResizable(initial: number, min: number, max: number, reverse = false) {
   const [width, setWidth] = useState(initial)
   const dragging = useRef(false)
   const startX = useRef(0)
@@ -20,7 +20,9 @@ function useResizable(initial: number, min: number, max: number) {
 
     const onMouseMove = (ev: MouseEvent) => {
       if (!dragging.current) return
-      const delta = ev.clientX - startX.current
+      const delta = reverse
+        ? startX.current - ev.clientX
+        : ev.clientX - startX.current
       setWidth(Math.min(max, Math.max(min, startW.current + delta)))
     }
     const onMouseUp = () => {
@@ -34,40 +36,7 @@ function useResizable(initial: number, min: number, max: number) {
     document.addEventListener('mouseup', onMouseUp)
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
-  }, [width, min, max])
-
-  return { width, onMouseDown }
-}
-
-function useResizableRight(initial: number, min: number, max: number) {
-  const [width, setWidth] = useState(initial)
-  const dragging = useRef(false)
-  const startX = useRef(0)
-  const startW = useRef(0)
-
-  const onMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    dragging.current = true
-    startX.current = e.clientX
-    startW.current = width
-
-    const onMouseMove = (ev: MouseEvent) => {
-      if (!dragging.current) return
-      const delta = startX.current - ev.clientX
-      setWidth(Math.min(max, Math.max(min, startW.current + delta)))
-    }
-    const onMouseUp = () => {
-      dragging.current = false
-      document.removeEventListener('mousemove', onMouseMove)
-      document.removeEventListener('mouseup', onMouseUp)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-    }
-    document.addEventListener('mousemove', onMouseMove)
-    document.addEventListener('mouseup', onMouseUp)
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
-  }, [width, min, max])
+  }, [width, min, max, reverse])
 
   return { width, onMouseDown }
 }
@@ -76,7 +45,7 @@ export default function AppLayout() {
   const { open, setOpen } = useAIStore()
   const [panelMode, setPanelMode] = useState<'ai' | 'terminal'>('ai')
   const sidebar = useResizable(280, 200, 450)
-  const aiPanel = useResizableRight(380, 280, 600)
+  const aiPanel = useResizable(380, 280, 600, true)
 
   const openTerminal = () => { setPanelMode('terminal'); setOpen(true) }
   const openAI = () => { setPanelMode('ai'); setOpen(true) }

@@ -89,31 +89,46 @@ pub fn delete(conn: &Connection, id: &str) -> Result<(), rusqlite::Error> {
 /// 构建集合树（从 collection_items 读取）
 pub fn get_tree(conn: &Connection, collection_id: &str) -> Result<CollectionTreeNode, rusqlite::Error> {
     let collection = get(conn, collection_id)?;
-
     let items = crate::db::item::list_by_collection(conn, collection_id)?;
 
-    fn build_children(parent_id: Option<&str>, all_items: &[CollectionItem]) -> Vec<CollectionTreeNode> {
-        let mut children: Vec<CollectionTreeNode> = Vec::new();
-        for item in all_items.iter().filter(|i| i.parent_id.as_deref() == parent_id) {
-            let node_type = match item.item_type.as_str() {
-                "folder" => TreeNodeType::Folder,
-                "chain" => TreeNodeType::Chain,
-                _ => TreeNodeType::Request,
-            };
-            let is_container = item.item_type != "request";
-            children.push(CollectionTreeNode {
-                id: item.id.clone(),
-                name: item.name.clone(),
-                node_type,
-                method: if is_container { None } else { Some(item.method.clone()) },
-                expect_status: if is_container { None } else { Some(item.expect_status) },
-                children: if is_container { build_children(Some(&item.id), all_items) } else { vec![] },
-            });
-        }
-        children.sort_by_key(|c| {
-            all_items.iter().find(|i| i.id == c.id).map(|i| i.sort_order).unwrap_or(0)
+    // 按 parent_id 预分组，O(N) 构建
+    let mut children_map: std::collections::HashMap<Option<String>, Vec<&CollectionItem>> =
+        std::collections::HashMap::new();
+    for item in &items {
+        children_map.entry(item.parent_id.clone()).or_default().push(item);
+    }
+
+    fn build_children(
+        parent_id: Option<&str>,
+        children_map: &std::collections::HashMap<Option<String>, Vec<&CollectionItem>>,
+    ) -> Vec<CollectionTreeNode> {
+        let key = parent_id.map(|s| s.to_string());
+        let Some(children) = children_map.get(&key) else {
+            return vec![];
+        };
+        let mut nodes: Vec<CollectionTreeNode> = children
+            .iter()
+            .map(|item| {
+                let node_type = match item.item_type.as_str() {
+                    crate::models::item_type::FOLDER => TreeNodeType::Folder,
+                    crate::models::item_type::CHAIN => TreeNodeType::Chain,
+                    _ => TreeNodeType::Request,
+                };
+                let is_container = item.item_type != crate::models::item_type::REQUEST;
+                CollectionTreeNode {
+                    id: item.id.clone(),
+                    name: item.name.clone(),
+                    node_type,
+                    method: if is_container { None } else { Some(item.method.clone()) },
+                    expect_status: if is_container { None } else { Some(item.expect_status) },
+                    children: if is_container { build_children(Some(&item.id), children_map) } else { vec![] },
+                }
+            })
+            .collect();
+        nodes.sort_by_key(|n| {
+            children.iter().find(|i| i.id == n.id).map(|i| i.sort_order).unwrap_or(0)
         });
-        children
+        nodes
     }
 
     Ok(CollectionTreeNode {
@@ -122,6 +137,6 @@ pub fn get_tree(conn: &Connection, collection_id: &str) -> Result<CollectionTree
         node_type: TreeNodeType::Collection,
         method: None,
         expect_status: None,
-        children: build_children(None, &items),
+        children: build_children(None, &children_map),
     })
 }

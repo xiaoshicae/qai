@@ -19,7 +19,7 @@ interface CollectionState {
   createGroup: (name: string, parentId?: string | null) => Promise<Group>
   updateGroup: (id: string, name: string) => Promise<void>
   deleteGroup: (id: string) => Promise<void>
-  selectNode: (nodeId: string) => void
+  selectNode: (nodeId: string | null) => void
 }
 
 function findNode(tree: CollectionTreeNode, id: string): CollectionTreeNode | null {
@@ -131,7 +131,8 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     }))
   },
 
-  selectNode: (nodeId: string) => {
+  selectNode: (nodeId: string | null) => {
+    if (!nodeId) { set({ selectedNodeId: null, selectedRequestId: null }); return }
     set({ selectedNodeId: nodeId })
     const { trees } = get()
     for (const tree of Object.values(trees)) {

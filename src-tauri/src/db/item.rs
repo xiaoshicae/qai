@@ -88,48 +88,37 @@ pub fn list_requests_by_collection(conn: &Connection, collection_id: &str) -> Re
 pub fn update(
     conn: &Connection,
     id: &str,
-    name: Option<&str>,
-    method: Option<&str>,
-    url: Option<&str>,
-    headers: Option<&str>,
-    query_params: Option<&str>,
-    body_type: Option<&str>,
-    body_content: Option<&str>,
-    extract_rules: Option<&str>,
-    description: Option<&str>,
-    expect_status: Option<u16>,
-    parent_id: Option<Option<&str>>,
-    protocol: Option<&str>,
+    payload: &crate::models::item::UpdateItemPayload,
 ) -> Result<CollectionItem, rusqlite::Error> {
     let mut sets: Vec<String> = Vec::new();
     let mut values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
     macro_rules! push_field {
         ($field:expr, $col:expr) => {
-            if let Some(v) = $field {
+            if let Some(ref v) = $field {
                 sets.push(format!("{} = ?{}", $col, values.len() + 1));
-                values.push(Box::new(v.to_string()));
+                values.push(Box::new(v.clone()));
             }
         };
     }
 
-    push_field!(name, "name");
-    push_field!(method, "method");
-    push_field!(url, "url");
-    push_field!(headers, "headers");
-    push_field!(query_params, "query_params");
-    push_field!(body_type, "body_type");
-    push_field!(body_content, "body_content");
-    push_field!(extract_rules, "extract_rules");
-    push_field!(description, "description");
-    push_field!(protocol, "protocol");
-    if let Some(es) = expect_status {
+    push_field!(payload.name, "name");
+    push_field!(payload.method, "method");
+    push_field!(payload.url, "url");
+    push_field!(payload.headers, "headers");
+    push_field!(payload.query_params, "query_params");
+    push_field!(payload.body_type, "body_type");
+    push_field!(payload.body_content, "body_content");
+    push_field!(payload.extract_rules, "extract_rules");
+    push_field!(payload.description, "description");
+    push_field!(payload.protocol, "protocol");
+    if let Some(es) = payload.expect_status {
         sets.push(format!("expect_status = ?{}", values.len() + 1));
         values.push(Box::new(es as i32));
     }
-    if let Some(pid) = parent_id {
+    if let Some(ref pid) = payload.parent_id {
         sets.push(format!("parent_id = ?{}", values.len() + 1));
-        values.push(Box::new(pid.map(|s| s.to_string())));
+        values.push(Box::new(pid.clone()));
     }
 
     if !sets.is_empty() {

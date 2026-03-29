@@ -10,13 +10,13 @@ pub fn generate_html_report(result: &BatchResult) -> String {
     let mut rows = String::new();
     for (i, r) in result.results.iter().enumerate() {
         let status_class = match r.status.as_str() {
-            "success" => "pass",
-            "failed" => "fail",
+            crate::models::status::SUCCESS => "pass",
+            crate::models::status::FAILED => "fail",
             _ => "error",
         };
         let status_label = match r.status.as_str() {
-            "success" => "PASS",
-            "failed" => "FAIL",
+            crate::models::status::SUCCESS => "PASS",
+            crate::models::status::FAILED => "FAIL",
             _ => "ERROR",
         };
         let time = r.response.as_ref().map(|resp| resp.time_ms).unwrap_or(0);

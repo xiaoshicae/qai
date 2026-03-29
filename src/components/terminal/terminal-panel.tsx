@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { Plus, X, ArrowUp, Square, Wrench, Slash, RotateCcw, Cpu, Zap, Brain, PlusCircle } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -24,6 +25,7 @@ interface ClaudeEvent {
 const THINKING_WORDS = ['Thinking...', 'Pondering...', 'Analyzing...', 'Reasoning...', 'Frolicking...']
 
 export default function TerminalPanel({ onClose }: Props) {
+  const { t } = useTranslation()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
@@ -152,7 +154,7 @@ export default function TerminalPanel({ onClose }: Props) {
             <ClaudeLogo size={28} />
             <p className="text-sm font-medium mt-3">Claude Code</p>
             <p className="text-xs text-muted-foreground mt-1.5 max-w-[240px] leading-relaxed">
-              {firstMessage ? '首次对话需要 10-30 秒初始化，后续秒回。' : '已就绪，描述你的需求。'}
+              {firstMessage ? t('claude.first_msg') : t('claude.ready')}
             </p>
           </div>
         )}
@@ -175,7 +177,7 @@ export default function TerminalPanel({ onClose }: Props) {
           <div className="flex items-center gap-2">
             <ClaudeLogo />
             <span className="text-sm text-[#D97757] animate-pulse">{thinkingWord}</span>
-            {firstMessage && <span className="text-[10px] text-muted-foreground/50">首次初始化中...</span>}
+            {firstMessage && <span className="text-[10px] text-muted-foreground/50">{t('claude.first_init')}</span>}
           </div>
         )}
       </div>
@@ -187,13 +189,13 @@ export default function TerminalPanel({ onClose }: Props) {
           <div className="relative z-50 mx-3 mb-1 rounded-xl border border-overlay/[0.1] bg-background shadow-2xl overflow-hidden">
             <div className="py-1">
               <div className="px-3 py-1 text-[10px] font-medium text-muted-foreground/50 uppercase">Context</div>
-              <ActionItem icon={<RotateCcw className="h-3.5 w-3.5" />} label="清空对话" onClick={() => { setShowActions(false); handleNewSession() }} />
+              <ActionItem icon={<RotateCcw className="h-3.5 w-3.5" />} label={t('claude.clear')} onClick={() => { setShowActions(false); handleNewSession() }} />
 
               <div className="h-px bg-overlay/[0.06] my-1" />
               <div className="px-3 py-1 text-[10px] font-medium text-muted-foreground/50 uppercase">Model</div>
-              <ActionItem icon={<Cpu className="h-3.5 w-3.5" />} label="切换模型..." onClick={() => { setShowActions(false); setInput('/model '); inputRef.current?.focus() }} />
-              <ActionItem icon={<Zap className="h-3.5 w-3.5" />} label="切换快速模式" onClick={() => { setShowActions(false); sendSlashCommand('/fast') }} />
-              <ActionItem icon={<Brain className="h-3.5 w-3.5" />} label="花费统计" onClick={() => { setShowActions(false); sendSlashCommand('/cost') }} />
+              <ActionItem icon={<Cpu className="h-3.5 w-3.5" />} label={t('claude.switch_model')} onClick={() => { setShowActions(false); setInput('/model '); inputRef.current?.focus() }} />
+              <ActionItem icon={<Zap className="h-3.5 w-3.5" />} label={t('claude.fast_mode')} onClick={() => { setShowActions(false); sendSlashCommand('/fast') }} />
+              <ActionItem icon={<Brain className="h-3.5 w-3.5" />} label={t('claude.cost')} onClick={() => { setShowActions(false); sendSlashCommand('/cost') }} />
             </div>
           </div>
         </>
@@ -206,13 +208,13 @@ export default function TerminalPanel({ onClose }: Props) {
           <div className="relative z-50 mx-3 mb-1 rounded-xl border border-overlay/[0.1] bg-background shadow-2xl overflow-hidden max-h-60 overflow-y-auto">
             <div className="py-1">
               {[
-                { cmd: '/compact', desc: '压缩上下文' },
-                { cmd: '/cost', desc: '查看花费统计' },
-                { cmd: '/model sonnet', desc: '切换到 Sonnet' },
-                { cmd: '/model opus', desc: '切换到 Opus' },
-                { cmd: '/model haiku', desc: '切换到 Haiku' },
-                { cmd: '/fast', desc: '切换快速模式' },
-                { cmd: '/help', desc: '帮助' },
+                { cmd: '/compact', desc: t('claude.slash_compact') },
+                { cmd: '/cost', desc: t('claude.slash_cost') },
+                { cmd: '/model sonnet', desc: 'Switch to Sonnet' },
+                { cmd: '/model opus', desc: 'Switch to Opus' },
+                { cmd: '/model haiku', desc: 'Switch to Haiku' },
+                { cmd: '/fast', desc: t('claude.fast_mode') },
+                { cmd: '/help', desc: t('claude.slash_help') },
               ].map((item) => (
                 <button
                   key={item.cmd}
@@ -236,7 +238,7 @@ export default function TerminalPanel({ onClose }: Props) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="描述你的需求..."
+            placeholder={t('claude.placeholder')}
             rows={1}
             disabled={sending}
             className="w-full px-3 py-2 pr-12 bg-transparent text-sm resize-none outline-none placeholder:text-muted-foreground/40 max-h-32 overflow-y-auto disabled:opacity-50"

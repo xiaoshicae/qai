@@ -6,7 +6,7 @@ use crate::models::group::Group;
 
 #[tauri::command]
 pub fn list_collections(db: State<'_, DbState>) -> Result<Vec<Collection>, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn()?;
     let result = crate::db::collection::list_all(&conn);
     match &result {
         Ok(cols) => log::info!("list_collections: {} collections loaded", cols.len()),
@@ -22,7 +22,7 @@ pub fn create_collection(
     description: String,
     group_id: Option<String>,
 ) -> Result<Collection, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn()?;
     crate::db::collection::create(&conn, &name, &description, group_id.as_deref())
         .map_err(|e| e.to_string())
 }
@@ -36,7 +36,7 @@ pub fn update_collection(
     group_id: Option<Option<String>>,
     sort_order: Option<i32>,
 ) -> Result<Collection, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn()?;
     let gid = group_id.map(|outer| outer.as_deref().map(|s| s.to_string()));
     let gid_ref = gid.as_ref().map(|o| o.as_deref());
     crate::db::collection::update(&conn, &id, name.as_deref(), description.as_deref(), gid_ref, sort_order)
@@ -45,13 +45,13 @@ pub fn update_collection(
 
 #[tauri::command]
 pub fn delete_collection(db: State<'_, DbState>, id: String) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn()?;
     crate::db::collection::delete(&conn, &id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn get_collection_tree(db: State<'_, DbState>, collection_id: String) -> Result<CollectionTreeNode, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn()?;
     crate::db::collection::get_tree(&conn, &collection_id).map_err(|e| e.to_string())
 }
 
@@ -59,7 +59,7 @@ pub fn get_collection_tree(db: State<'_, DbState>, collection_id: String) -> Res
 
 #[tauri::command]
 pub fn list_groups(db: State<'_, DbState>) -> Result<Vec<Group>, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn()?;
     crate::db::group::list_all(&conn).map_err(|e| e.to_string())
 }
 
@@ -69,7 +69,7 @@ pub fn create_group(
     name: String,
     parent_id: Option<String>,
 ) -> Result<Group, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn()?;
     crate::db::group::create(&conn, &name, parent_id.as_deref())
         .map_err(|e| e.to_string())
 }
@@ -82,7 +82,7 @@ pub fn update_group(
     parent_id: Option<Option<String>>,
     sort_order: Option<i32>,
 ) -> Result<Group, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn()?;
     let pid = parent_id.map(|outer| outer.as_deref().map(|s| s.to_string()));
     let pid_ref = pid.as_ref().map(|o| o.as_deref());
     crate::db::group::update(&conn, &id, name.as_deref(), pid_ref, sort_order)
@@ -91,7 +91,7 @@ pub fn update_group(
 
 #[tauri::command]
 pub fn delete_group(db: State<'_, DbState>, id: String) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn()?;
     crate::db::group::delete(&conn, &id).map_err(|e| e.to_string())
 }
 
@@ -114,7 +114,7 @@ pub fn reorder_sidebar(
     groups: Vec<GroupOrder>,
     collections: Vec<CollectionOrder>,
 ) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn()?;
     for g in &groups {
         conn.execute(
             "UPDATE groups SET sort_order = ?1 WHERE id = ?2",

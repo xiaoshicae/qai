@@ -43,8 +43,14 @@ fn test_item_crud() {
 
     let updated = qai_lib::db::item::update(
         &conn, &item.id,
-        Some("List Users"), Some("POST"), Some("http://example.com/users"),
-        None, None, Some("json"), Some(r#"{"page":1}"#), None, None, None, None, None,
+        &qai_lib::models::item::UpdateItemPayload {
+            name: Some("List Users".into()),
+            method: Some("POST".into()),
+            url: Some("http://example.com/users".into()),
+            body_type: Some("json".into()),
+            body_content: Some(r#"{"page":1}"#.into()),
+            ..Default::default()
+        },
     ).unwrap();
     assert_eq!(updated.name, "List Users");
     assert_eq!(updated.method, "POST");
@@ -187,7 +193,11 @@ fn test_item_partial_update() {
     let item = qai_lib::db::item::create(&conn, &col.id, None, "request", "Req", "GET").unwrap();
 
     let updated = qai_lib::db::item::update(
-        &conn, &item.id, None, None, Some("http://test.com"), None, None, None, None, None, None, None, None, None,
+        &conn, &item.id,
+        &qai_lib::models::item::UpdateItemPayload {
+            url: Some("http://test.com".into()),
+            ..Default::default()
+        },
     ).unwrap();
     assert_eq!(updated.name, "Req");
     assert_eq!(updated.method, "GET");
@@ -533,9 +543,14 @@ fn test_item_protocol_update_to_websocket() {
     assert_eq!(item.protocol, "http");
 
     let updated = qai_lib::db::item::update(
-        &conn, &item.id, None, None, Some("wss://api.example.com/ws"),
-        None, None, Some("json"), Some(r#"{"text":"hello"}"#), None, None, None, None,
-        Some("websocket"),
+        &conn, &item.id,
+        &qai_lib::models::item::UpdateItemPayload {
+            url: Some("wss://api.example.com/ws".into()),
+            body_type: Some("json".into()),
+            body_content: Some(r#"{"text":"hello"}"#.into()),
+            protocol: Some("websocket".into()),
+            ..Default::default()
+        },
     ).unwrap();
     assert_eq!(updated.protocol, "websocket");
     assert_eq!(updated.url, "wss://api.example.com/ws");
@@ -549,8 +564,11 @@ fn test_item_protocol_persists_on_reload() {
     let item = qai_lib::db::item::create(&conn, &col.id, None, "request", "WS", "GET").unwrap();
 
     qai_lib::db::item::update(
-        &conn, &item.id, None, None, None, None, None, None, None, None, None, None, None,
-        Some("websocket"),
+        &conn, &item.id,
+        &qai_lib::models::item::UpdateItemPayload {
+            protocol: Some("websocket".into()),
+            ..Default::default()
+        },
     ).unwrap();
 
     // 重新读取验证持久化
@@ -566,14 +584,20 @@ fn test_item_protocol_unaffected_by_other_updates() {
 
     // 先设为 websocket
     qai_lib::db::item::update(
-        &conn, &item.id, None, None, None, None, None, None, None, None, None, None, None,
-        Some("websocket"),
+        &conn, &item.id,
+        &qai_lib::models::item::UpdateItemPayload {
+            protocol: Some("websocket".into()),
+            ..Default::default()
+        },
     ).unwrap();
 
     // 只更新 name，不传 protocol
     let updated = qai_lib::db::item::update(
-        &conn, &item.id, Some("Renamed"), None, None, None, None, None, None, None, None, None, None,
-        None,
+        &conn, &item.id,
+        &qai_lib::models::item::UpdateItemPayload {
+            name: Some("Renamed".into()),
+            ..Default::default()
+        },
     ).unwrap();
     assert_eq!(updated.name, "Renamed");
     assert_eq!(updated.protocol, "websocket"); // protocol 不变
@@ -588,8 +612,12 @@ fn test_websocket_item_in_collection_tree() {
     qai_lib::db::item::create(&conn, &col.id, None, "request", "HTTP Health", "GET").unwrap();
     let ws_item = qai_lib::db::item::create(&conn, &col.id, None, "request", "WS TTS", "GET").unwrap();
     qai_lib::db::item::update(
-        &conn, &ws_item.id, None, None, Some("wss://api.example.com/ws"),
-        None, None, None, None, None, None, None, None, Some("websocket"),
+        &conn, &ws_item.id,
+        &qai_lib::models::item::UpdateItemPayload {
+            url: Some("wss://api.example.com/ws".into()),
+            protocol: Some("websocket".into()),
+            ..Default::default()
+        },
     ).unwrap();
 
     let tree = qai_lib::db::collection::get_tree(&conn, &col.id).unwrap();

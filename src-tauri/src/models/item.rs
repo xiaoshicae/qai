@@ -50,6 +50,23 @@ pub struct KeyValuePair {
     pub field_type: String, // "text" | "file"，默认空字符串视为 text
 }
 
+/// update_item 的请求载体，所有字段可选
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct UpdateItemPayload {
+    pub name: Option<String>,
+    pub method: Option<String>,
+    pub url: Option<String>,
+    pub headers: Option<String>,
+    pub query_params: Option<String>,
+    pub body_type: Option<String>,
+    pub body_content: Option<String>,
+    pub extract_rules: Option<String>,
+    pub description: Option<String>,
+    pub expect_status: Option<u16>,
+    pub parent_id: Option<Option<String>>,
+    pub protocol: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HttpResponse {
     pub status: u16,

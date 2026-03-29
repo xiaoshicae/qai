@@ -111,7 +111,7 @@ describe('collection-store', () => {
   describe('loadCollections', () => {
     it('成功加载集合列表', async () => {
       const mockCollections = [
-        { id: 'col-1', name: 'Test', description: '', group_id: null, created_at: '', updated_at: '' },
+        { id: 'col-1', name: 'Test', description: '', group_id: null, sort_order: 0, created_at: '', updated_at: '' },
       ]
       mockedInvoke.mockImplementation(async (cmd: string) => {
         if (cmd === 'list_collections') return mockCollections
@@ -137,7 +137,7 @@ describe('collection-store', () => {
   describe('deleteCollection', () => {
     it('删除后从 state 中移除', async () => {
       useCollectionStore.setState({
-        collections: [{ id: 'col-1', name: 'Test', description: '', group_id: null, created_at: '', updated_at: '' }],
+        collections: [{ id: 'col-1', name: 'Test', description: '', group_id: null, sort_order: 0, created_at: '', updated_at: '' }],
         trees: { 'col-1': makeTree() },
       })
       mockedInvoke.mockResolvedValue(undefined)

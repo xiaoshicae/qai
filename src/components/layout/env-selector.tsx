@@ -46,6 +46,7 @@ export default function EnvSelector() {
       }
       await load()
       setOpen(false)
+      window.dispatchEvent(new Event('env-changed'))
     } catch {}
   }
 
@@ -67,7 +68,7 @@ export default function EnvSelector() {
       </button>
 
       {open && (
-        <div className="absolute top-full right-0 mt-1 w-48 rounded-xl glass-card shadow-xl z-50 py-1 overflow-hidden">
+        <div className="absolute top-full right-0 mt-1 w-48 rounded-xl glass-card shadow-2xl z-50 py-1 overflow-hidden">
           <button
             className={`flex items-center gap-2 w-full px-3 py-1.5 text-xs hover:bg-overlay/[0.06] cursor-pointer transition-colors ${!active ? 'text-foreground' : 'text-muted-foreground'}`}
             onClick={() => select(null)}

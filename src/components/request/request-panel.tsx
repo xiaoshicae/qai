@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { invoke } from '@tauri-apps/api/core'
 import { Send, Loader2, Radio, Braces, Copy, Check, Plug } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
@@ -38,6 +39,27 @@ export default function RequestPanel() {
   const [bodyContent, setBodyContent] = useState('')
   const [activeTab, setActiveTab] = useState('params')
   const [protocol, setProtocol] = useState('http')
+  const [envVars, setEnvVars] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    const loadEnvVars = async () => {
+      try {
+        const envs = await invoke<{ id: string; name: string; is_active: boolean }[]>('list_environments')
+        const active = envs.find((e) => e.is_active)
+        if (active) {
+          const data = await invoke<{ variables: { key: string; value: string; enabled: boolean }[] }>('get_environment_with_vars', { id: active.id })
+          const map: Record<string, string> = {}
+          for (const v of data.variables) if (v.enabled) map[v.key] = v.value
+          setEnvVars(map)
+        } else {
+          setEnvVars({})
+        }
+      } catch {}
+    }
+    loadEnvVars()
+    window.addEventListener('env-changed', loadEnvVars)
+    return () => window.removeEventListener('env-changed', loadEnvVars)
+  }, [])
 
   useEffect(() => {
     if (currentRequest) {
@@ -168,11 +190,11 @@ export default function RequestPanel() {
         </TabsList>
         {!isWebSocket && (
           <TabsContent value="params">
-            <KeyValueTable value={queryParams} onChange={setQueryParams} />
+            <KeyValueTable value={queryParams} onChange={setQueryParams} envVars={envVars} />
           </TabsContent>
         )}
         <TabsContent value="headers">
-          <KeyValueTable value={headers} onChange={setHeaders} />
+          <KeyValueTable value={headers} onChange={setHeaders} envVars={envVars} />
         </TabsContent>
         <TabsContent value="body">
           {isWebSocket ? (
@@ -253,6 +275,7 @@ export default function RequestPanel() {
                   })()}
                   onChange={(v) => setBodyContent(JSON.stringify(v))}
                   allowFiles={bodyType === 'form-data'}
+                  envVars={envVars}
                 />
               )}
             </>

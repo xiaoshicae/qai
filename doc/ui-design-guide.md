@@ -138,12 +138,12 @@ border: 1px solid rgba(255, 255, 255, 0.12);   /* border-white/[0.12] */
 
 ```
 默认态:    bg-transparent
-Hover:     bg-white/[0.04]    ← 极其微弱的白色叠加
-Active:    bg-white/[0.08]    ← 稍强的白色叠加
-Selected:  bg-white/[0.08] + glow-ring
+Hover:     bg-overlay/[0.04]    ← 极其微弱的叠加
+Active:    bg-overlay/[0.08]    ← 稍强的叠加
+Selected:  bg-overlay/[0.08] + glow-ring
 ```
 
-**不要用** `bg-muted/50`、`bg-accent/30` 这种变量叠加，直接用 `bg-white/[0.0x]` 更一致且易于理解。
+**不要用** `bg-muted`、`bg-accent`、`hover:bg-accent` 这种语义变量叠加，统一用 `bg-overlay/[0.0x]` 更一致。
 
 ### 过渡动画
 
@@ -211,24 +211,88 @@ border-top: 1px solid rgba(255, 255, 255, 0.06);
 | 主文字 | `oklch(0.93 0.005 260)` | `text-foreground` |
 | 次要文字 | `oklch(0.55 0.01 260)` | `text-muted-foreground` |
 | 品牌色 | `oklch(0.65 0.18 240)` | `text-primary` / `bg-primary` |
-| 静态边框 | `rgba(255,255,255,0.06)` | `border-white/[0.06]` |
-| Hover 背景 | `rgba(255,255,255,0.04)` | `bg-white/[0.04]` |
-| 选中背景 | `rgba(255,255,255,0.08)` | `bg-white/[0.08]` |
-| 成功色 | emerald-400 | `text-emerald-400` |
+| 静态边框 | overlay 6% | `border-overlay/[0.06]` |
+| Hover 背景 | overlay 4% | `bg-overlay/[0.04]` |
+| 选中背景 | overlay 8% | `bg-overlay/[0.08]` |
+| 成功色 | emerald-600/400 | `text-emerald-600 dark:text-emerald-400` |
 | 错误色 | `oklch(0.637 0.208 25)` | `text-destructive` |
 
-## 八、避坑清单
+### 语法高亮配色
+
+代码/JSON 高亮必须适配双主题，浅色用 `-600`（高对比度），深色用 `-400`：
+
+| Token | 浅色 | 深色 | Tailwind |
+|-------|------|------|----------|
+| key | sky-600 | sky-400 | `text-sky-600 dark:text-sky-400` |
+| string | emerald-600 | emerald-400 | `text-emerald-600 dark:text-emerald-400` |
+| number | amber-600 | amber-400 | `text-amber-600 dark:text-amber-400` |
+| boolean/null | purple-600 | purple-400 | `text-purple-600 dark:text-purple-400` |
+| variable `{{}}` | cyan-600 | cyan-400 | `text-cyan-600 dark:text-cyan-400` |
+
+共享定义位于 `src/lib/syntax.ts`，禁止在组件中重复定义颜色映射。
+
+## 八、一致性规范
+
+### 8.1 焦点态
+
+所有可聚焦元素统一使用 `focus-visible`（非 `focus`），参数固定不可偏离：
+
+```
+focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/20
+```
+
+禁止 `focus:ring-1`（太细）、禁止 `focus:outline-none`（无反馈）。图标按钮也必须有焦点态。
+
+### 8.2 浮层菜单
+
+所有浮层（右键菜单、下拉选择、弹出菜单）统一样式：
+
+```
+容器:   rounded-xl glass-card p-1.5 shadow-2xl
+菜单项: px-3 py-2 rounded-lg text-xs hover:bg-overlay/[0.06] transition-colors
+分割线: h-px bg-overlay/[0.06] my-1
+危险项: text-destructive hover:bg-destructive/10
+```
+
+禁止 `shadow-md`/`shadow-xl`/`shadow-lg`，浮层统一 `shadow-2xl`。
+
+### 8.3 遮罩层
+
+Dialog/Modal 遮罩统一 `bg-black/50 backdrop-blur-sm`，禁止 `bg-black/60` 或其他透明度。
+
+### 8.4 选中态
+
+选中态统一用 overlay 体系 + glow-ring，禁止用 accent 体系：
+
+```
+✓ bg-overlay/[0.08] text-foreground glow-ring
+✗ bg-accent text-accent-foreground
+```
+
+### 8.5 侧边栏间距
+
+两档水平间距，禁止中间值：
+
+```
+Logo 区域:  px-4（drag-region，更多留白）
+其余区域:   px-2.5（搜索栏、树列表、底部导航）
+```
+
+## 九、避坑清单
 
 1. **不要用纯黑 `#000`** — 太死板，用 `oklch(0.145 ...)` 带一点色调
 2. **不要用纯灰 `oklch(x 0 0)`** — 加一点色度（0.004~0.006），色相 260（蓝紫）
-3. **不要用 `ring-1 ring-foreground/10`** — 改用 `glass-card` 或 `border-white/[0.06]`
-4. **不要用 `dark:bg-input/30` hack** — 统一用半透明白色 `bg-white/[0.03]`
-5. **不要用 `bg-muted/50` 做 hover** — 统一用 `bg-white/[0.04]`
-6. **不要 mix 不同的边框系统** — 要么全用 `border-white/[0.0x]`，要么全用 CSS 变量
-7. **按钮禁用态** — 用 `opacity-40`（不是 50），更优雅的灰度
-8. **圆角要统一** — 同一层级的元素圆角必须一致，嵌套元素内层圆角比外层小 4px
+3. **不要用 `ring-1 ring-foreground/10`** — 改用 `glass-card` 或 `border-overlay/[0.06]`
+4. **不要用 `dark:bg-input/30` hack** — 统一用 overlay `bg-overlay/[0.03]`
+5. **不要用 `bg-muted/50` 做 hover** — 统一用 `bg-overlay/[0.04]`
+6. **不要用 `bg-accent` 做选中** — 统一用 `bg-overlay/[0.08] glow-ring`
+7. **不要用单色阶硬编码** — 如 `text-sky-400`，应写 `text-sky-600 dark:text-sky-400`
+8. **不要 mix 不同的边框/hover 系统** — 全部用 overlay，禁止混用 `accent`、`muted`、`border`
+9. **按钮禁用态** — 用 `opacity-40`（不是 50），更优雅的灰度
+10. **圆角要统一** — 同一层级的元素圆角必须一致，嵌套元素内层圆角比外层小 4px
+11. **不要重复定义共享常量** — 如 TOKEN_COLORS，提取到 `src/lib/` 统一引用
 
-## 九、设计参考站点
+## 十、设计参考站点
 
 | 站点 | 用途 |
 |------|------|

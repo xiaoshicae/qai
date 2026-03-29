@@ -14,8 +14,8 @@ pub async fn run_collection(
     concurrency: Option<usize>,
 ) -> Result<BatchResult, String> {
     // 分离：chain 类型 item 内的子请求用链式执行，其余并行
-    let (normal_items, chain_groups, var_map) = {
-        let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let (normal_items, chain_groups, chain_names, var_map) = {
+        let conn = db.conn()?;
 
         // 获取所有 items
         let all_items = if let Some(ref pid) = parent_id {
@@ -32,21 +32,47 @@ pub async fn run_collection(
             std::collections::HashMap::new()
         };
 
-        // 区分 chain 容器和普通 request
+        // 区分 chain 容器和普通 request，同时记录 chain 名称
+        let mut chain_names: std::collections::HashMap<String, String> = std::collections::HashMap::new();
         let chain_item_ids: std::collections::HashSet<String> = all_items
             .iter()
-            .filter(|i| i.item_type == "chain")
-            .map(|i| i.id.clone())
+            .filter(|i| i.item_type == crate::models::item_type::CHAIN)
+            .map(|i| {
+                chain_names.insert(i.id.clone(), i.name.clone());
+                i.id.clone()
+            })
             .collect();
+
+        // 收集所有 request items（含 chain 子请求），以及 chain 的嵌套子项
+        let mut all_request_items: Vec<&crate::models::item::CollectionItem> = all_items
+            .iter()
+            .filter(|i| i.item_type == crate::models::item_type::REQUEST)
+            .collect();
+
+        // chain 下可能有嵌套子 items 不在 all_items 中
+        let mut extra_children = Vec::new();
+        for chain_id in &chain_item_ids {
+            let has_child = all_items.iter().any(|i| i.parent_id.as_deref() == Some(chain_id));
+            if !has_child {
+                let children = crate::db::item::list_by_parent(&conn, chain_id)
+                    .map_err(|e| e.to_string())?;
+                extra_children.extend(children);
+            }
+        }
+        all_request_items.extend(extra_children.iter().filter(|i| i.item_type == crate::models::item_type::REQUEST));
+
+        // 批量查询所有 assertions（消除 N+1）
+        let request_ids: Vec<String> = all_request_items.iter().map(|i| i.id.clone()).collect();
+        let mut assertions_map = crate::db::assertion::list_by_items(&conn, &request_ids)
+            .map_err(|e| e.to_string())?;
 
         let mut normal = Vec::new();
         let mut chains: std::collections::HashMap<String, Vec<_>> = std::collections::HashMap::new();
 
-        // 收集顶层 request（无 parent 或 parent 不是 chain）
+        // 分配 items 到 normal 或 chains
         for item in &all_items {
-            if item.item_type == "request" {
-                let assertions = crate::db::assertion::list_by_item(&conn, &item.id)
-                    .map_err(|e| e.to_string())?;
+            if item.item_type == crate::models::item_type::REQUEST {
+                let assertions = assertions_map.remove(&item.id).unwrap_or_default();
                 if item.url.is_empty() {
                     continue;
                 }
@@ -61,23 +87,17 @@ pub async fn run_collection(
             }
         }
 
-        // 对于 chain 容器，获取其子请求
-        for chain_id in &chain_item_ids {
-            if !chains.contains_key(chain_id) {
-                // 如果 chain 下的子 items 还没被遍历到（可能是嵌套），手动获取
-                let children = crate::db::item::list_by_parent(&conn, chain_id)
-                    .map_err(|e| e.to_string())?;
-                for child in children {
-                    if child.item_type == "request" && !child.url.is_empty() {
-                        let assertions = crate::db::assertion::list_by_item(&conn, &child.id)
-                            .map_err(|e| e.to_string())?;
-                        chains.entry(chain_id.clone()).or_default().push((child, assertions));
-                    }
+        // 处理嵌套的 chain 子请求
+        for child in &extra_children {
+            if child.item_type == crate::models::item_type::REQUEST && !child.url.is_empty() {
+                let assertions = assertions_map.remove(&child.id).unwrap_or_default();
+                if let Some(ref pid) = child.parent_id {
+                    chains.entry(pid.clone()).or_default().push((child.clone(), assertions));
                 }
             }
         }
 
-        (normal, chains, var_map)
+        (normal, chains, chain_names, var_map)
     };
 
     if normal_items.is_empty() && chain_groups.is_empty() {
@@ -90,12 +110,13 @@ pub async fn run_collection(
 
     // 1. 先执行所有 chain groups（顺序执行每条链）
     for (chain_item_id, steps) in &chain_groups {
+        let name = chain_names.get(chain_item_id).cloned().unwrap_or_default();
         let chain_result = crate::runner::chain::run_chain(
             &http.0,
             steps.clone(),
             var_map.clone(),
             chain_item_id.clone(),
-            String::new(),
+            name,
             |_| {},
         ).await;
 
@@ -134,9 +155,9 @@ pub async fn run_collection(
     }
 
     let total_time = start.elapsed().as_millis() as u64;
-    let passed = all_results.iter().filter(|r| r.status == "success").count() as u32;
-    let failed = all_results.iter().filter(|r| r.status == "failed").count() as u32;
-    let errors = all_results.iter().filter(|r| r.status == "error").count() as u32;
+    let passed = all_results.iter().filter(|r| r.status == crate::models::status::SUCCESS).count() as u32;
+    let failed = all_results.iter().filter(|r| r.status == crate::models::status::FAILED).count() as u32;
+    let errors = all_results.iter().filter(|r| r.status == crate::models::status::ERROR).count() as u32;
 
     let batch_result = BatchResult {
         batch_id: batch_id.clone(),
@@ -150,13 +171,14 @@ pub async fn run_collection(
 
     // 保存执行记录
     {
-        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        let conn = db.conn()?;
         for result in &batch_result.results {
-            // 获取 item 以构建完整的 Execution
             if let Ok(item) = crate::db::item::get(&conn, &result.item_id) {
                 let mut exec = crate::http::client::to_execution(&item, result);
                 exec.batch_id = Some(batch_id.clone());
-                let _ = crate::db::execution::save(&conn, &exec);
+                if let Err(e) = crate::db::execution::save(&conn, &exec) {
+                    log::warn!("保存执行记录失败 [{}]: {e}", result.item_id);
+                }
             }
         }
     }
@@ -172,11 +194,11 @@ pub async fn run_chain(
     item_id: String,
 ) -> Result<ChainResult, String> {
     let (steps, base_vars, item_name) = {
-        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        let conn = db.conn()?;
 
         let chain_item = crate::db::item::get(&conn, &item_id)
             .map_err(|e| e.to_string())?;
-        if chain_item.item_type != "chain" {
+        if chain_item.item_type != crate::models::item_type::CHAIN {
             return Err("该节点不是请求链".to_string());
         }
 
@@ -189,14 +211,16 @@ pub async fn run_chain(
             std::collections::HashMap::new()
         };
 
-        let mut steps = Vec::new();
-        for child in children {
-            if child.item_type == "request" {
-                let assertions = crate::db::assertion::list_by_item(&conn, &child.id)
-                    .map_err(|e| e.to_string())?;
-                steps.push((child, assertions));
-            }
-        }
+        let request_children: Vec<_> = children.iter()
+            .filter(|c| c.item_type == crate::models::item_type::REQUEST)
+            .collect();
+        let child_ids: Vec<String> = request_children.iter().map(|c| c.id.clone()).collect();
+        let mut assertions_map = crate::db::assertion::list_by_items(&conn, &child_ids)
+            .map_err(|e| e.to_string())?;
+        let steps: Vec<_> = request_children.into_iter().map(|child| {
+            let assertions = assertions_map.remove(&child.id).unwrap_or_default();
+            (child.clone(), assertions)
+        }).collect();
 
         (steps, var_map, chain_item.name)
     };
@@ -220,13 +244,15 @@ pub async fn run_chain(
 
     // 保存每步执行记录
     {
-        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        let conn = db.conn()?;
         for step in &chain_result.steps {
             let result = &step.execution_result;
             if let Ok(item) = crate::db::item::get(&conn, &result.item_id) {
                 let mut exec = crate::http::client::to_execution(&item, result);
                 exec.batch_id = Some(chain_result.chain_id.clone());
-                let _ = crate::db::execution::save(&conn, &exec);
+                if let Err(e) = crate::db::execution::save(&conn, &exec) {
+                    log::warn!("保存执行记录失败 [{}]: {e}", result.item_id);
+                }
             }
         }
     }
@@ -244,7 +270,7 @@ pub fn list_history(
     db: State<'_, DbState>,
     limit: Option<u32>,
 ) -> Result<Vec<crate::db::execution::HistoryEntry>, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn()?;
     crate::db::execution::list_recent(&conn, limit.unwrap_or(50)).map_err(|e| e.to_string())
 }
 
@@ -254,7 +280,7 @@ pub fn list_item_runs(
     item_id: String,
     limit: Option<u32>,
 ) -> Result<Vec<crate::db::execution::RunRecord>, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn()?;
     crate::db::execution::list_by_item(&conn, &item_id, limit.unwrap_or(20)).map_err(|e| e.to_string())
 }
 
@@ -263,6 +289,6 @@ pub fn get_collection_status(
     db: State<'_, DbState>,
     collection_id: String,
 ) -> Result<Vec<crate::db::execution::ItemLastStatus>, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn()?;
     crate::db::execution::get_last_status_for_collection(&conn, &collection_id).map_err(|e| e.to_string())
 }

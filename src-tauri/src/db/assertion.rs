@@ -27,6 +27,27 @@ pub fn list_by_item(conn: &Connection, item_id: &str) -> Result<Vec<Assertion>, 
     rows.collect()
 }
 
+/// 批量获取多个 item 的断言（消除 N+1 查询）
+pub fn list_by_items(conn: &Connection, item_ids: &[String]) -> Result<std::collections::HashMap<String, Vec<Assertion>>, rusqlite::Error> {
+    if item_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let placeholders: Vec<String> = (1..=item_ids.len()).map(|i| format!("?{}", i)).collect();
+    let sql = format!(
+        "SELECT {} FROM assertions WHERE item_id IN ({}) ORDER BY sort_order",
+        ASSERTION_COLS, placeholders.join(", ")
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let params: Vec<&dyn rusqlite::types::ToSql> = item_ids.iter().map(|id| id as &dyn rusqlite::types::ToSql).collect();
+    let rows = stmt.query_map(params.as_slice(), assertion_from_row)?;
+    let mut map: std::collections::HashMap<String, Vec<Assertion>> = std::collections::HashMap::new();
+    for row in rows {
+        let a = row?;
+        map.entry(a.item_id.clone()).or_default().push(a);
+    }
+    Ok(map)
+}
+
 pub fn create(
     conn: &Connection,
     item_id: &str,

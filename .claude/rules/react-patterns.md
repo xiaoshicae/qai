@@ -83,9 +83,24 @@ useEffect(() => {
 | 类型/接口 | PascalCase | `ApiRequest` |
 | 事件处理 | handle 前缀 | `handleSubmit` |
 
+## 工具函数复用
+
+- 通用格式化函数（时间、文件大小等）放 `src/lib/formatters.ts`，组件不重复定义
+- 相同逻辑的 hook（如方向不同的拖拽）通过参数合并，不写两个 hook
+- 通过 prop 传递的纯工具函数，如果无闭包依赖，应改为子组件直接 import
+
+```typescript
+// 错误：在每个组件内重复定义
+const formatTime = (ms: number) => ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(2)}s`
+
+// 正确：从 lib/formatters.ts 导入
+import { formatDuration, formatSize } from '@/lib/formatters'
+```
+
 ## 禁止事项
 
 - 生产代码中留 `console.log`
 - 组件中直接调用 `fetch`（所有网络请求走 Rust 端）
 - 直接修改 state 引用（`a.type = x` 后 `setX([...arr])`）
 - 在 JSX 中写复杂逻辑（提取为 useMemo 或函数）
+- 在多个组件中重复定义相同的工具函数（提取到 `lib/`）

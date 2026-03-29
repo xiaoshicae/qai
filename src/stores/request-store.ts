@@ -43,7 +43,7 @@ export const useRequestStore = create<RequestState>((set, get) => ({
   updateRequest: async (updates: RequestUpdates) => {
     const { currentRequest } = get()
     if (!currentRequest) return
-    const req = await invoke<CollectionItem>('update_item', { id: currentRequest.id, ...updates })
+    const req = await invoke<CollectionItem>('update_item', { id: currentRequest.id, payload: updates })
     set({ currentRequest: req })
   },
 

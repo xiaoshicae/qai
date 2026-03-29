@@ -28,6 +28,8 @@ function applyTheme(resolved: 'dark' | 'light') {
   }
 }
 
+let mqListenerAttached = false
+
 export const useThemeStore = create<ThemeState>((set, get) => ({
   mode: 'dark',
   resolved: 'dark',
@@ -50,15 +52,18 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     applyTheme(resolved)
     set({ mode, resolved })
 
-    // 监听系统主题变化
-    const mq = window.matchMedia('(prefers-color-scheme: dark)')
-    mq.addEventListener('change', () => {
-      const { mode: currentMode } = get()
-      if (currentMode === 'system') {
-        const newResolved = resolveTheme('system')
-        applyTheme(newResolved)
-        set({ resolved: newResolved })
-      }
-    })
+    // 监听系统主题变化（防止重复注册）
+    if (!mqListenerAttached) {
+      mqListenerAttached = true
+      const mq = window.matchMedia('(prefers-color-scheme: dark)')
+      mq.addEventListener('change', () => {
+        const { mode: currentMode } = get()
+        if (currentMode === 'system') {
+          const newResolved = resolveTheme('system')
+          applyTheme(newResolved)
+          set({ resolved: newResolved })
+        }
+      })
+    }
   },
 }))

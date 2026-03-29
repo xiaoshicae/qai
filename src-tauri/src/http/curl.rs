@@ -64,9 +64,9 @@ pub fn parse_curl(input: &str) -> Result<CurlParseResult, String> {
                     data = Some(if existing.is_empty() { tokens[i].clone() } else { format!("{}&{}", existing, tokens[i]) });
                 }
             }
-            // 跳过常见无关 flag
+            // 跳过常见无关 flag（无参数）
             "-s" | "--silent" | "-k" | "--insecure" | "-v" | "--verbose" | "-L" | "--location"
-            | "--compressed" | "-i" | "--include" | "-S" | "--show-error" | "-o" | "-w" => {}
+            | "--compressed" | "-i" | "--include" | "-S" | "--show-error" => {}
             // 跳过带参数的 flag
             "-o" | "--output" | "-w" | "--write-out" | "--connect-timeout" | "--max-time"
             | "-u" | "--user" | "--cacert" | "--cert" | "-b" | "--cookie" | "-c" | "--cookie-jar" => {

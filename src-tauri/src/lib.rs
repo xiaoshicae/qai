@@ -51,6 +51,7 @@ pub fn run() {
             commands::item_cmd::send_request_stream,
             commands::item_cmd::parse_curl,
             commands::item_cmd::export_curl,
+            commands::item_cmd::read_file_preview,
             commands::assertion_cmd::list_assertions,
             commands::assertion_cmd::create_assertion,
             commands::assertion_cmd::update_assertion,

@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import { useTranslation } from 'react-i18next'
 import {
-  Play, Download, CheckCircle2, XCircle, AlertCircle, Circle,
+  Play, Download, CheckCircle2, XCircle, AlertCircle, Circle, Copy,
   ChevronDown, ChevronRight, Loader2, Plus, Trash2, Pencil, Link2, Square, Zap, ListOrdered,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -11,7 +12,9 @@ import { Select } from '@/components/ui/select'
 import { JsonHighlight } from '@/components/ui/json-highlight'
 import { JsonEditor } from '@/components/ui/json-editor'
 import { VarHighlight } from '@/components/ui/var-highlight'
+import { VarInput } from '@/components/ui/var-input'
 import EnvSelector from '@/components/layout/env-selector'
+import { formatDuration } from '@/lib/formatters'
 import KeyValueTable from '@/components/request/key-value-table'
 import { Progress } from '@/components/ui/progress'
 import { useConfirmStore } from '@/components/ui/confirm-dialog'
@@ -36,8 +39,9 @@ interface Props {
 }
 
 export default function CollectionOverview({ collection, tree }: Props) {
+  const { t } = useTranslation()
   const confirm = useConfirmStore((s) => s.confirm)
-  const { loadTree } = useCollectionStore()
+  const { loadTree, selectedNodeId, selectNode } = useCollectionStore()
   const [statuses, setStatuses] = useState<Record<string, ItemLastStatus>>({})
   const [running, setRunning] = useState(false)
   const [runningIds, setRunningIds] = useState<Set<string>>(new Set())
@@ -50,7 +54,8 @@ export default function CollectionOverview({ collection, tree }: Props) {
   const [editReq, setEditReq] = useState<CollectionItem | null>(null)
   const [isNewReq, setIsNewReq] = useState(false)
   const [runMode, setRunMode] = useState<'concurrent' | 'sequential'>('concurrent')
-  const [delayMs, setDelayMs] = useState(0)
+  const [concurrency, setConcurrency] = useState(5)
+  const [delayMs, setDelayMs] = useState(3000)
   const [showRunSettings, setShowRunSettings] = useState(false)
   const [envVars, setEnvVars] = useState<Record<string, string>>({})
   const unlistenRef = useRef<(() => void) | null>(null)
@@ -58,19 +63,26 @@ export default function CollectionOverview({ collection, tree }: Props) {
   useEffect(() => { return () => { unlistenRef.current?.() } }, [])
   useEffect(() => { loadStatuses(); setBatchResult(null); setSingleResults({}); setDetailData({}) }, [collection.id])
 
+  const loadEnvVars = async () => {
+    try {
+      const envs = await invoke<{ id: string; name: string; is_active: boolean }[]>('list_environments')
+      const active = envs.find((e) => e.is_active)
+      if (active) {
+        const data = await invoke<{ variables: { key: string; value: string; enabled: boolean }[] }>('get_environment_with_vars', { id: active.id })
+        const map: Record<string, string> = {}
+        for (const v of data.variables) if (v.enabled) map[v.key] = v.value
+        setEnvVars(map)
+      } else {
+        setEnvVars({})
+      }
+    } catch {}
+  }
+
+  useEffect(() => { loadEnvVars() }, [])
+
   useEffect(() => {
-    (async () => {
-      try {
-        const envs = await invoke<{ id: string; name: string; is_active: boolean }[]>('list_environments')
-        const active = envs.find((e) => e.is_active)
-        if (active) {
-          const data = await invoke<{ variables: { key: string; value: string; enabled: boolean }[] }>('get_environment_with_vars', { id: active.id })
-          const map: Record<string, string> = {}
-          for (const v of data.variables) if (v.enabled) map[v.key] = v.value
-          setEnvVars(map)
-        }
-      } catch {}
-    })()
+    window.addEventListener('env-changed', loadEnvVars)
+    return () => window.removeEventListener('env-changed', loadEnvVars)
   }, [])
 
   const loadStatuses = async () => {
@@ -149,7 +161,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
         setProgress((prev) => { const idx = prev.findIndex((x) => x.item_id === e.payload.item_id); if (idx >= 0) { const n = [...prev]; n[idx] = e.payload; return n } return [...prev, e.payload] })
       })
       try {
-        const result = await invoke<BatchResult>('run_collection', { collectionId: collection.id, concurrency: 5 })
+        const result = await invoke<BatchResult>('run_collection', { collectionId: collection.id, concurrency })
         if (!abortRef.current) { setBatchResult(result); loadStatuses() }
       } catch (e: any) { if (!abortRef.current) setError(typeof e === 'string' ? e : e.message) }
       finally { setRunning(false); unlistenRef.current?.(); unlistenRef.current = null }
@@ -167,13 +179,25 @@ export default function CollectionOverview({ collection, tree }: Props) {
 
   // 单个运行
   const runSingle = async (requestId: string) => {
-    // 清除旧结果，让 UI 立即显示 Running 状态
     setSingleResults((prev) => { const n = { ...prev }; delete n[requestId]; return n })
     setRunningIds((prev) => new Set(prev).add(requestId))
     try {
       const result = await invoke<ExecutionResult>('send_request', { id: requestId })
-      setSingleResults((prev) => ({ ...prev, [requestId]: result })); loadStatuses()
-    } catch {} finally { setRunningIds((prev) => { const n = new Set(prev); n.delete(requestId); return n }) }
+      setSingleResults((prev) => ({ ...prev, [requestId]: result }))
+      loadStatuses()
+    } catch (e: any) {
+      console.error('runSingle failed:', e)
+      setSingleResults((prev) => ({
+        ...prev,
+        [requestId]: {
+          execution_id: '', item_id: requestId, item_name: '',
+          status: 'error', response: null, assertion_results: [],
+          error_message: typeof e === 'string' ? e : e?.message ?? 'Unknown error',
+        },
+      }))
+    } finally {
+      setRunningIds((prev) => { const n = new Set(prev); n.delete(requestId); return n })
+    }
   }
 
   // 添加测试用例：先弹编辑框，保存时才创建记录
@@ -212,6 +236,8 @@ export default function CollectionOverview({ collection, tree }: Props) {
     await invoke('create_item', { collectionId: collection.id, parentId: null, itemType: 'chain', name: chainName.trim(), method: 'GET' })
     await loadTree(collection.id)
     setShowChainDialog(false)
+    setBatchResult(null)
+    setSingleResults({})
   }
 
   // 添加链步骤（只构建临时对象，saveEdit 时才真正创建）
@@ -249,20 +275,28 @@ export default function CollectionOverview({ collection, tree }: Props) {
   // 删除链
   const deleteChain = async (id: string, name: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    const ok = await confirm(`确定删除链式请求「${name}」及其所有步骤？`, { title: '删除链', kind: 'warning' })
+    const ok = await confirm(`{t('common.confirm_delete', { name: ${name} })}`, { title: t('common.delete'), kind: 'warning' })
     if (!ok) return
     await invoke('delete_item', { id })
     await loadTree(collection.id)
+    setDetailData((prev) => { const n = { ...prev }; delete n[id]; return n })
+    if (selectedNodeId === id) selectNode(null)
+    setBatchResult(null)
+    setSingleResults({})
   }
 
   // 删除测试用例
   const deleteRequest = async (id: string, name: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    const ok = await confirm(`确定删除测试用例「${name}」？此操作不可撤销。`, { title: '删除测试用例', kind: 'warning' })
+    const ok = await confirm(`{t('common.confirm_delete', { name: ${name} })}`, { title: t('common.delete'), kind: 'warning' })
     if (!ok) return
     await invoke('delete_item', { id })
     await loadTree(collection.id)
     setExpandedRows((prev) => { const n = new Set(prev); n.delete(id); return n })
+    setDetailData((prev) => { const n = { ...prev }; delete n[id]; return n })
+    if (selectedNodeId === id) selectNode(null)
+    setBatchResult(null)
+    setSingleResults({})
   }
 
   // 打开编辑弹窗
@@ -290,32 +324,38 @@ export default function CollectionOverview({ collection, tree }: Props) {
         })
         await invoke('update_item', {
           id: created.id,
-          url: editReq.url,
-          headers: editReq.headers,
-          queryParams: editReq.query_params,
-          bodyType: editReq.body_type,
-          bodyContent: editReq.body_content,
-          extractRules: editReq.extract_rules,
-          description: editReq.description,
-          expectStatus: editReq.expect_status,
+          payload: {
+            url: editReq.url,
+            headers: editReq.headers,
+            queryParams: editReq.query_params,
+            bodyType: editReq.body_type,
+            bodyContent: editReq.body_content,
+            extractRules: editReq.extract_rules,
+            description: editReq.description,
+            expectStatus: editReq.expect_status,
+          },
         })
       } else {
         // 编辑：直接更新
         await invoke('update_item', {
           id: editReq.id,
-          name: editReq.name,
-          method: editReq.method,
-          url: editReq.url,
-          headers: editReq.headers,
-          queryParams: editReq.query_params,
-          bodyType: editReq.body_type,
-          bodyContent: editReq.body_content,
-          extractRules: editReq.extract_rules,
-          description: editReq.description,
-          expectStatus: editReq.expect_status,
+          payload: {
+            name: editReq.name,
+            method: editReq.method,
+            url: editReq.url,
+            headers: editReq.headers,
+            queryParams: editReq.query_params,
+            bodyType: editReq.body_type,
+            bodyContent: editReq.body_content,
+            extractRules: editReq.extract_rules,
+            description: editReq.description,
+            expectStatus: editReq.expect_status,
+          },
         })
       }
       await loadTree(collection.id)
+      if (editReq) setDetailData((prev) => { const n = { ...prev }; delete n[editReq.id]; return n })
+      if (isNewReq) { setBatchResult(null); setSingleResults({}) }
       setEditReq(null)
       setIsNewReq(false)
     } catch (e: any) {
@@ -324,12 +364,21 @@ export default function CollectionOverview({ collection, tree }: Props) {
     }
   }
 
+  // 加载单个 item 详情
+  const loadDetail = async (id: string) => {
+    if (detailData[id]) return
+    try {
+      const req = await invoke<CollectionItem>('get_item', { id })
+      setDetailData((prev) => ({ ...prev, [id]: req }))
+    } catch {}
+  }
+
   // 展开行
   const toggleRow = async (id: string) => {
     const next = new Set(expandedRows)
     if (next.has(id)) { next.delete(id) } else {
       next.add(id)
-      if (!detailData[id]) { try { const req = await invoke<CollectionItem>('get_item', { id }); setDetailData((prev) => ({ ...prev, [id]: req })) } catch {} }
+      loadDetail(id)
     }
     setExpandedRows(next)
   }
@@ -341,7 +390,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
     const a = document.createElement('a'); a.href = url; a.download = `report-${collection.name}-${new Date().toISOString().slice(0, 10)}.html`; a.click(); URL.revokeObjectURL(url)
   }
 
-  const formatTime = (ms: number) => ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`
+
 
   return (
     <div className="px-6 py-6 space-y-5 max-w-5xl mx-auto">
@@ -377,12 +426,12 @@ export default function CollectionOverview({ collection, tree }: Props) {
         <div className="flex items-center gap-2 flex-1">
         {running ? (
           <Button onClick={stopRun} size="sm" variant="destructive" className="gap-1.5">
-            <Square className="h-3 w-3" /> 停止
+            <Square className="h-3 w-3" /> {t('dashboard.stop')}
           </Button>
         ) : (
           <div className="relative">
             <Button onClick={runAll} size="sm" className="gap-1.5 pr-1">
-              <Play className="h-3.5 w-3.5" /> 运行全部
+              <Play className="h-3.5 w-3.5" /> {t('dashboard.run_all')}
               <span className="w-px h-4 bg-primary-foreground/20 mx-0.5" />
               <span onClick={(e) => { e.stopPropagation(); setShowRunSettings(!showRunSettings) }} className="p-0.5 rounded hover:bg-primary-foreground/10 cursor-pointer">
                 <ChevronDown className="h-3 w-3" />
@@ -391,24 +440,30 @@ export default function CollectionOverview({ collection, tree }: Props) {
             {showRunSettings && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowRunSettings(false)} />
-                <div className="absolute top-full left-0 mt-1 z-50 w-52 rounded-lg border border-overlay/[0.1] bg-background shadow-xl p-1.5 space-y-1">
+                <div className="absolute top-full left-0 mt-1 z-50 w-56 rounded-lg border border-overlay/[0.1] bg-background shadow-xl p-1.5 space-y-1">
                   <button onClick={() => setRunMode('concurrent')} className={`flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs cursor-pointer transition-colors ${runMode === 'concurrent' ? 'bg-primary/10 text-primary' : 'hover:bg-overlay/[0.04]'}`}>
-                    <Zap className="h-3.5 w-3.5" /> 并发执行
+                    <Zap className="h-3.5 w-3.5" /> {t('dashboard.concurrent')}
                   </button>
+                  {runMode === 'concurrent' && (
+                    <div className="px-2.5 py-2 border-t border-overlay/[0.06] mt-1 space-y-1.5">
+                      <div className="text-[10px] text-muted-foreground">并发度</div>
+                      <div className="flex gap-1">
+                        {[1, 3, 5, 10, 20].map((n) => (
+                          <button key={n} onClick={() => setConcurrency(n)} className={`px-2 py-1 rounded text-[10px] cursor-pointer transition-colors ${concurrency === n ? 'bg-primary/15 text-primary font-medium' : 'text-muted-foreground hover:bg-overlay/[0.04]'}`}>{n}</button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <button onClick={() => setRunMode('sequential')} className={`flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md text-xs cursor-pointer transition-colors ${runMode === 'sequential' ? 'bg-primary/10 text-primary' : 'hover:bg-overlay/[0.04]'}`}>
-                    <ListOrdered className="h-3.5 w-3.5" /> 顺序执行
+                    <ListOrdered className="h-3.5 w-3.5" /> {t('dashboard.sequential')}
                   </button>
                   {runMode === 'sequential' && (
                     <div className="px-2.5 py-2 border-t border-overlay/[0.06] mt-1 space-y-1.5">
                       <div className="text-[10px] text-muted-foreground">请求间隔</div>
                       <div className="flex gap-1">
-                        {[0, 200, 500, 1000, 2000, 5000].map((ms) => (
-                          <button
-                            key={ms}
-                            onClick={() => setDelayMs(ms)}
-                            className={`px-2 py-1 rounded text-[10px] cursor-pointer transition-colors ${delayMs === ms ? 'bg-primary/15 text-primary font-medium' : 'text-muted-foreground hover:bg-overlay/[0.04]'}`}
-                          >
-                            {ms === 0 ? '无' : ms >= 1000 ? `${ms / 1000}s` : `${ms}ms`}
+                        {[0, 1000, 2000, 3000, 5000, 10000].map((ms) => (
+                          <button key={ms} onClick={() => setDelayMs(ms)} className={`px-2 py-1 rounded text-[10px] cursor-pointer transition-colors ${delayMs === ms ? 'bg-primary/15 text-primary font-medium' : 'text-muted-foreground hover:bg-overlay/[0.04]'}`}>
+                            {ms === 0 ? '无' : `${ms / 1000}s`}
                           </button>
                         ))}
                       </div>
@@ -420,12 +475,12 @@ export default function CollectionOverview({ collection, tree }: Props) {
           </div>
         )}
         <Button variant="outline" size="sm" className="gap-1.5" onClick={addTestCase}>
-          <Plus className="h-3.5 w-3.5" /> 添加用例
+          <Plus className="h-3.5 w-3.5" /> {t('dashboard.add_case')}
         </Button>
         <Button variant="outline" size="sm" className="gap-1.5" onClick={addChain}>
-          <Link2 className="h-3.5 w-3.5" /> 添加链
+          <Link2 className="h-3.5 w-3.5" /> {t('dashboard.add_chain')}
         </Button>
-        {batchResult && <Button variant="outline" size="sm" onClick={exportHtml} className="gap-1.5"><Download className="h-3.5 w-3.5" /> 导出报告</Button>}
+        {batchResult && <Button variant="outline" size="sm" onClick={exportHtml} className="gap-1.5"><Download className="h-3.5 w-3.5" /> {t('dashboard.export_report')}</Button>}
         </div>
         <EnvSelector />
       </div>
@@ -479,13 +534,13 @@ export default function CollectionOverview({ collection, tree }: Props) {
                   </div>
                   {/* Group 内的 Steps */}
                   {groupExpanded && item.steps.map((r, stepIdx) => (
-                    <ScenarioRow key={r.id} r={r} stepLabel={`Step ${stepIdx + 1}`} indent envVars={envVars} getResult={getResult} getStatus={getStatus} statuses={statuses} progress={progress} runningIds={runningIds} expandedRows={expandedRows} detailData={detailData} toggleRow={toggleRow} runSingle={runSingle} openEdit={openEdit} deleteRequest={deleteRequest} formatTime={formatTime} />
+                    <ScenarioRow key={r.id} r={r} stepLabel={`Step ${stepIdx + 1}`} indent envVars={envVars} getResult={getResult} getStatus={getStatus} statuses={statuses} progress={progress} runningIds={runningIds} expandedRows={expandedRows} detailData={detailData} loadDetail={loadDetail} toggleRow={toggleRow} runSingle={runSingle} openEdit={openEdit} deleteRequest={deleteRequest} />
                   ))}
                 </div>
               )
             }
             // ─── 普通请求 ───
-            return <ScenarioRow key={item.id} r={item} envVars={envVars} getResult={getResult} getStatus={getStatus} statuses={statuses} progress={progress} runningIds={runningIds} expandedRows={expandedRows} detailData={detailData} toggleRow={toggleRow} runSingle={runSingle} openEdit={openEdit} deleteRequest={deleteRequest} formatTime={formatTime} />
+            return <ScenarioRow key={item.id} r={item} envVars={envVars} getResult={getResult} getStatus={getStatus} statuses={statuses} progress={progress} runningIds={runningIds} expandedRows={expandedRows} detailData={detailData} loadDetail={loadDetail} toggleRow={toggleRow} runSingle={runSingle} openEdit={openEdit} deleteRequest={deleteRequest} />
           })}
         </div>
       </div>
@@ -495,7 +550,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogClose onClose={() => { setEditReq(null); setIsNewReq(false) }} />
           <DialogHeader><DialogTitle>{isNewReq ? '新建测试用例' : '编辑测试用例'}</DialogTitle></DialogHeader>
-          {editReq && <EditForm req={editReq} onChange={setEditReq} onSave={saveEdit} onCancel={() => { setEditReq(null); setIsNewReq(false) }} />}
+          {editReq && <EditForm req={editReq} onChange={setEditReq} onSave={saveEdit} onCancel={() => { setEditReq(null); setIsNewReq(false) }} envVars={envVars} />}
         </DialogContent>
       </Dialog>
 
@@ -503,7 +558,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
       <Dialog open={showChainDialog} onOpenChange={setShowChainDialog}>
         <DialogContent className="max-w-sm">
           <DialogClose onClose={() => setShowChainDialog(false)} />
-          <DialogHeader><DialogTitle>新建链式请求</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('edit.new_chain')}</DialogTitle></DialogHeader>
           <div className="space-y-3 pt-2">
             <div>
               <label className="text-xs text-muted-foreground mb-1 block">链名称</label>
@@ -517,8 +572,8 @@ export default function CollectionOverview({ collection, tree }: Props) {
               创建后可在表格中展开链，通过"+ 添加步骤"逐个添加请求。步骤间通过变量提取规则（Extract）传递数据，后续步骤用 {'{{变量名}}'} 引用。
             </p>
             <div className="flex justify-end gap-2 pt-1">
-              <Button variant="outline" size="sm" onClick={() => setShowChainDialog(false)}>取消</Button>
-              <Button size="sm" onClick={saveChain} disabled={!chainName.trim()}>创建</Button>
+              <Button variant="outline" size="sm" onClick={() => setShowChainDialog(false)}>{t('edit.cancel')}</Button>
+              <Button size="sm" onClick={saveChain} disabled={!chainName.trim()}>{t('edit.create')}</Button>
             </div>
           </div>
         </DialogContent>
@@ -528,15 +583,19 @@ export default function CollectionOverview({ collection, tree }: Props) {
 }
 
 // ─── 编辑表单 ──────────────────────────────────
-function EditForm({ req, onChange, onSave, onCancel }: {
+function EditForm({ req, onChange, onSave, onCancel, envVars }: {
   req: CollectionItem
   onChange: (r: CollectionItem) => void
   onSave: () => void
   onCancel: () => void
+  envVars: Record<string, string>
 }) {
+  const { t } = useTranslation()
   const set = (field: string, value: any) => onChange({ ...req, [field]: value })
+  const [activeTab, setActiveTab] = useState<'body' | 'headers' | 'advanced'>('body')
   const [showCurlImport, setShowCurlImport] = useState(false)
   const [curlInput, setCurlInput] = useState('')
+  const [curlCopied, setCurlCopied] = useState(false)
 
   const formatBody = () => {
     try { set('body_content', JSON.stringify(JSON.parse(req.body_content), null, 2)) } catch {}
@@ -561,15 +620,23 @@ function EditForm({ req, onChange, onSave, onCancel }: {
     }
   }
 
-  const exportToCurl = () => {
-    const headers: { key: string; value: string; enabled: boolean }[] = (() => { try { return JSON.parse(req.headers || '[]') } catch { return [] } })()
-    const parts = [`curl -X ${req.method}`, `  '${req.url}'`]
-    for (const h of headers.filter((h) => h.enabled)) parts.push(`  -H '${h.key}: ${h.value}'`)
-    if (req.body_type !== 'none' && req.body_content) {
-      try { parts.push(`  -d '${JSON.stringify(JSON.parse(req.body_content))}'`) } catch { parts.push(`  -d '${req.body_content}'`) }
-    }
-    const curl = parts.join(' \\\n')
-    navigator.clipboard.writeText(curl)
+  const exportToCurl = async () => {
+    try {
+      if (req.id) {
+        const curl = await invoke<string>('export_curl', { id: req.id })
+        await navigator.clipboard.writeText(curl)
+      } else {
+        const headers: { key: string; value: string; enabled: boolean }[] = (() => { try { return JSON.parse(req.headers || '[]') } catch { return [] } })()
+        const parts = [`curl -X ${req.method}`, `  '${req.url}'`]
+        for (const h of headers.filter((h) => h.enabled)) parts.push(`  -H '${h.key}: ${h.value}'`)
+        if (req.body_type !== 'none' && req.body_content) {
+          try { parts.push(`  -d '${JSON.stringify(JSON.parse(req.body_content))}'`) } catch { parts.push(`  -d '${req.body_content}'`) }
+        }
+        await navigator.clipboard.writeText(parts.join(' \\\n'))
+      }
+      setCurlCopied(true)
+      setTimeout(() => setCurlCopied(false), 1500)
+    } catch {}
   }
 
   // Tab 键插入 2 空格缩进
@@ -590,148 +657,196 @@ function EditForm({ req, onChange, onSave, onCancel }: {
   const headers: { key: string; value: string; enabled: boolean }[] = (() => {
     try { const p = JSON.parse(req.headers || '[]'); return Array.isArray(p) ? p : [] } catch { return [] }
   })()
-
   const setHeaders = (h: typeof headers) => set('headers', JSON.stringify(h))
+
+  // 高级选项是否有内容（用于 tab 上的小圆点提示）
+  const extractRules = (() => { try { const p = JSON.parse(req.extract_rules || '[]'); return Array.isArray(p) ? p : [] } catch { return [] } })()
+  const hasPollConfig = !!req.poll_config && req.poll_config !== '{}'
+  const hasAdvanced = extractRules.length > 0 || hasPollConfig
 
   return (
     <div className="space-y-4">
-      {/* 基本信息 */}
+      {/* 名称 + 描述 */}
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="text-xs text-muted-foreground mb-1 block">名称</label>
+          <label className="text-xs text-muted-foreground mb-1 block">{t('edit.name')}</label>
           <Input value={req.name} onChange={(e) => set('name', e.target.value)} className="h-8 text-sm" />
         </div>
         <div>
-          <label className="text-xs text-muted-foreground mb-1 block">描述</label>
-          <Input value={req.description} onChange={(e) => set('description', e.target.value)} className="h-8 text-sm" placeholder="场景描述" />
+          <label className="text-xs text-muted-foreground mb-1 block">{t('edit.desc')}</label>
+          <Input value={req.description} onChange={(e) => set('description', e.target.value)} className="h-8 text-sm" placeholder={t('edit.desc_placeholder')} />
         </div>
       </div>
 
-      {/* Method + URL */}
-      <div className="flex gap-2">
+      {/* Method + URL + curl 按钮 */}
+      <div className="flex gap-2 items-center">
         <Select value={req.method} onChange={(v) => set('method', v)} options={['GET','POST','PUT','DELETE','PATCH','HEAD'].map((m) => ({ value: m, label: m }))} className="w-28" />
-        <Input value={req.url} onChange={(e) => set('url', e.target.value)} className="h-8 text-sm flex-1" style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }} placeholder="请求 URL" />
-      </div>
-
-      {/* 期望状态码 */}
-      <div className="flex items-center gap-3">
-        <label className="text-xs text-muted-foreground">期望状态码</label>
-        <Input type="number" value={req.expect_status} onChange={(e) => set('expect_status', Number(e.target.value))} className="h-8 w-24 text-sm text-center" />
-      </div>
-
-      {/* Body */}
-      <div>
-        <div className="flex items-center justify-between mb-1.5">
-          <label className="text-xs text-muted-foreground">请求体</label>
-          <div className="flex items-center gap-1">
-            {BODY_TYPES.map((t) => (
-              <button key={t.id} className={`px-2.5 py-1 rounded-md text-[10px] font-medium cursor-pointer transition-colors ${req.body_type === t.id ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`} onClick={() => set('body_type', t.id)}>
-                {t.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="relative h-[200px]">
-          {req.body_type === 'none' ? (
-            <div className="w-full h-full rounded-xl border border-overlay/[0.06] bg-overlay/[0.02] flex items-center justify-center">
-              <span className="text-xs text-muted-foreground/40">无请求体</span>
-            </div>
-          ) : (req.body_type === 'form-data' || req.body_type === 'urlencoded' || req.body_type === 'form') ? (
-            <div className="h-full overflow-y-auto">
-              <KeyValueTable
-                value={(() => { try { const p = JSON.parse(req.body_content || '[]'); return Array.isArray(p) ? p : [] } catch { return [] } })()}
-                onChange={(v) => set('body_content', JSON.stringify(v))}
-                allowFiles={req.body_type === 'form-data'}
-              />
-            </div>
-          ) : req.body_type === 'json' ? (
-            <>
-              <JsonEditor
-                value={req.body_content}
-                onChange={(v) => set('body_content', v)}
-                className="w-full h-full"
-                placeholder='{ "key": "value" }'
-              />
-              <button
-                onClick={formatBody}
-                className="absolute top-2 right-2 px-2 py-0.5 rounded-md text-[10px] font-medium text-muted-foreground hover:text-foreground bg-overlay/[0.06] hover:bg-overlay/[0.1] cursor-pointer transition-colors z-20"
-              >
-                Format
-              </button>
-            </>
-          ) : (
-            <textarea
-              value={req.body_content}
-              onChange={(e) => set('body_content', e.target.value)}
-              onKeyDown={handleBodyKeyDown}
-              style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}
-              className="w-full h-full min-h-0 rounded-xl border border-overlay/[0.08] bg-overlay/[0.03] px-3 py-2 text-xs leading-relaxed resize-none outline-none hover:border-overlay/[0.12] focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/20 transition-all duration-200"
-              placeholder="请求体内容"
-            />
+        <VarInput value={req.url} onChange={(v) => set('url', v)} placeholder={t('edit.url_placeholder')} envVars={envVars} />
+        <div className="flex gap-1 shrink-0">
+          <button
+            onClick={() => setShowCurlImport(!showCurlImport)}
+            className="h-8 px-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-overlay/[0.06] cursor-pointer transition-colors flex items-center gap-1"
+            title={t('edit.import_curl')}
+          >
+            <Download className="h-3.5 w-3.5" />
+            <span className="text-[10px]">cURL</span>
+          </button>
+          {req.id && req.url && (
+            <button
+              onClick={exportToCurl}
+              className="h-8 px-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-overlay/[0.06] cursor-pointer transition-colors flex items-center gap-1"
+              title={t('edit.copy_curl')}
+            >
+              {curlCopied
+                ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                : <Copy className="h-3.5 w-3.5" />}
+              <span className="text-[10px]">{curlCopied ? 'Copied' : 'cURL'}</span>
+            </button>
           )}
         </div>
       </div>
 
-      {/* Headers */}
-      <div>
-        <label className="text-xs text-muted-foreground mb-1.5 block">Headers</label>
-        <KeyValueTable
-          value={headers}
-          onChange={setHeaders}
-        />
-      </div>
-
-      {/* Extract Rules（变量提取） */}
-      <div>
-        <label className="text-xs text-muted-foreground mb-1.5 block">变量提取规则（用于链式请求传递）</label>
-        <ExtractRulesEditor
-          value={(() => { try { const p = JSON.parse(req.extract_rules || '[]'); return Array.isArray(p) ? p : [] } catch { return [] } })()}
-          onChange={(rules) => set('extract_rules', JSON.stringify(rules))}
-        />
-      </div>
-
-      {/* 轮询配置 */}
-      <PollConfigEditor
-        value={(() => { try { return req.poll_config ? JSON.parse(req.poll_config) : null } catch { return null } })()}
-        onChange={(cfg) => set('poll_config', cfg ? JSON.stringify(cfg) : '')}
-      />
-
-      {/* curl 导入 */}
+      {/* curl 导入面板（展开在 URL 栏下方） */}
       {showCurlImport && (
-        <div className="space-y-2 p-3 rounded-lg border border-overlay/[0.08] bg-overlay/[0.02]">
-          <label className="text-xs text-muted-foreground">粘贴 curl 命令</label>
+        <div className="space-y-2 p-3 rounded-xl border border-primary/20 bg-primary/[0.03]">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-medium">{t('edit.import_curl')}</label>
+            <button onClick={() => setShowCurlImport(false)} className="text-muted-foreground hover:text-foreground cursor-pointer">
+              <XCircle className="h-3.5 w-3.5" />
+            </button>
+          </div>
           <textarea
             value={curlInput}
             onChange={(e) => setCurlInput(e.target.value)}
             rows={4}
-            className="w-full rounded-lg border border-overlay/[0.08] bg-transparent px-3 py-2 text-xs resize-y outline-none focus:border-primary/50"
+            className="w-full rounded-lg border border-overlay/[0.08] bg-overlay/[0.03] px-3 py-2 text-xs resize-y outline-none focus:border-primary/50"
             style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}
             placeholder={'curl -X POST https://api.example.com \\\n  -H \'Content-Type: application/json\' \\\n  -d \'{"key":"value"}\''}
             autoFocus
           />
-          <div className="flex gap-2">
+          <div className="flex justify-end">
             <Button size="sm" onClick={importFromCurl} disabled={!curlInput.trim()}>解析导入</Button>
-            <Button variant="outline" size="sm" onClick={() => setShowCurlImport(false)}>取消</Button>
           </div>
         </div>
       )}
 
-      {/* 按钮 */}
-      <div className="flex items-center justify-between pt-2">
-        <div className="flex gap-2">
-          <button onClick={() => setShowCurlImport(!showCurlImport)} className="text-xs text-muted-foreground hover:text-foreground cursor-pointer transition-colors">
-            从 curl 导入
+      {/* Tab 导航：Body / Headers / 高级 */}
+      <div className="flex items-center gap-4 border-b border-overlay/[0.06]">
+        {([
+          { key: 'body' as const, label: t('edit.body') },
+          { key: 'headers' as const, label: 'Headers', count: headers.filter(h => h.key).length },
+          { key: 'advanced' as const, label: t('edit.expect_status'), dot: hasAdvanced },
+        ]).map((tab) => (
+          <button
+            key={tab.key}
+            className={`relative pb-2 text-xs font-medium cursor-pointer transition-colors ${activeTab === tab.key ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+            onClick={() => setActiveTab(tab.key)}
+          >
+            <span className="flex items-center gap-1.5">
+              {tab.label}
+              {'count' in tab && tab.count ? <span className="text-[10px] text-muted-foreground/60">({tab.count})</span> : null}
+              {'dot' in tab && tab.dot ? <span className="h-1.5 w-1.5 rounded-full bg-primary" /> : null}
+            </span>
+            {activeTab === tab.key && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />}
           </button>
-          {req.id && req.url && (
-            <button onClick={exportToCurl} className="text-xs text-muted-foreground hover:text-foreground cursor-pointer transition-colors">
-              复制 curl
-            </button>
-          )}
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={onCancel}>取消</Button>
-          <Button size="sm" onClick={onSave}>保存</Button>
-        </div>
+        ))}
+      </div>
+
+      {/* Tab 内容 */}
+      <div className="min-h-[240px]">
+        {/* Body Tab */}
+        {activeTab === 'body' && (
+          <div>
+            <div className="flex items-center gap-1 mb-2">
+              {BODY_TYPES.map((bt) => (
+                <button key={bt.id} className={`px-2.5 py-1 rounded-md text-[10px] font-medium cursor-pointer transition-colors ${req.body_type === bt.id ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-overlay/[0.04]'}`} onClick={() => set('body_type', bt.id)}>
+                  {bt.label}
+                </button>
+              ))}
+            </div>
+            <div className="relative h-[220px]">
+              {req.body_type === 'none' ? (
+                <div className="w-full h-full rounded-xl border border-overlay/[0.06] bg-overlay/[0.02] flex items-center justify-center">
+                  <span className="text-xs text-muted-foreground/40">{t('scenario.no_body')}</span>
+                </div>
+              ) : (req.body_type === 'form-data' || req.body_type === 'urlencoded' || req.body_type === 'form') ? (
+                <div className="h-full overflow-y-auto">
+                  <KeyValueTable
+                    value={(() => { try { const p = JSON.parse(req.body_content || '[]'); return Array.isArray(p) ? p : [] } catch { return [] } })()}
+                    onChange={(v) => set('body_content', JSON.stringify(v))}
+                    allowFiles={req.body_type === 'form-data'}
+                    envVars={envVars}
+                  />
+                </div>
+              ) : req.body_type === 'json' ? (
+                <>
+                  <JsonEditor
+                    value={req.body_content}
+                    onChange={(v) => set('body_content', v)}
+                    className="w-full h-full"
+                    placeholder='{ "key": "value" }'
+                  />
+                  <button
+                    onClick={formatBody}
+                    className="absolute top-2 right-2 px-2 py-0.5 rounded-md text-[10px] font-medium text-muted-foreground hover:text-foreground bg-overlay/[0.06] hover:bg-overlay/[0.1] cursor-pointer transition-colors z-20"
+                  >
+                    Format
+                  </button>
+                </>
+              ) : (
+                <textarea
+                  value={req.body_content}
+                  onChange={(e) => set('body_content', e.target.value)}
+                  onKeyDown={handleBodyKeyDown}
+                  style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}
+                  className="w-full h-full min-h-0 rounded-xl border border-overlay/[0.08] bg-overlay/[0.03] px-3 py-2 text-xs leading-relaxed resize-none outline-none hover:border-overlay/[0.12] focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/20 transition-all duration-200"
+                  placeholder="请求体内容"
+                />
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Headers Tab */}
+        {activeTab === 'headers' && (
+          <KeyValueTable
+            value={headers}
+            onChange={setHeaders}
+            envVars={envVars}
+          />
+        )}
+
+        {/* 高级 Tab */}
+        {activeTab === 'advanced' && (
+          <div className="space-y-5">
+            {/* 期望状态码 */}
+            <div className="flex items-center gap-3">
+              <label className="text-xs text-muted-foreground w-20">{t('edit.expect_status')}</label>
+              <Input type="number" value={req.expect_status} onChange={(e) => set('expect_status', Number(e.target.value))} className="h-8 w-24 text-sm text-center" />
+            </div>
+
+            {/* Extract Rules */}
+            <div>
+              <label className="text-xs text-muted-foreground mb-1.5 block">{t('edit.extract_rules')}</label>
+              <ExtractRulesEditor
+                value={extractRules}
+                onChange={(rules) => set('extract_rules', JSON.stringify(rules))}
+              />
+            </div>
+
+            {/* 轮询配置 */}
+            <PollConfigEditor
+              value={(() => { try { return req.poll_config ? JSON.parse(req.poll_config) : null } catch { return null } })()}
+              onChange={(cfg) => set('poll_config', cfg ? JSON.stringify(cfg) : '')}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* 底部操作栏 */}
+      <div className="flex items-center justify-end gap-2 pt-1 border-t border-overlay/[0.06]">
+        <Button variant="outline" size="sm" onClick={onCancel}>{t('edit.cancel')}</Button>
+        <Button size="sm" onClick={onSave}>{t('edit.save')}</Button>
       </div>
     </div>
   )
@@ -784,7 +899,7 @@ function InlineEdit({ value, placeholder, onSave }: { value: string; placeholder
 }
 
 // ─── 场景行 ──────────────────────────
-function ScenarioRow({ r, stepLabel, indent, envVars = {}, getResult, getStatus: _getStatus, statuses, progress, runningIds, expandedRows, detailData, toggleRow, runSingle, openEdit, deleteRequest, formatTime }: {
+function ScenarioRow({ r, stepLabel, indent, envVars = {}, getResult, getStatus: _getStatus, statuses, progress, runningIds, expandedRows, detailData, loadDetail, toggleRow, runSingle, openEdit, deleteRequest }: {
   r: { id: string; name: string; method: string; folder?: string; expect_status?: number }
   stepLabel?: string
   indent?: boolean
@@ -796,21 +911,42 @@ function ScenarioRow({ r, stepLabel, indent, envVars = {}, getResult, getStatus:
   runningIds: Set<string>
   expandedRows: Set<string>
   detailData: Record<string, CollectionItem>
+  loadDetail: (id: string) => void
   toggleRow: (id: string) => void
   runSingle: (id: string) => void
   openEdit: (id: string) => void
   deleteRequest: (id: string, name: string, e: React.MouseEvent) => void
-  formatTime: (ms: number) => string
+
 }) {
+  const { t } = useTranslation()
+  const [reqTab, setReqTab] = useState<'body' | 'headers'>('body')
   const [respTab, setRespTab] = useState<'body' | 'headers'>('body')
   const result = getResult(r.id)
   const prog = progress.find((p) => p.item_id === r.id)
   const old = statuses[r.id]
   const resp = result?.response
-  const status = result?.status ?? prog?.status ?? old?.status
   const expanded = expandedRows.has(r.id)
   const isRunning = runningIds.has(r.id) || prog?.status === 'running'
+  const status = isRunning ? 'running' : (result?.status ?? prog?.status ?? old?.status)
   const detail = detailData[r.id]
+
+  // 链式步骤里不在环境变量中的变量视为链式提取变量
+  const chainVars = useMemo(() => {
+    if (!indent || !detail) return undefined
+    const vars = new Set<string>()
+    const varRegex = /\{\{(\w+)\}\}/g
+    const text = (detail.url || '') + (detail.body_content || '')
+    let match: RegExpExecArray | null
+    while ((match = varRegex.exec(text)) !== null) {
+      if (!(match[1] in envVars)) vars.add(match[1])
+    }
+    return vars.size > 0 ? vars : undefined
+  }, [indent, detail, envVars])
+
+  // 展开时自动加载详情（防止 toggleRow 加载失败后永远显示"加载中"）
+  useEffect(() => {
+    if (expanded && !detail) loadDetail(r.id)
+  }, [expanded, detail, r.id])
   const sd = !status ? { icon: <Circle className="h-3.5 w-3.5 text-muted-foreground/30" />, label: '-', color: '' }
     : status === 'running' ? { icon: <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500" />, label: 'Running', color: 'text-blue-500' }
     : status === 'success' ? { icon: <CheckCircle2 className="h-3.5 w-3.5" />, label: 'PASS', color: 'text-emerald-500' }
@@ -831,7 +967,7 @@ function ScenarioRow({ r, stepLabel, indent, envVars = {}, getResult, getStatus:
         <span className="font-mono text-xs self-center">
           {resp ? <span className={resp.status < 300 ? 'text-emerald-500' : resp.status < 400 ? 'text-amber-500' : 'text-red-500'}>{resp.status}</span> : '-'}
         </span>
-        <span className="text-xs text-muted-foreground self-center tabular-nums">{resp ? formatTime(resp.time_ms) : old ? formatTime(old.response_time_ms) : '-'}</span>
+        <span className="text-xs text-muted-foreground self-center tabular-nums">{resp ? formatDuration(resp.time_ms) : old ? formatDuration(old.response_time_ms) : '-'}</span>
         <span className="flex items-center justify-end gap-0.5" onClick={(e) => e.stopPropagation()}>
           <button className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 hover:bg-muted transition-all cursor-pointer" onClick={() => runSingle(r.id)} disabled={isRunning} title="运行">
             {isRunning ? <Loader2 className="h-3 w-3 animate-spin text-blue-500" /> : <Play className="h-3 w-3 text-muted-foreground" />}
@@ -848,19 +984,73 @@ function ScenarioRow({ r, stepLabel, indent, envVars = {}, getResult, getStatus:
         <div className={`bg-overlay/[0.03] px-4 py-4 space-y-4 border-t border-overlay/[0.04] ${indent ? 'ml-6' : ''}`}>
           <div className="grid grid-cols-2 gap-4">
             <div className="rounded-lg border border-overlay/[0.06] overflow-hidden">
-              <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 border-b border-overlay/[0.04]">USER REQUEST</div>
+              {/* USER REQUEST — Tab: Body / Headers */}
+              <div className="flex items-center justify-between border-b border-overlay/[0.04] px-3">
+                <div className="flex items-center gap-0">
+                  <button className={`px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors relative ${reqTab === 'body' ? 'text-foreground' : 'text-muted-foreground/60 hover:text-muted-foreground'}`} onClick={() => setReqTab('body')}>
+                    Body
+                    {reqTab === 'body' && <span className="absolute bottom-0 left-1 right-1 h-0.5 bg-primary rounded-full" />}
+                  </button>
+                  <button className={`px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors relative ${reqTab === 'headers' ? 'text-foreground' : 'text-muted-foreground/60 hover:text-muted-foreground'}`} onClick={() => setReqTab('headers')}>
+                    Headers{detail ? ` (${(() => { try { return JSON.parse(detail.headers).filter((h: any) => h.enabled).length } catch { return 0 } })()})` : ''}
+                    {reqTab === 'headers' && <span className="absolute bottom-0 left-1 right-1 h-0.5 bg-primary rounded-full" />}
+                  </button>
+                </div>
+                {/* body type 标签移到 method+url 行末尾 */}
+              </div>
               <div className="px-3 py-2.5 max-h-52 overflow-y-auto">
-                {detail ? (
+                {!detail ? <span className="text-xs text-muted-foreground">{t('scenario.loading')}</span> : reqTab === 'body' ? (
                   <>
-                    <div className="text-xs font-mono mb-2">
-                      <span className="text-method-post font-bold">{detail.method}</span>{' '}
-                      <VarHighlight text={detail.url} vars={envVars} className="text-xs font-mono" />
+                    <div className="text-xs font-mono mb-2 flex items-baseline gap-2 flex-wrap">
+                      <span><span className="text-method-post font-bold">{detail.method}</span>{' '}<VarHighlight text={detail.url} vars={envVars} chainVars={chainVars} className="text-xs font-mono" /></span>
+                      {detail.body_type !== 'none' && <span className="text-[9px] px-1.5 py-0.5 rounded bg-overlay/[0.06] text-muted-foreground/60 uppercase tracking-wider shrink-0">{detail.body_type === 'form' ? 'urlencoded' : detail.body_type}</span>}
                     </div>
                     {detail.body_type !== 'none' && detail.body_content && (
-                      <JsonHighlight code={(() => { try { return JSON.stringify(JSON.parse(detail.body_content), null, 2) } catch { return detail.body_content } })()} />
+                      (detail.body_type === 'form-data' || detail.body_type === 'urlencoded' || detail.body_type === 'form') ? (() => {
+                        let pairs: { key: string; value: string; enabled?: boolean; fieldType?: string }[] = []
+                        try { const p = JSON.parse(detail.body_content); if (Array.isArray(p)) pairs = p } catch {}
+                        const active = pairs.filter(p => p.enabled !== false)
+                        const fileName = (path: string) => path.split('/').pop() || path.split('\\').pop() || path
+                        return active.length > 0 ? (
+                          <table className="w-full text-[11px]">
+                            <thead><tr className="border-b border-overlay/[0.04]"><th className="text-left pr-3 py-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 w-1/3">Key</th><th className="text-left py-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60">Value</th></tr></thead>
+                            <tbody className="font-mono">{active.map((p, i) => (<tr key={i} className="border-b border-overlay/[0.02]">
+                              <td className="pr-3 py-1 text-sky-600 dark:text-sky-400">{p.key}</td>
+                              <td className="py-1 break-all">{p.fieldType === 'file' ? (
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold uppercase shrink-0">file</span>
+                                  <span className="text-foreground/70 truncate">{fileName(p.value)}</span>
+                                  <FilePreviewThumb path={p.value} />
+                                </div>
+                              ) : (
+                                <span className="text-emerald-600 dark:text-emerald-400">{p.value}</span>
+                              )}</td>
+                            </tr>))}</tbody>
+                          </table>
+                        ) : <span className="text-xs text-muted-foreground">无表单字段</span>
+                      })() : <JsonHighlight code={(() => { try { return JSON.stringify(JSON.parse(detail.body_content), null, 2) } catch { return detail.body_content } })()} />
                     )}
+                    {detail.body_type === 'none' && <span className="text-xs text-muted-foreground/40">{t('scenario.no_body')}</span>}
                   </>
-                ) : <span className="text-xs text-muted-foreground">加载中...</span>}
+                ) : (
+                  /* Headers Tab */
+                  (() => {
+                    let hdrs: { key: string; value: string; enabled: boolean }[] = []
+                    try { hdrs = JSON.parse(detail.headers) } catch {}
+                    const active = hdrs.filter(h => h.enabled)
+                    return active.length > 0 ? (
+                      <table className="w-full text-[11px]">
+                        <thead><tr className="border-b border-overlay/[0.04]"><th className="text-left pr-3 py-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 w-1/3">Key</th><th className="text-left py-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60">Value</th></tr></thead>
+                        <tbody className="font-mono">{active.map((h, i) => (
+                          <tr key={i} className="border-b border-overlay/[0.02]">
+                            <td className="pr-3 py-1 text-muted-foreground">{h.key}</td>
+                            <td className="py-1 break-all"><VarHighlight text={h.value} vars={envVars} className="text-[11px] font-mono" /></td>
+                          </tr>
+                        ))}</tbody>
+                      </table>
+                    ) : <span className="text-xs text-muted-foreground/40">{t('scenario.no_headers')}</span>
+                  })()
+                )}
               </div>
             </div>
             <div className="rounded-lg border border-overlay/[0.06] overflow-hidden">
@@ -879,7 +1069,7 @@ function ScenarioRow({ r, stepLabel, indent, envVars = {}, getResult, getStatus:
                 {resp && (
                   <div className="flex items-center gap-2 text-[9px]">
                     <span className={resp.status < 300 ? 'text-emerald-500 font-bold' : resp.status < 400 ? 'text-amber-500 font-bold' : 'text-red-500 font-bold'}>{resp.status} {resp.status_text}</span>
-                    <span className="text-muted-foreground">{formatTime(resp.time_ms)}</span>
+                    <span className="text-muted-foreground">{formatDuration(resp.time_ms)}</span>
                     <span className="text-muted-foreground">{resp.size_bytes > 1024 ? `${(resp.size_bytes / 1024).toFixed(1)}KB` : `${resp.size_bytes}B`}</span>
                   </div>
                 )}
@@ -909,7 +1099,7 @@ function ScenarioRow({ r, stepLabel, indent, envVars = {}, getResult, getStatus:
                       </tbody>
                     </table>
                   ) : (
-                    <div className="px-3 py-6 text-center text-xs text-muted-foreground/40">尚未运行</div>
+                    <div className="px-3 py-6 text-center text-xs text-muted-foreground/40">{t('scenario.not_run')}</div>
                   )}
                 </div>
               )}
@@ -943,6 +1133,7 @@ function ExtractRulesEditor({ value, onChange }: {
   value: { var_name: string; source: string; expression: string }[]
   onChange: (rules: { var_name: string; source: string; expression: string }[]) => void
 }) {
+  const { t } = useTranslation()
   const addRule = () => onChange([...value, { var_name: '', source: 'json_body', expression: '' }])
   const removeRule = (idx: number) => onChange(value.filter((_, i) => i !== idx))
   const updateRule = (idx: number, field: string, val: string) => {
@@ -968,7 +1159,7 @@ function ExtractRulesEditor({ value, onChange }: {
         </div>
       ))}
       <button onClick={addRule} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground cursor-pointer transition-colors">
-        <Plus className="h-3 w-3" /> 添加提取规则
+        <Plus className="h-3 w-3" /> {t('edit.add_extract')}
       </button>
       {value.length > 0 && (
         <p className="text-[10px] text-muted-foreground/60">提取的变量可在后续步骤中通过 {'{{变量名}}'} 引用</p>
@@ -1036,7 +1227,8 @@ function PollConfigEditor({ value, onChange }: {
 }
 
 function ResponseBody({ resp }: { resp: HttpResponse | null | undefined }) {
-  if (!resp) return <div className="px-3 py-6 text-center text-xs text-muted-foreground/40">尚未运行</div>
+  const { t } = useTranslation()
+  if (!resp) return <div className="px-3 py-6 text-center text-xs text-muted-foreground/40">{t('scenario.not_run')}</div>
 
   const contentType = resp.headers.find((h: { key: string }) => h.key.toLowerCase() === 'content-type')?.value?.toLowerCase() || ''
 
@@ -1090,4 +1282,54 @@ function ResponseBody({ resp }: { resp: HttpResponse | null | undefined }) {
   })()
 
   return <JsonHighlight code={formatted} className="px-3 py-2.5 max-h-52 overflow-y-auto" />
+}
+
+// ─── 本地文件预览按钮 + 弹窗 ──────────────
+function FilePreviewThumb({ path }: { path: string }) {
+  const [src, setSrc] = useState<string | null>(null)
+  const [open, setOpen] = useState(false)
+  const ext = path.split('.').pop()?.toLowerCase() || ''
+  const isImage = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)
+  const isAudio = ['wav', 'mp3', 'ogg', 'flac', 'm4a', 'webm'].includes(ext)
+  const isVideo = ['mp4', 'mov'].includes(ext)
+  const isPreviewable = isImage || isAudio || isVideo
+
+  useEffect(() => {
+    if (!isPreviewable || !path) return
+    let cancelled = false
+    invoke<string | null>('read_file_preview', { path }).then((dataUri) => {
+      if (!cancelled && dataUri) setSrc(dataUri)
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [path, isPreviewable])
+
+  if (!isPreviewable || !src) return null
+  const fileName = path.split('/').pop() || path
+
+  if (isImage) return (
+    <>
+      <img src={src} alt="" className="h-7 w-7 rounded object-cover border border-overlay/[0.1] shrink-0 ml-auto cursor-pointer hover:ring-2 hover:ring-primary/30 transition-all" onClick={() => setOpen(true)} />
+      {open && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setOpen(false)}><img src={src} alt="" className="max-w-[80vw] max-h-[80vh] rounded-xl shadow-2xl" /></div>}
+    </>
+  )
+
+  return (
+    <>
+      <button onClick={() => setOpen(true)} className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-overlay/[0.06] hover:bg-overlay/[0.1] text-muted-foreground hover:text-foreground text-[10px] font-medium cursor-pointer transition-colors shrink-0 ml-auto">
+        <Play className="h-2.5 w-2.5" fill="currentColor" /> 预览
+      </button>
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setOpen(false)}>
+          <div className="bg-card rounded-xl p-5 shadow-2xl min-w-[340px] max-w-[90vw]" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-medium text-foreground">{fileName}</span>
+              <button onClick={() => setOpen(false)} className="text-muted-foreground hover:text-foreground cursor-pointer"><XCircle className="h-4 w-4" /></button>
+            </div>
+            {isAudio && <audio controls src={src} className="w-full" autoPlay />}
+            {isVideo && <video controls src={src} className="w-full rounded-lg" autoPlay />}
+          </div>
+        </div>
+      )}
+    </>
+  )
 }

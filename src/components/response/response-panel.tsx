@@ -1,19 +1,78 @@
 import { useMemo, useState } from 'react'
-import { ArrowDownToLine, Clock, HardDrive, Plug } from 'lucide-react'
+import { ArrowDownToLine, Clock, HardDrive, Plug, Download, Music, Image, Film, FileDown } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useRequestStore } from '@/stores/request-store'
 import AssertionResult from '@/components/assertion/assertion-result'
+import { save } from '@tauri-apps/plugin-dialog'
+import { writeFile } from '@tauri-apps/plugin-fs'
+import { formatDuration, formatSize } from '@/lib/formatters'
 
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+/** 从 data URI 中提取 MIME 和扩展名 */
+function parseDataUri(body: string) {
+  const mime = body.split(';')[0].replace('data:', '')
+  const ext = {
+    'audio/wav': 'wav', 'audio/mpeg': 'mp3', 'audio/ogg': 'ogg', 'audio/webm': 'webm', 'audio/flac': 'flac', 'audio/mp4': 'm4a',
+    'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp', 'image/svg+xml': 'svg',
+    'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov',
+  }[mime] || 'bin'
+  return { mime, ext }
 }
 
-function formatTime(ms: number): string {
-  if (ms < 1000) return `${ms}ms`
-  return `${(ms / 1000).toFixed(2)}s`
+/** data URI → Uint8Array */
+function dataUriToBytes(dataUri: string): Uint8Array {
+  const base64 = dataUri.split(',')[1]
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return bytes
+}
+
+/** 统一媒体预览组件 */
+function MediaPreview({ body, sizeBytes }: { body: string; sizeBytes: number }) {
+  const { mime, ext } = parseDataUri(body)
+  const isAudio = mime.startsWith('audio/')
+  const isImage = mime.startsWith('image/')
+  const isVideo = mime.startsWith('video/')
+
+  const handleSave = async () => {
+    const path = await save({ defaultPath: `response.${ext}` })
+    if (path) {
+      await writeFile(path, dataUriToBytes(body))
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-overlay/[0.06] bg-card overflow-hidden">
+      {/* 媒体预览 */}
+      <div className="p-4">
+        {isAudio && <audio controls src={body} className="w-full" />}
+        {isImage && <img src={body} alt="Response" className="max-w-full max-h-[400px] rounded-lg object-contain" />}
+        {isVideo && <video controls src={body} className="max-w-full max-h-[400px] rounded-lg" />}
+        {!isAudio && !isImage && !isVideo && (
+          <div className="flex flex-col items-center py-6 text-muted-foreground">
+            <FileDown className="h-8 w-8 mb-2" />
+            <span className="text-sm">二进制文件</span>
+          </div>
+        )}
+      </div>
+      {/* 底栏：元信息 + 下载 */}
+      <div className="flex items-center gap-3 px-4 py-2.5 border-t border-overlay/[0.04] bg-overlay/[0.02]">
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          {isAudio && <Music className="h-3 w-3" />}
+          {isImage && <Image className="h-3 w-3" />}
+          {isVideo && <Film className="h-3 w-3" />}
+          <span>{mime}</span>
+        </div>
+        <span className="text-xs text-muted-foreground">{formatSize(sizeBytes)}</span>
+        <div className="flex-1" />
+        <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={handleSave}>
+          <Download className="h-3 w-3" /> 保存
+        </Button>
+      </div>
+    </div>
+  )
 }
 
 export default function ResponsePanel() {
@@ -26,10 +85,15 @@ export default function ResponsePanel() {
   const passedCount = assertionResults.filter((r) => r.passed).length
   const failedCount = assertionResults.filter((r) => !r.passed).length
 
+  const isMediaResponse = response?.body?.startsWith('data:audio/')
+    || response?.body?.startsWith('data:image/')
+    || response?.body?.startsWith('data:video/')
+    || (response?.body?.startsWith('data:') && response?.body?.includes(';base64,'))
+
   const prettyBody = useMemo(() => {
-    if (!response?.body) return ''
+    if (!response?.body || isMediaResponse) return ''
     try { return JSON.stringify(JSON.parse(response.body), null, 2) } catch { return response.body }
-  }, [response?.body])
+  }, [response?.body, isMediaResponse])
 
   const statusColor = useMemo(() => {
     if (!response) return 'secondary' as const
@@ -39,7 +103,7 @@ export default function ResponsePanel() {
     return 'warning' as const
   }, [response?.status])
 
-  // 流式传输中：实时显示内容
+  // 流式传输中
   if (streaming && streamContent) {
     return (
       <div>
@@ -94,7 +158,7 @@ export default function ResponsePanel() {
         )}
         <div className="flex items-center gap-1 text-xs text-muted-foreground">
           <Clock className="h-3 w-3" />
-          <span>{formatTime(response.time_ms)}</span>
+          <span>{formatDuration(response.time_ms)}</span>
         </div>
         <div className="flex items-center gap-1 text-xs text-muted-foreground">
           <HardDrive className="h-3 w-3" />
@@ -119,19 +183,8 @@ export default function ResponsePanel() {
           )}
         </TabsList>
         <TabsContent value="body">
-          {response.body?.startsWith('data:audio/') ? (
-            <div className="p-4 rounded-xl border border-overlay/[0.06] bg-card space-y-3">
-              <audio controls src={response.body} className="w-full" />
-              <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                <span>{formatSize(response.size_bytes)}</span>
-                <span>{response.body.split(';')[0].replace('data:', '')}</span>
-              </div>
-            </div>
-          ) : response.body?.startsWith('data:image/') ? (
-            <div className="p-4 rounded-xl border border-overlay/[0.06] bg-card space-y-3">
-              <img src={response.body} alt="Response" className="max-w-full rounded-lg" />
-              <div className="text-xs text-muted-foreground">{formatSize(response.size_bytes)}</div>
-            </div>
+          {isMediaResponse ? (
+            <MediaPreview body={response.body} sizeBytes={response.size_bytes} />
           ) : (
             <pre className="font-mono text-xs leading-relaxed whitespace-pre-wrap break-all max-h-[400px] overflow-y-auto bg-card p-4 rounded-xl border border-overlay/[0.06]">
               {prettyBody}

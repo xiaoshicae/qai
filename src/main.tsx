@@ -2,7 +2,13 @@ import { StrictMode, Component, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import '@fontsource-variable/geist'
 import './index.css'
+import './i18n'
 import App from './App'
+
+// 生产环境禁用浏览器默认右键菜单
+if (!import.meta.env.DEV) {
+  document.addEventListener('contextmenu', (e) => e.preventDefault())
+}
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null }

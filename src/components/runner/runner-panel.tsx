@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { useCollectionStore } from '@/stores/collection-store'
 import type { BatchResult, TestProgress, ExecutionResult } from '@/types'
+import { formatDuration, formatSize } from '@/lib/formatters'
 
 export default function RunnerPanel() {
   const { collections } = useCollectionStore()
@@ -227,16 +228,7 @@ function ResultRow({ result, expanded, onToggle }: { result: ExecutionResult; ex
     ? <XCircle className="h-3.5 w-3.5 text-red-500" />
     : <AlertCircle className="h-3.5 w-3.5 text-amber-500" />
 
-  const formatSize = (bytes: number) => {
-    if (bytes < 1024) return `${bytes}B`
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`
-    return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
-  }
 
-  const formatTime = (ms: number) => {
-    if (ms < 1000) return `${ms}ms`
-    return `${(ms / 1000).toFixed(2)}s`
-  }
 
   return (
     <>
@@ -259,7 +251,7 @@ function ResultRow({ result, expanded, onToggle }: { result: ExecutionResult; ex
             </span>
           ) : '-'}
         </span>
-        <span className="text-xs text-muted-foreground">{resp ? formatTime(resp.time_ms) : '-'}</span>
+        <span className="text-xs text-muted-foreground">{resp ? formatDuration(resp.time_ms) : '-'}</span>
         <span className="text-xs text-muted-foreground">{resp ? formatSize(resp.size_bytes) : '-'}</span>
       </div>
 
@@ -273,7 +265,7 @@ function ResultRow({ result, expanded, onToggle }: { result: ExecutionResult; ex
                 <p className="text-xs font-medium text-muted-foreground mb-1">响应</p>
                 <div className="flex items-center gap-2 mb-1.5 text-xs">
                   <Badge variant={resp.status < 300 ? 'success' : 'destructive'}>{resp.status} {resp.status_text}</Badge>
-                  <span className="text-muted-foreground">{formatTime(resp.time_ms)}</span>
+                  <span className="text-muted-foreground">{formatDuration(resp.time_ms)}</span>
                   <span className="text-muted-foreground">{formatSize(resp.size_bytes)}</span>
                 </div>
                 <pre className="text-xs font-mono bg-background rounded-lg p-2.5 overflow-auto max-h-48 border">

@@ -6,10 +6,8 @@ use crate::db::init::DbState;
 /// YAML 场景文件结构
 #[derive(Debug, serde::Deserialize)]
 struct YamlCase {
-    model: String,
     name: String,
     category: Option<String>,
-    subcategory: Option<String>,
     endpoint: Option<String>,
     scenarios: Vec<YamlScenario>,
 }
@@ -18,14 +16,13 @@ struct YamlCase {
 struct YamlScenario {
     id: String,
     description: Option<String>,
-    #[serde(default)]
-    stream: bool,
     // JSON body
     payload: Option<serde_json::Value>,
     // form-data
     form_data: Option<serde_json::Value>,
     // multipart
     multipart_fields: Option<serde_json::Value>,
+    multipart_files: Option<serde_json::Value>,
     // content_type override
     content_type: Option<String>,
     // expect
@@ -56,7 +53,7 @@ pub fn import_yaml_cases(
     dir_path: String,
     clear_first: Option<bool>,
 ) -> Result<ImportResult, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn()?;
     let base = PathBuf::from(&dir_path);
 
     if !base.exists() {
@@ -89,7 +86,10 @@ pub fn import_yaml_cases(
         let case: YamlCase = serde_yaml::from_str(&content)
             .map_err(|e| format!("解析 YAML 失败 {:?}: {}", path, e))?;
 
-        import_single_case(&conn, &case, &mut result)
+        // assets 目录：与 YAML 文件同级的 assets/ 或 base 目录下的 assets/
+        let assets_dir = path.parent().unwrap_or(&base).join("../assets");
+        let assets_dir = if assets_dir.exists() { assets_dir } else { base.join("assets") };
+        import_single_case(&conn, &case, &mut result, &assets_dir)
             .map_err(|e| format!("导入 {} 失败: {}", case.name, e))?;
     }
 
@@ -116,6 +116,7 @@ fn import_single_case(
     conn: &rusqlite::Connection,
     case: &YamlCase,
     result: &mut ImportResult,
+    assets_dir: &std::path::Path,
 ) -> Result<(), String> {
     let category = case.category.as_deref().unwrap_or("text");
     let endpoint = case.endpoint.as_deref().unwrap_or("");
@@ -161,7 +162,7 @@ fn import_single_case(
                 .unwrap_or_default();
             ("json".to_string(), payload)
         } else {
-            build_body(scenario)
+            build_body(scenario, assets_dir)
         };
 
         // WebSocket 用 ws_endpoint，HTTP 用 case 级 endpoint
@@ -185,18 +186,18 @@ fn import_single_case(
                 crate::db::item::update(
                     conn,
                     &item.id,
-                    Some(&scenario.id),
-                    Some("POST"),
-                    Some(item_endpoint),
-                    Some(&headers),
-                    None, // query_params
-                    Some(&body_type),
-                    Some(&body_content),
-                    None, // extract_rules
-                    scenario.description.as_deref(),
-                    Some(expect_status),
-                    None, // parent_id
-                    protocol,
+                    &crate::models::item::UpdateItemPayload {
+                        name: Some(scenario.id.clone()),
+                        method: Some("POST".to_string()),
+                        url: Some(item_endpoint.to_string()),
+                        headers: Some(headers.clone()),
+                        body_type: Some(body_type.clone()),
+                        body_content: Some(body_content.clone()),
+                        description: scenario.description.clone(),
+                        expect_status: Some(expect_status),
+                        protocol: protocol.map(|s| s.to_string()),
+                        ..Default::default()
+                    },
                 ).map_err(|e| e.to_string())?;
                 result.requests_updated += 1;
             }
@@ -214,18 +215,16 @@ fn import_single_case(
                 crate::db::item::update(
                     conn,
                     &item.id,
-                    None, // name 已设
-                    None, // method 已设
-                    Some(item_endpoint),
-                    Some(&headers),
-                    None,
-                    Some(&body_type),
-                    Some(&body_content),
-                    None,
-                    scenario.description.as_deref(),
-                    Some(expect_status),
-                    None, // parent_id
-                    protocol,
+                    &crate::models::item::UpdateItemPayload {
+                        url: Some(item_endpoint.to_string()),
+                        headers: Some(headers.clone()),
+                        body_type: Some(body_type.clone()),
+                        body_content: Some(body_content.clone()),
+                        description: scenario.description.clone(),
+                        expect_status: Some(expect_status),
+                        protocol: protocol.map(|s| s.to_string()),
+                        ..Default::default()
+                    },
                 ).map_err(|e| e.to_string())?;
 
                 // 为 status_code 断言自动创建
@@ -271,7 +270,7 @@ fn find_or_create_group(conn: &rusqlite::Connection, name: &str) -> Result<Strin
     Ok(group.id)
 }
 
-fn build_body(scenario: &YamlScenario) -> (String, String) {
+fn build_body(scenario: &YamlScenario, assets_dir: &std::path::Path) -> (String, String) {
     let ct = scenario.content_type.as_deref().unwrap_or("");
 
     if let Some(ref payload) = scenario.payload {
@@ -296,18 +295,41 @@ fn build_body(scenario: &YamlScenario) -> (String, String) {
     }
 
     if ct == "multipart" {
+        let mut kvs: Vec<serde_json::Value> = Vec::new();
+        // 文本字段
         if let Some(ref fields) = scenario.multipart_fields {
-            let kvs: Vec<serde_json::Value> = fields.as_object()
-                .map(|obj| {
-                    obj.iter().map(|(k, v)| {
-                        serde_json::json!({
-                            "key": k,
-                            "value": v.as_str().unwrap_or(&v.to_string()),
-                            "enabled": true
-                        })
-                    }).collect()
-                })
-                .unwrap_or_default();
+            if let Some(obj) = fields.as_object() {
+                for (k, v) in obj {
+                    kvs.push(serde_json::json!({
+                        "key": k,
+                        "value": v.as_str().unwrap_or(&v.to_string()),
+                        "enabled": true
+                    }));
+                }
+            }
+        }
+        // 文件字段
+        if let Some(ref files) = scenario.multipart_files {
+            if let Some(obj) = files.as_object() {
+                for (field_name, file_info) in obj {
+                    let filename = file_info.get("filename").and_then(|v| v.as_str()).unwrap_or("");
+                    // 尝试在 assets 目录查找文件
+                    let file_path = assets_dir.join(filename);
+                    let path_str = if file_path.exists() {
+                        file_path.to_string_lossy().to_string()
+                    } else {
+                        filename.to_string()
+                    };
+                    kvs.push(serde_json::json!({
+                        "key": field_name,
+                        "value": path_str,
+                        "enabled": true,
+                        "fieldType": "file"
+                    }));
+                }
+            }
+        }
+        if !kvs.is_empty() {
             return ("form-data".to_string(), serde_json::to_string(&kvs).unwrap_or_default());
         }
     }

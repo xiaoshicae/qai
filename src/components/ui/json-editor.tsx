@@ -1,5 +1,6 @@
 import { useRef, useMemo, useCallback, useState } from 'react'
 import { AlertCircle } from 'lucide-react'
+import { tokenize, TOKEN_COLORS } from '@/lib/syntax'
 
 interface Props {
   value: string
@@ -82,39 +83,6 @@ export function JsonEditor({ value, onChange, className, placeholder }: Props) {
       )}
     </div>
   )
-}
-
-const TOKEN_COLORS: Record<string, string> = {
-  key: 'text-sky-400',
-  string: 'text-emerald-400',
-  number: 'text-amber-400',
-  boolean: 'text-purple-400',
-  null: 'text-purple-400',
-  bracket: 'text-muted-foreground/60',
-}
-
-interface Token {
-  text: string
-  type: 'key' | 'string' | 'number' | 'boolean' | 'null' | 'bracket' | 'plain'
-}
-
-function tokenize(code: string): Token[] {
-  const tokens: Token[] = []
-  const re = /("(?:\\.|[^"\\])*")\s*(:)?|(\btrue\b|\bfalse\b)|(\bnull\b)|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)|([{}[\]:,])/g
-  let lastIndex = 0
-  let match: RegExpExecArray | null
-  while ((match = re.exec(code)) !== null) {
-    if (match.index > lastIndex) tokens.push({ text: code.slice(lastIndex, match.index), type: 'plain' })
-    const [full, str, colon, bool, nul, num, bracket] = match
-    if (str) { tokens.push({ text: str, type: colon ? 'key' : 'string' }); if (colon) tokens.push({ text: colon, type: 'plain' }) }
-    else if (bool) tokens.push({ text: full, type: 'boolean' })
-    else if (nul) tokens.push({ text: full, type: 'null' })
-    else if (num) tokens.push({ text: full, type: 'number' })
-    else if (bracket) tokens.push({ text: full, type: 'bracket' })
-    lastIndex = re.lastIndex
-  }
-  if (lastIndex < code.length) tokens.push({ text: code.slice(lastIndex), type: 'plain' })
-  return tokens
 }
 
 export default JsonEditor

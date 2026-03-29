@@ -28,7 +28,7 @@ pub async fn ai_generate_tests(
     extra_instructions: String,
 ) -> Result<GeneratedTestResult, String> {
     let (api_key, model) = {
-        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        let conn = db.conn()?;
         get_ai_config(&conn)?
     };
 
@@ -41,7 +41,7 @@ pub async fn ai_generate_tests(
     let count = test_cases.len();
 
     {
-        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        let conn = db.conn()?;
         for tc in &test_cases {
             let item = crate::db::item::create(
                 &conn, &collection_id, None, "request", &tc.name, &tc.method,
@@ -50,18 +50,14 @@ pub async fn ai_generate_tests(
             crate::db::item::update(
                 &conn,
                 &item.id,
-                None,
-                None,
-                Some(&tc.url),
-                Some(&serde_json::to_string(&tc.headers).unwrap_or_default()),
-                Some(&serde_json::to_string(&tc.query_params).unwrap_or_default()),
-                Some(&tc.body_type),
-                Some(&tc.body_content),
-                None,
-                None,
-                None,
-                None,
-                None, // protocol
+                &crate::models::item::UpdateItemPayload {
+                    url: Some(tc.url.clone()),
+                    headers: Some(serde_json::to_string(&tc.headers).unwrap_or_default()),
+                    query_params: Some(serde_json::to_string(&tc.query_params).unwrap_or_default()),
+                    body_type: Some(tc.body_type.clone()),
+                    body_content: Some(tc.body_content.clone()),
+                    ..Default::default()
+                },
             ).map_err(|e| e.to_string())?;
 
             for assertion in &tc.assertions {
@@ -90,7 +86,7 @@ pub async fn ai_suggest_assertions(
     status_code: u16,
 ) -> Result<Vec<parser::GeneratedAssertion>, String> {
     let (api_key, model) = {
-        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        let conn = db.conn()?;
         get_ai_config(&conn)?
     };
 
@@ -108,7 +104,7 @@ pub async fn ai_chat(
     message: String,
 ) -> Result<String, String> {
     let (api_key, model) = {
-        let conn = db.0.lock().map_err(|e| e.to_string())?;
+        let conn = db.conn()?;
         get_ai_config(&conn)?
     };
 
@@ -119,7 +115,7 @@ pub async fn ai_chat(
 
 #[tauri::command]
 pub fn save_setting(db: State<'_, DbState>, key: String, value: String) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn()?;
     conn.execute(
         "INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = ?2, updated_at = datetime('now', 'localtime')",
         rusqlite::params![key, value],
@@ -129,7 +125,7 @@ pub fn save_setting(db: State<'_, DbState>, key: String, value: String) -> Resul
 
 #[tauri::command]
 pub fn get_setting_cmd(db: State<'_, DbState>, key: String) -> Result<Option<String>, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn()?;
     Ok(get_setting(&conn, &key))
 }
 

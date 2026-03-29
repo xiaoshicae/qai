@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::models::assertion::Assertion;
 use crate::models::execution::{ChainProgress, ChainResult, ChainStepResult, ExecutionResult};
 use crate::models::item::{CollectionItem, ExtractRule, PollConfig};
-use crate::runner::assertion::evaluate_assertions;
+use crate::runner::assertion::apply_assertions;
 
 /// 按顺序执行链中的步骤，步骤间传递提取的变量，任一步骤失败则终止
 pub async fn run_chain(
@@ -18,7 +18,7 @@ pub async fn run_chain(
     let total_steps = steps.len() as u32;
     let mut accumulated_vars = base_vars;
     let mut step_results: Vec<ChainStepResult> = Vec::new();
-    let mut overall_status = "success".to_string();
+    let mut overall_status = crate::models::status::SUCCESS.to_string();
     let mut total_time: u64 = 0;
 
     for (i, (raw_item, assertions)) in steps.into_iter().enumerate() {
@@ -29,7 +29,7 @@ pub async fn run_chain(
             item_id: chain_item_id.clone(),
             step_index,
             step_name: raw_item.name.clone(),
-            status: "running".to_string(),
+            status: crate::models::status::RUNNING.to_string(),
             total_steps,
         });
 
@@ -60,33 +60,24 @@ pub async fn run_chain(
                     execution_id: uuid::Uuid::new_v4().to_string(),
                     item_id: item.id.clone(),
                     item_name: item.name.clone(),
-                    status: "error".to_string(),
+                    status: crate::models::status::ERROR.to_string(),
                     response: None,
                     assertion_results: vec![],
                     error_message: Some(e.to_string()),
                 };
                 progress_callback(ChainProgress {
                     chain_id: chain_id.clone(), item_id: chain_item_id.clone(),
-                    step_index, step_name: item.name.clone(), status: "error".to_string(), total_steps,
+                    step_index, step_name: item.name.clone(), status: crate::models::status::ERROR.to_string(), total_steps,
                 });
                 step_results.push(ChainStepResult { step_index, execution_result: err_result, extracted_variables: HashMap::new() });
-                overall_status = "error".to_string();
+                overall_status = crate::models::status::ERROR.to_string();
                 break;
             }
         };
 
         // 断言评估
         let mut result = result;
-        if let Some(ref response) = result.response {
-            if !assertions.is_empty() {
-                result.assertion_results = evaluate_assertions(&assertions, response);
-                if result.assertion_results.iter().any(|a| !a.passed) {
-                    result.status = "failed".to_string();
-                } else {
-                    result.status = "success".to_string();
-                }
-            }
-        }
+        apply_assertions(&mut result, &assertions);
 
         // 记录耗时
         if let Some(ref response) = result.response {
@@ -116,7 +107,7 @@ pub async fn run_chain(
 
         step_results.push(ChainStepResult { step_index, execution_result: result, extracted_variables: extracted });
 
-        if step_status != "success" {
+        if step_status != crate::models::status::SUCCESS {
             overall_status = step_status;
             break;
         }

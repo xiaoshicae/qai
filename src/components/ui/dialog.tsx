@@ -12,7 +12,7 @@ function Dialog({ open, onOpenChange, children }: DialogProps) {
   if (!open) return null
   return (
     <div className="fixed inset-0 z-50">
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm" onClick={() => onOpenChange(false)} />
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={() => onOpenChange(false)} />
       <div className="fixed inset-0 flex items-center justify-center p-4">
         {children}
       </div>
@@ -42,7 +42,7 @@ function DialogTitle({ children, className }: { children: React.ReactNode; class
 function DialogClose({ onClose }: { onClose: () => void }) {
   return (
     <button
-      className="absolute right-4 top-4 rounded-md p-1 opacity-50 transition-opacity hover:opacity-100 focus:outline-none cursor-pointer"
+      className="absolute right-4 top-4 rounded-lg p-1 text-muted-foreground hover:text-foreground hover:bg-overlay/[0.06] transition-all duration-200 focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/20 outline-none cursor-pointer"
       onClick={onClose}
     >
       <X className="h-4 w-4" />

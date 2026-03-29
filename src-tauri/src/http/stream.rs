@@ -19,54 +19,7 @@ pub async fn execute_stream(
     item: &CollectionItem,
     on_chunk: impl Fn(StreamChunk) + Send + Sync + 'static,
 ) -> Result<ExecutionResult, anyhow::Error> {
-    let headers: Vec<KeyValuePair> = serde_json::from_str(&item.headers).unwrap_or_default();
-    let query_params: Vec<KeyValuePair> = serde_json::from_str(&item.query_params).unwrap_or_default();
-
-    let mut builder = match item.method.to_uppercase().as_str() {
-        "POST" => client.post(&item.url),
-        "PUT" => client.put(&item.url),
-        "DELETE" => client.delete(&item.url),
-        "PATCH" => client.patch(&item.url),
-        "HEAD" => client.head(&item.url),
-        _ => client.get(&item.url),
-    };
-
-    for kv in headers.iter().filter(|kv| kv.enabled) {
-        builder = builder.header(&kv.key, &kv.value);
-    }
-
-    let enabled_params: Vec<(&str, &str)> = query_params
-        .iter()
-        .filter(|kv| kv.enabled)
-        .map(|kv| (kv.key.as_str(), kv.value.as_str()))
-        .collect();
-    builder = builder.query(&enabled_params);
-
-    match item.body_type.as_str() {
-        "json" => {
-            if !item.body_content.is_empty() {
-                let json_value: serde_json::Value = serde_json::from_str(&item.body_content)
-                    .unwrap_or(serde_json::Value::String(item.body_content.clone()));
-                builder = builder.json(&json_value);
-            }
-        }
-        "raw" => {
-            if !item.body_content.is_empty() {
-                builder = builder.body(item.body_content.clone());
-            }
-        }
-        "form" => {
-            let form_data: Vec<KeyValuePair> =
-                serde_json::from_str(&item.body_content).unwrap_or_default();
-            let form: Vec<(&str, &str)> = form_data
-                .iter()
-                .filter(|kv| kv.enabled)
-                .map(|kv| (kv.key.as_str(), kv.value.as_str()))
-                .collect();
-            builder = builder.form(&form);
-        }
-        _ => {}
-    }
+    let builder = super::request_builder::build_request(client, item).await?;
 
     let start = Instant::now();
     let resp = builder.send().await?;
@@ -167,9 +120,9 @@ pub async fn execute_stream(
         item_id: item.id.clone(),
         item_name: item.name.clone(),
         status: if status >= 200 && status < 400 {
-            "success".to_string()
+            crate::models::status::SUCCESS.to_string()
         } else {
-            "failed".to_string()
+            crate::models::status::FAILED.to_string()
         },
         response: Some(HttpResponse {
             status,

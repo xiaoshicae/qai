@@ -5,7 +5,7 @@ use crate::models::assertion::Assertion;
 
 #[tauri::command]
 pub fn list_assertions(db: State<'_, DbState>, item_id: String) -> Result<Vec<Assertion>, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn()?;
     crate::db::assertion::list_by_item(&conn, &item_id).map_err(|e| e.to_string())
 }
 
@@ -18,7 +18,7 @@ pub fn create_assertion(
     operator: String,
     expected: String,
 ) -> Result<Assertion, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn()?;
     crate::db::assertion::create(&conn, &item_id, &assertion_type, &expression, &operator, &expected)
         .map_err(|e| e.to_string())
 }
@@ -33,7 +33,7 @@ pub fn update_assertion(
     expected: Option<String>,
     enabled: Option<bool>,
 ) -> Result<Assertion, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn()?;
     crate::db::assertion::update(
         &conn,
         &id,
@@ -48,6 +48,6 @@ pub fn update_assertion(
 
 #[tauri::command]
 pub fn delete_assertion(db: State<'_, DbState>, id: String) -> Result<(), String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let conn = db.conn()?;
     crate::db::assertion::delete(&conn, &id).map_err(|e| e.to_string())
 }

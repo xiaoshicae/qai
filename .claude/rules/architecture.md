@@ -55,6 +55,36 @@ commands → db, http, runner, ai, report → models
 3. [ ] `src-tauri/src/lib.rs` 的 `invoke_handler` 中注册命令
 4. [ ] 前端通过 `invoke('<command_name>', { params })` 调用
 
+## Command 层设计原则
+
+Commands 是前后端桥接的**薄层**，不包含业务逻辑：
+
+```
+Command 职责: 参数校验 → 调用服务层 → 返回结果
+业务逻辑放: runner/, http/, db/ 等服务模块
+```
+
+**反模式**: `runner_cmd.rs` 的 `run_collection` 内嵌 100+ 行分拣/编排逻辑。应提取为 `runner::orchestrator`。
+
+### 去重检测信号
+
+以下模式出现时，必须提取公共函数：
+- 两个 command 有相同的 DB 查询 + 变量替换 + 断言 + 保存流程 → 提取 `prepare_*()` / `finalize_*()`
+- 多处代码用相同的字符串做 `match` / `==` 比较 → 提取为常量模块
+- 多个 command 调用同一个下游函数但前置参数组装逻辑一样 → 提取参数构建函数
+
+### 编排层数据完整性
+
+在多步编排流程（如 run_collection 调用 run_chain）中：
+- 上下文中已有的数据必须完整传递给下游，禁止传空字符串 / 默认值
+- 如果需要聚合额外数据（如 chain 的 name），在编排开始时一次性收集（`HashMap`），不在循环中逐条查询
+
+## 数据一致性
+
+- 批量写入优先使用事务（`conn.execute_batch` 或手动 BEGIN/COMMIT）
+- 执行记录保存失败**必须记录日志**，不得 `let _ =` 静默吞掉
+- 树形查询使用 `HashMap<parent_id, Vec<child>>` 预分组，避免 O(N²) 扫描
+
 ## 文件体积规范
 
 | 文件类型 | 建议上限 | 硬性上限 |

@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronRight, ChevronDown, Folder, FolderOpen, Play, Plus, FolderPlus, Trash2, Pencil, MoreHorizontal, Link2 } from 'lucide-react'
 import { invoke } from '@tauri-apps/api/core'
@@ -7,6 +7,7 @@ import type { Collection, CollectionTreeNode } from '@/types'
 import { useCollectionStore } from '@/stores/collection-store'
 import { useStatusStore } from '@/stores/status-store'
 import { Input } from '@/components/ui/input'
+import { ContextMenu, menuItemClass, menuDangerClass, menuDividerClass } from '@/components/ui/context-menu'
 
 interface CollectionTreeProps {
   collections: Collection[]
@@ -42,15 +43,6 @@ export default function CollectionTree({ collections, trees, selectedNodeId, onS
   const [menu, setMenu] = useState<ContextMenu | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
-  const menuRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const close = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenu(null)
-    }
-    if (menu) document.addEventListener('mousedown', close)
-    return () => document.removeEventListener('mousedown', close)
-  }, [menu])
 
   const toggle = useCallback(async (id: string, collectionId?: string) => {
     setExpanded((prev) => {
@@ -88,7 +80,7 @@ export default function CollectionTree({ collections, trees, selectedNodeId, onS
       if (type === 'collection') {
         await renameCollection(id, name)
       } else if (type === 'request' || type === 'folder') {
-        await invoke('update_item', { id, name })
+        await invoke('update_item', { id, payload: { name } })
         await loadTree(collectionId)
       }
     } catch {}
@@ -127,7 +119,11 @@ export default function CollectionTree({ collections, trees, selectedNodeId, onS
         if (type === 'collection') {
           await deleteCollection(id)
         } else if (type === 'request' || type === 'folder') {
-          try { await invoke('delete_item', { id }); await loadTree(collectionId) } catch {}
+          try {
+            await invoke('delete_item', { id })
+            await loadTree(collectionId)
+            if (selectedNodeId === id) selectNode(null)
+          } catch {}
         }
         break
     }
@@ -181,21 +177,14 @@ export default function CollectionTree({ collections, trees, selectedNodeId, onS
 
       {/* 右键菜单 */}
       {menu && (
-        <div
-          ref={menuRef}
-          className="fixed z-50 min-w-[160px] rounded-lg glass-card p-1 shadow-md text-sm"
-          style={{ left: menu.x, top: menu.y }}
-        >
+        <ContextMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)}>
           {getMenuItems(menu.type, menu.isChain).map((item) =>
             item.separator ? (
-              <div key={item.key} className="h-px bg-border my-1" />
+              <div key={item.key} className={menuDividerClass} />
             ) : (
               <button
                 key={item.key}
-                className={cn(
-                  'flex items-center gap-2 w-full px-2.5 py-1.5 rounded-md cursor-pointer transition-colors text-left text-[13px]',
-                  item.danger ? 'text-destructive hover:bg-destructive/10' : 'hover:bg-accent'
-                )}
+                className={item.danger ? menuDangerClass : menuItemClass}
                 onClick={() => handleMenuAction(item.key)}
               >
                 {item.icon}
@@ -203,7 +192,7 @@ export default function CollectionTree({ collections, trees, selectedNodeId, onS
               </button>
             )
           )}
-        </div>
+        </ContextMenu>
       )}
     </div>
   )
@@ -340,8 +329,8 @@ function TreeRow({ icon, chevron, label, level, selected, renaming, renameValue,
   return (
     <div
       className={cn(
-        'group/row flex items-center gap-1.5 px-2 py-[5px] rounded-lg cursor-pointer text-[13px] transition-colors',
-        selected ? 'bg-accent text-accent-foreground' : 'text-foreground/70 hover:bg-muted'
+        'group/row flex items-center gap-1.5 px-2 py-1.5 rounded-lg cursor-pointer text-[13px] transition-all duration-150',
+        selected ? 'bg-overlay/[0.08] text-foreground glow-ring' : 'text-foreground/70 hover:bg-overlay/[0.04] hover:text-foreground'
       )}
       style={{ paddingLeft: `${level * 14 + 8}px` }}
       onClick={renaming ? undefined : onClick}
@@ -368,7 +357,7 @@ function TreeRow({ icon, chevron, label, level, selected, renaming, renameValue,
           <span className="truncate flex-1">{label}</span>
           {showMore && (
             <button
-              className="shrink-0 p-0.5 rounded opacity-0 group-hover/row:opacity-100 text-muted-foreground hover:text-foreground hover:bg-muted-foreground/10 cursor-pointer transition-opacity"
+              className="shrink-0 p-0.5 rounded opacity-0 group-hover/row:opacity-100 text-muted-foreground hover:text-foreground hover:bg-overlay/[0.06] cursor-pointer transition-opacity"
               onClick={(e) => { e.stopPropagation(); onMoreClick?.(e) }}
             >
               <MoreHorizontal className="h-3.5 w-3.5" />

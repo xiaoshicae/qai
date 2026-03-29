@@ -1,0 +1,130 @@
+{
+  "app": {
+    "name": "QAI",
+    "version": "v0.1",
+    "select_collection": "Select a collection to start testing",
+    "select_collection_hint": "Choose from the sidebar, or import YAML test cases"
+  },
+  "sidebar": {
+    "search": "Search...",
+    "new_group": "New Group",
+    "no_suites": "No test suites",
+    "no_suites_hint": "Click + to create a group",
+    "history": "History",
+    "environments": "Env",
+    "settings": "Settings"
+  },
+  "group_menu": {
+    "new_suite": "New Test Suite",
+    "new_subgroup": "New Subgroup",
+    "run_all": "Run All",
+    "rename": "Rename",
+    "delete": "Delete Group"
+  },
+  "collection_menu": {
+    "add_case": "Add Test Case",
+    "run_all": "Run All",
+    "rename": "Rename",
+    "delete": "Delete"
+  },
+  "dashboard": {
+    "total": "TOTAL",
+    "passed": "PASSED",
+    "failed": "FAILED",
+    "pass_rate": "PASS RATE",
+    "run_all": "Run All",
+    "stop": "Stop",
+    "add_case": "Add Case",
+    "add_chain": "Add Chain",
+    "export_report": "Export Report",
+    "no_cases": "No test cases yet. Click \"Add Case\" to create one.",
+    "concurrent": "Concurrent",
+    "sequential": "Sequential",
+    "delay": "Delay",
+    "concurrent_desc": "Execute all cases with 5 concurrent workers",
+    "sequential_desc": "Execute one by one",
+    "sequential_delay_desc": "Execute one by one, {{ms}}ms interval",
+    "run_mode": "Execution Mode",
+    "interval": "Request Interval"
+  },
+  "scenario": {
+    "scenario": "SCENARIO",
+    "description": "DESCRIPTION",
+    "expect": "EXPECT",
+    "status": "STATUS",
+    "http": "HTTP",
+    "total_time": "TOTAL",
+    "multi_step": "multi-step",
+    "steps": "steps",
+    "not_run": "Not executed",
+    "loading": "Loading...",
+    "no_body": "No body",
+    "no_headers": "No headers",
+    "user_request": "USER REQUEST",
+    "user_response": "USER RESPONSE"
+  },
+  "edit": {
+    "new_case": "New Test Case",
+    "edit_case": "Edit Test Case",
+    "new_chain": "New Chain Request",
+    "name": "Name",
+    "desc": "Description",
+    "desc_placeholder": "Scenario description",
+    "url_placeholder": "Request URL",
+    "expect_status": "Expected Status",
+    "body": "Body",
+    "headers": "Headers",
+    "extract_rules": "Extract Rules (for chain variable passing)",
+    "add_extract": "Add Extract Rule",
+    "import_curl": "Import from curl",
+    "copy_curl": "Copy curl",
+    "cancel": "Cancel",
+    "save": "Save",
+    "create": "Create"
+  },
+  "chain": {
+    "chain_name": "Chain Name",
+    "chain_name_placeholder": "e.g. Custom Voice TTS",
+    "chain_desc_placeholder": "Multi-step: upload → generate",
+    "chain_help": "After creation, expand the chain in the table and add steps via \"+ Add Step\". Steps pass data via Extract Rules, referenced as {{variable_name}} in subsequent steps.",
+    "add_step": "Add Step"
+  },
+  "claude": {
+    "title": "Claude Code",
+    "new_session": "New Session",
+    "close": "Close",
+    "ready": "Ready. Manage test cases via MCP. Describe your needs to start.",
+    "first_msg": "First message takes 10-30s to initialize, instant after that.",
+    "first_init": "Initializing...",
+    "placeholder": "Describe your needs...",
+    "send_hint": "Enter to send · Shift+Enter for new line",
+    "clear": "Clear conversation",
+    "switch_model": "Switch model...",
+    "fast_mode": "Toggle fast mode",
+    "cost": "Cost stats",
+    "slash_compact": "Compact context",
+    "slash_cost": "View cost stats",
+    "slash_help": "Help"
+  },
+  "settings": {
+    "title": "Settings",
+    "language": "Language",
+    "language_desc": "Choose display language",
+    "theme": "Theme",
+    "ai_provider": "AI Provider",
+    "api_key": "API Key",
+    "test_connection": "Test Connection"
+  },
+  "common": {
+    "confirm_delete": "Delete \"{{name}}\"? This cannot be undone.",
+    "confirm_delete_group": "Delete group \"{{name}}\" and all its test suites? This cannot be undone.",
+    "none": "None",
+    "add": "Add",
+    "edit": "Edit",
+    "delete": "Delete",
+    "run": "Run",
+    "pass": "PASS",
+    "fail": "FAIL",
+    "error": "ERR"
+  }
+}

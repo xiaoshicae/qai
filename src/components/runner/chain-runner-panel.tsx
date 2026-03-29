@@ -5,6 +5,7 @@ import { listen } from '@tauri-apps/api/event'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import type { ChainResult, ChainProgress, ChainStepResult } from '@/types'
+import { formatDuration } from '@/lib/formatters'
 
 interface Props {
   itemId: string
@@ -71,10 +72,7 @@ export default function ChainRunnerPanel({ itemId, itemName }: Props) {
     })
   }
 
-  const formatTime = (ms: number) => {
-    if (ms < 1000) return `${ms}ms`
-    return `${(ms / 1000).toFixed(2)}s`
-  }
+
 
   return (
     <div className="p-6 space-y-6">
@@ -118,7 +116,7 @@ export default function ChainRunnerPanel({ itemId, itemName }: Props) {
             <StatCard label="总步骤" value={result.total_steps} />
             <StatCard label="已完成" value={result.completed_steps} color="text-emerald-500" />
             <StatCard label="状态" value={STATUS_CONFIG[result.status]?.label ?? result.status} color={STATUS_CONFIG[result.status]?.color} />
-            <StatCard label="总耗时" value={formatTime(result.total_time_ms)} />
+            <StatCard label="总耗时" value={formatDuration(result.total_time_ms)} />
           </div>
 
           {/* 步骤列表 */}
@@ -136,7 +134,7 @@ export default function ChainRunnerPanel({ itemId, itemName }: Props) {
                 step={step}
                 expanded={expandedSteps.has(step.step_index)}
                 onToggle={() => toggleStep(step.step_index)}
-                formatTime={formatTime}
+
               />
             ))}
             {/* 未执行的步骤（因 fail-fast 跳过） */}
@@ -190,11 +188,10 @@ function StatCard({ label, value, color }: { label: string; value: string | numb
   )
 }
 
-function StepRow({ step, expanded, onToggle, formatTime }: {
+function StepRow({ step, expanded, onToggle }: {
   step: ChainStepResult
   expanded: boolean
   onToggle: () => void
-  formatTime: (ms: number) => string
 }) {
   const { execution_result: er, extracted_variables } = step
   const status = STATUS_CONFIG[er.status] ?? STATUS_CONFIG.pending
@@ -223,7 +220,7 @@ function StepRow({ step, expanded, onToggle, formatTime }: {
             </span>
           ) : '-'}
         </span>
-        <span className="text-xs text-muted-foreground">{timeMs ? formatTime(timeMs) : '-'}</span>
+        <span className="text-xs text-muted-foreground">{timeMs ? formatDuration(timeMs) : '-'}</span>
       </div>
 
       {expanded && (

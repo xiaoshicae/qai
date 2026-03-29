@@ -1,0 +1,130 @@
+{
+  "app": {
+    "name": "QAI",
+    "version": "v0.1",
+    "select_collection": "选择一个集合开始测试",
+    "select_collection_hint": "从左侧选择集合，或导入 YAML 测试用例"
+  },
+  "sidebar": {
+    "search": "搜索...",
+    "new_group": "新建分组",
+    "no_suites": "暂无测试集",
+    "no_suites_hint": "点击 + 创建分组",
+    "history": "历史",
+    "environments": "环境",
+    "settings": "设置"
+  },
+  "group_menu": {
+    "new_suite": "新建测试集",
+    "new_subgroup": "新建子分组",
+    "run_all": "运行全部",
+    "rename": "重命名",
+    "delete": "删除分组"
+  },
+  "collection_menu": {
+    "add_case": "添加测试用例",
+    "run_all": "运行全部",
+    "rename": "重命名",
+    "delete": "删除"
+  },
+  "dashboard": {
+    "total": "TOTAL",
+    "passed": "PASSED",
+    "failed": "FAILED",
+    "pass_rate": "PASS RATE",
+    "run_all": "运行全部",
+    "stop": "停止",
+    "add_case": "添加用例",
+    "add_chain": "添加链",
+    "export_report": "导出报告",
+    "no_cases": "暂无测试用例，点击「添加用例」创建",
+    "concurrent": "并发执行",
+    "sequential": "顺序执行",
+    "delay": "延迟",
+    "concurrent_desc": "5 路并发执行所有用例",
+    "sequential_desc": "逐个执行",
+    "sequential_delay_desc": "逐个执行，间隔 {{ms}}ms",
+    "run_mode": "执行模式",
+    "interval": "请求间隔"
+  },
+  "scenario": {
+    "scenario": "SCENARIO",
+    "description": "DESCRIPTION",
+    "expect": "EXPECT",
+    "status": "STATUS",
+    "http": "HTTP",
+    "total_time": "TOTAL",
+    "multi_step": "multi-step",
+    "steps": "steps",
+    "not_run": "尚未运行",
+    "loading": "加载中...",
+    "no_body": "无请求体",
+    "no_headers": "无 Headers",
+    "user_request": "USER REQUEST",
+    "user_response": "USER RESPONSE"
+  },
+  "edit": {
+    "new_case": "新建测试用例",
+    "edit_case": "编辑测试用例",
+    "new_chain": "新建链式请求",
+    "name": "名称",
+    "desc": "描述",
+    "desc_placeholder": "场景描述",
+    "url_placeholder": "请求 URL",
+    "expect_status": "期望状态码",
+    "body": "请求体",
+    "headers": "Headers",
+    "extract_rules": "变量提取规则（用于链式请求传递）",
+    "add_extract": "添加提取规则",
+    "import_curl": "从 curl 导入",
+    "copy_curl": "复制 curl",
+    "cancel": "取消",
+    "save": "保存",
+    "create": "创建"
+  },
+  "chain": {
+    "chain_name": "链名称",
+    "chain_name_placeholder": "如：自定义音色 TTS",
+    "chain_desc_placeholder": "多步依赖：上传→生成",
+    "chain_help": "创建后可在表格中展开链，通过「+ 添加步骤」逐个添加请求。步骤间通过变量提取规则（Extract）传递数据，后续步骤用 {{变量名}} 引用。",
+    "add_step": "添加步骤"
+  },
+  "claude": {
+    "title": "Claude Code",
+    "new_session": "新建会话",
+    "close": "关闭",
+    "ready": "已就绪。通过 MCP 管理测试用例，描述你的需求开始对话。",
+    "first_msg": "首次对话需要 10-30 秒初始化，后续秒回。",
+    "first_init": "首次初始化中...",
+    "placeholder": "描述你的需求...",
+    "send_hint": "Enter 发送 · Shift+Enter 换行",
+    "clear": "清空对话",
+    "switch_model": "切换模型...",
+    "fast_mode": "切换快速模式",
+    "cost": "花费统计",
+    "slash_compact": "压缩上下文",
+    "slash_cost": "查看花费统计",
+    "slash_help": "帮助"
+  },
+  "settings": {
+    "title": "设置",
+    "language": "语言",
+    "language_desc": "选择界面显示语言",
+    "theme": "主题",
+    "ai_provider": "AI 服务商",
+    "api_key": "API Key",
+    "test_connection": "测试连接"
+  },
+  "common": {
+    "confirm_delete": "确定删除「{{name}}」？此操作不可撤销。",
+    "confirm_delete_group": "确定删除分组「{{name}}」及其下所有测试集？此操作不可撤销。",
+    "none": "无",
+    "add": "添加",
+    "edit": "编辑",
+    "delete": "删除",
+    "run": "运行",
+    "pass": "PASS",
+    "fail": "FAIL",
+    "error": "ERR"
+  }
+}

@@ -1,9 +1,15 @@
 use std::collections::HashMap;
+use std::sync::OnceLock;
 use regex::Regex;
 
 use crate::models::environment::EnvVariable;
 use crate::models::item::{CollectionItem, ExtractRule, HttpResponse, KeyValuePair};
-use crate::runner::assertion::{extract_json_path, value_to_string};
+use crate::runner::assertion::json_path::{extract_json_path, value_to_string};
+
+fn var_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"\{\{(\w+)\}\}").unwrap())
+}
 
 pub fn build_var_map(variables: &[EnvVariable]) -> HashMap<String, String> {
     variables
@@ -17,7 +23,7 @@ pub fn replace_vars(text: &str, vars: &HashMap<String, String>) -> String {
     if vars.is_empty() || !text.contains("{{") {
         return text.to_string();
     }
-    let re = Regex::new(r"\{\{(\w+)\}\}").unwrap();
+    let re = var_regex();
     re.replace_all(text, |caps: &regex::Captures| {
         let key = &caps[1];
         vars.get(key).cloned().unwrap_or_else(|| caps[0].to_string())

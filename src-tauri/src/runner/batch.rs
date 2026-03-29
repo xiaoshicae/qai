@@ -5,7 +5,7 @@ use uuid::Uuid;
 use crate::models::assertion::Assertion;
 use crate::models::execution::ExecutionResult;
 use crate::models::item::CollectionItem;
-use crate::runner::assertion::evaluate_assertions;
+use crate::runner::assertion::apply_assertions;
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct TestProgress {
@@ -39,6 +39,7 @@ pub async fn run_batch(
     let semaphore = Arc::new(Semaphore::new(concurrency));
     let callback = Arc::new(progress_callback);
     let client = client.clone();
+    let start = std::time::Instant::now();
 
     let mut handles = Vec::new();
 
@@ -55,7 +56,7 @@ pub async fn run_batch(
                 batch_id: bid.clone(),
                 item_id: item.id.clone(),
                 item_name: item.name.clone(),
-                status: "running".to_string(),
+                status: crate::models::status::RUNNING.to_string(),
                 current: index as u32 + 1,
                 total,
             });
@@ -71,23 +72,14 @@ pub async fn run_batch(
                     execution_id: Uuid::new_v4().to_string(),
                     item_id: item.id.clone(),
                     item_name: item.name.clone(),
-                    status: "error".to_string(),
+                    status: crate::models::status::ERROR.to_string(),
                     response: None,
                     assertion_results: vec![],
                     error_message: Some(e.to_string()),
                 },
             };
 
-            if let Some(ref response) = result.response {
-                if !assertions.is_empty() {
-                    result.assertion_results = evaluate_assertions(&assertions, response);
-                    if result.assertion_results.iter().any(|a| !a.passed) {
-                        result.status = "failed".to_string();
-                    } else {
-                        result.status = "success".to_string();
-                    }
-                }
-            }
+            apply_assertions(&mut result, &assertions);
 
             let status = result.status.clone();
             cb(TestProgress {
@@ -105,19 +97,16 @@ pub async fn run_batch(
     }
 
     let mut results = Vec::new();
-    let mut total_time_ms = 0u64;
     for handle in handles {
         if let Ok(result) = handle.await {
-            if let Some(ref resp) = result.response {
-                total_time_ms += resp.time_ms;
-            }
             results.push(result);
         }
     }
+    let total_time_ms = start.elapsed().as_millis() as u64;
 
-    let passed = results.iter().filter(|r| r.status == "success").count() as u32;
-    let failed = results.iter().filter(|r| r.status == "failed").count() as u32;
-    let errors = results.iter().filter(|r| r.status == "error").count() as u32;
+    let passed = results.iter().filter(|r| r.status == crate::models::status::SUCCESS).count() as u32;
+    let failed = results.iter().filter(|r| r.status == crate::models::status::FAILED).count() as u32;
+    let errors = results.iter().filter(|r| r.status == crate::models::status::ERROR).count() as u32;
 
     BatchResult {
         batch_id,

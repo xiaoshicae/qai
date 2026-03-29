@@ -1,8 +1,15 @@
 use rusqlite::Connection;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 use tauri::{AppHandle, Manager};
 
 pub struct DbState(pub Mutex<Connection>);
+
+impl DbState {
+    pub fn conn(&self) -> Result<MutexGuard<'_, Connection>, String> {
+        self.0.lock().map_err(|e| e.to_string())
+    }
+}
+
 pub struct HttpClient(pub reqwest::Client);
 
 pub fn initialize_database(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {

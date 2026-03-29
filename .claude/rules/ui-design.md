@@ -149,8 +149,13 @@ Hover:    border-overlay/[0.10] 或 hover:border-overlay/[0.12]
 | `ring-1 ring-foreground/10` | `border border-overlay/[0.06]` 或 `glass-card` | 旧写法，不统一 |
 | `dark:bg-input/30` | 已内置到 Input/Textarea 组件 | 使用 overlay 系统 |
 | `bg-muted/30` | `bg-overlay/[0.03]` | 统一用 overlay |
-| `border-border` (JSX 中) | `border-overlay/[0.06]` | 统一用 overlay |
+| `bg-muted` / `hover:bg-muted` | `bg-overlay/[0.04]` / `hover:bg-overlay/[0.04]` | 统一用 overlay |
+| `bg-accent` / `hover:bg-accent` | `bg-overlay/[0.08]` / `hover:bg-overlay/[0.08]` | 选中/高亮统一用 overlay |
+| `border-border` / `bg-border` (JSX 中) | `border-overlay/[0.06]` / `bg-overlay/[0.06]` | 统一用 overlay |
 | `bg-surface-1` | `bg-overlay/[0.03]` | 不存在的变量 |
+| `text-sky-400`（单色阶硬编码） | `text-sky-600 dark:text-sky-400` | 浅色主题对比度不足 |
+| `focus:ring-1` / `focus:border-*` | `focus-visible:ring-2 focus-visible:border-primary/50` | 统一用 focus-visible + ring-2 |
+| `shadow-md` / `shadow-xl`（浮层） | `shadow-2xl` | 浮层阴影统一为 shadow-2xl |
 | 原生 `<select>` | `@/components/ui/select.tsx` | 原生下拉白色系统样式 |
 | `tauriConfirm` / `tauri-plugin-dialog` 的 `confirm` | `useConfirmStore` (`@/components/ui/confirm-dialog.tsx`) | 原生弹窗白色系统样式 |
 
@@ -246,14 +251,79 @@ const ok = await confirm('确定删除？', { title: '删除', kind: 'warning' }
 - Rust 端 `form-data` 用 `reqwest::multipart::Form`，`urlencoded` 用 `builder.form()`
 - 旧的 `form` 类型等同于 `urlencoded`，Rust 端做了兼容
 
+## 语法高亮颜色（双主题适配）
+
+代码/JSON 语法高亮必须使用 `dark:` 变体适配双主题。浅色用 `-600` 色阶，深色用 `-400`。
+
+```
+key:      text-sky-600 dark:text-sky-400
+string:   text-emerald-600 dark:text-emerald-400
+number:   text-amber-600 dark:text-amber-400
+boolean:  text-purple-600 dark:text-purple-400
+null:     text-purple-600 dark:text-purple-400
+bracket:  text-muted-foreground/60
+```
+
+共享的 tokenizer 和颜色定义在 `src/lib/syntax.ts`，所有 JSON 高亮组件统一引用，禁止重复定义。
+
+变量高亮 `{{var}}` 同理：`text-cyan-600 dark:text-cyan-400`，禁止单色阶 `text-cyan-400`。
+
+## 焦点态规范
+
+所有可聚焦元素统一使用 `focus-visible`（非 `focus`），参数固定：
+
+```
+focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/20
+```
+
+- 禁止 `focus:ring-1`（太细）或 `focus:outline-none`（无反馈）
+- 图标按钮也必须有焦点态（不能只有 opacity 变化）
+
+## 浮层菜单规范
+
+所有浮层（右键菜单、下拉选择、弹出菜单）统一样式：
+
+```
+容器:   rounded-xl glass-card p-1.5 shadow-2xl
+菜单项: px-3 py-2 rounded-lg text-xs hover:bg-overlay/[0.06] transition-colors
+分割线: h-px bg-overlay/[0.06] my-1
+危险项: text-destructive hover:bg-destructive/10
+```
+
+禁止使用 `shadow-md`、`shadow-xl`、`shadow-lg`（统一 `shadow-2xl`）。
+禁止使用 `rounded-md`、`rounded-lg`（容器统一 `rounded-xl`）。
+禁止使用 `hover:bg-accent`（统一 `hover:bg-overlay/[0.06]`）。
+
+## 遮罩层规范
+
+Dialog/Modal 的遮罩层统一为 `bg-black/50 backdrop-blur-sm`。
+
+- 禁止 `bg-black/60`（过深）或其他不一致透明度
+- `bg-black` 是唯一允许在遮罩层硬编码的颜色（遮罩本质就是遮挡，不需要主题适配）
+
+## 侧边栏间距规范
+
+侧边栏内部水平间距统一为两档：
+
+```
+Logo 区域:       px-4（含 drag-region，需要更多留白）
+其余区域:        px-2.5（搜索栏、树列表、底部导航）
+```
+
+禁止出现 `px-1.5`、`px-2`、`px-3` 等中间值，保持左侧对齐线一致。
+
 ## 新建/修改组件检查清单
 
-- [ ] 半透明叠加用 `overlay`，不用 `white` 或 `black`
+- [ ] 半透明叠加用 `overlay`，不用 `white`、`black`、`accent`、`muted`
 - [ ] 不使用 `ring-1 ring-foreground/10`
 - [ ] 不使用原生 `<select>` 或 `tauriConfirm`
 - [ ] 卡片用 `glass-card` 或 `border border-overlay/[0.06]`
-- [ ] 交互态用 `bg-overlay/[0.04]`（hover）、`bg-overlay/[0.08]`（active）
-- [ ] 圆角层级正确
+- [ ] 交互态用 `bg-overlay/[0.04]`（hover）、`bg-overlay/[0.08]`（active/selected）
+- [ ] 选中态用 `bg-overlay/[0.08] glow-ring`，不用 `bg-accent`
+- [ ] 焦点态用 `focus-visible:ring-2 focus-visible:ring-primary/20`，不用 `focus:ring-1`
+- [ ] 浮层菜单用 `rounded-xl glass-card shadow-2xl`，菜单项用 `hover:bg-overlay/[0.06]`
+- [ ] 语法高亮色用 `dark:` 变体适配双主题（`-600` + `dark:-400`）
+- [ ] 圆角层级正确（badge=rounded-lg, 按钮/输入=rounded-xl, 卡片/弹窗=rounded-2xl）
 - [ ] 有 `transition-all duration-200`
 - [ ] 条件内容不改变容器尺寸（防跳动）
 - [ ] 在深色和浅色模式下都测试过

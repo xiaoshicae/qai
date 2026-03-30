@@ -1,13 +1,22 @@
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import AppLayout from './components/layout/app-layout'
 import WorkbenchView from './views/workbench-view'
-import SettingsView from './views/settings-view'
-import EnvironmentsView from './views/environments-view'
-import HistoryView from './views/history-view'
 import { ConfirmDialog } from './components/ui/confirm-dialog'
 import { useThemeStore } from './stores/theme-store'
+
+const EnvironmentsView = lazy(() => import('./views/environments-view'))
+const HistoryView = lazy(() => import('./views/history-view'))
+const SettingsView = lazy(() => import('./views/settings-view'))
+
+function RouteFallback() {
+  return (
+    <div className="flex h-full min-h-[200px] items-center justify-center text-sm text-muted-foreground">
+      Loading…
+    </div>
+  )
+}
 
 export default function App() {
   const resolved = useThemeStore((s) => s.resolved)
@@ -21,9 +30,9 @@ export default function App() {
       <Routes>
         <Route element={<AppLayout />}>
           <Route path="/" element={<WorkbenchView />} />
-          <Route path="/environments" element={<EnvironmentsView />} />
-          <Route path="/history" element={<HistoryView />} />
-          <Route path="/settings" element={<SettingsView />} />
+          <Route path="/environments" element={<Suspense fallback={<RouteFallback />}><EnvironmentsView /></Suspense>} />
+          <Route path="/history" element={<Suspense fallback={<RouteFallback />}><HistoryView /></Suspense>} />
+          <Route path="/settings" element={<Suspense fallback={<RouteFallback />}><SettingsView /></Suspense>} />
         </Route>
       </Routes>
     </BrowserRouter>

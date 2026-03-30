@@ -44,15 +44,11 @@ export default function TerminalPanel({ onClose }: Props) {
     return () => { mountedRef.current = false }
   }, [])
 
-  // 用 ref 追踪 unlisten，防止 StrictMode 双注册
-  const unlistenRef = useRef<(() => void) | undefined>(undefined)
   useEffect(() => {
-    // 先清理旧 listener
-    unlistenRef.current?.()
-    unlistenRef.current = undefined
+    let cancelled = false
 
-    listen<ClaudeEvent>('claude-event', (event) => {
-      if (!mountedRef.current) return
+    const unlistenPromise = listen<ClaudeEvent>('claude-event', (event) => {
+      if (cancelled || !mountedRef.current) return
       const { event_type, content } = event.payload
       if (event_type === 'delta') {
         setMessages((prev) => {
@@ -68,9 +64,12 @@ export default function TerminalPanel({ onClose }: Props) {
         setSending(false)
         setFirstMessage(false)
       }
-    }).then((fn) => { unlistenRef.current = fn })
+    })
 
-    return () => { unlistenRef.current?.(); unlistenRef.current = undefined }
+    return () => {
+      cancelled = true
+      unlistenPromise.then((fn) => fn())
+    }
   }, [])
 
   useEffect(() => {

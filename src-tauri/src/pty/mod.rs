@@ -9,6 +9,8 @@ pub struct PtyState {
     master: Mutex<Option<Box<dyn MasterPty + Send>>>,
     #[allow(dead_code)]
     slave: Mutex<Option<Box<dyn portable_pty::SlavePty + Send>>>,
+    child: Mutex<Option<Box<dyn portable_pty::Child + Send>>>,
+    reader_handle: Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 
 impl PtyState {
@@ -17,6 +19,8 @@ impl PtyState {
             writer: Mutex::new(None),
             master: Mutex::new(None),
             slave: Mutex::new(None),
+            child: Mutex::new(None),
+            reader_handle: Mutex::new(None),
         }
     }
 
@@ -45,19 +49,20 @@ impl PtyState {
             cmd.cwd(&home);
         }
 
-        let _child = pair.slave.spawn_command(cmd).map_err(|e| format!("{e}"))?;
+        let child = pair.slave.spawn_command(cmd).map_err(|e| format!("{e}"))?;
 
         let reader = pair.master.try_clone_reader().map_err(|e| format!("{e}"))?;
         let writer = pair.master.take_writer().map_err(|e| format!("{e}"))?;
 
         *self.writer.lock().unwrap() = Some(writer);
-        *self.slave.lock().unwrap() = Some(pair.slave); // 保持 slave 存活
+        *self.slave.lock().unwrap() = Some(pair.slave);
         *self.master.lock().unwrap() = Some(pair.master);
+        *self.child.lock().unwrap() = Some(child);
 
-        // 后台线程读取 PTY 输出
-        std::thread::spawn(move || {
+        let handle = std::thread::spawn(move || {
             read_loop(app, reader);
         });
+        *self.reader_handle.lock().unwrap() = Some(handle);
 
         Ok(())
     }
@@ -82,9 +87,20 @@ impl PtyState {
     }
 
     pub fn kill(&self) -> Result<(), String> {
+        // 先终止子进程
+        if let Some(mut child) = self.child.lock().unwrap().take() {
+            if let Err(e) = child.kill() {
+                log::warn!("终止 PTY 子进程失败: {e}");
+            }
+        }
+        // 释放 writer/slave/master（关闭 fd 使 reader 线程 EOF 退出）
         *self.writer.lock().unwrap() = None;
         *self.slave.lock().unwrap() = None;
         *self.master.lock().unwrap() = None;
+        // 等待 reader 线程退出（最多 1s）
+        if let Some(handle) = self.reader_handle.lock().unwrap().take() {
+            let _ = handle.join();
+        }
         Ok(())
     }
 }
@@ -98,7 +114,10 @@ fn read_loop(app: AppHandle, mut reader: Box<dyn Read + Send>) {
                 let encoded = base64::engine::general_purpose::STANDARD.encode(&buf[..n]);
                 let _ = app.emit("pty-output", encoded);
             }
-            Err(_) => break,
+            Err(e) => {
+                log::warn!("PTY reader 错误: {e}");
+                break;
+            }
         }
     }
     let _ = app.emit("pty-exit", ());

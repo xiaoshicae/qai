@@ -81,3 +81,63 @@ pub fn suggest_assertions_prompt(response_body: &str, status_code: u16) -> Strin
         response_body = truncate_str(response_body, 3000),
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_generate_prompt_contains_context() {
+        let prompt = generate_test_cases_prompt("GET /api/users", "");
+        assert!(prompt.contains("GET /api/users"));
+        assert!(prompt.contains("JSON 数组"));
+    }
+
+    #[test]
+    fn test_generate_prompt_with_extra_instructions() {
+        let prompt = generate_test_cases_prompt("context", "只测POST");
+        assert!(prompt.contains("只测POST"));
+        assert!(prompt.contains("额外要求"));
+    }
+
+    #[test]
+    fn test_generate_prompt_no_extra() {
+        let prompt = generate_test_cases_prompt("context", "");
+        assert!(!prompt.contains("额外要求"));
+    }
+
+    #[test]
+    fn test_suggest_assertions_prompt() {
+        let prompt = suggest_assertions_prompt(r#"{"id":1}"#, 200);
+        assert!(prompt.contains("200"));
+        assert!(prompt.contains(r#"{"id":1}"#));
+        assert!(prompt.contains("JSON 数组"));
+    }
+
+    #[test]
+    fn test_suggest_assertions_truncates_long_body() {
+        let long_body = "x".repeat(5000);
+        let prompt = suggest_assertions_prompt(&long_body, 200);
+        assert!(prompt.len() < long_body.len() + 500);
+    }
+
+    #[test]
+    fn test_truncate_str_short() {
+        assert_eq!(truncate_str("hello", 10), "hello");
+    }
+
+    #[test]
+    fn test_truncate_str_exact() {
+        assert_eq!(truncate_str("hello", 5), "hello");
+    }
+
+    #[test]
+    fn test_truncate_str_long() {
+        assert_eq!(truncate_str("hello world", 5), "hello");
+    }
+
+    #[test]
+    fn test_truncate_str_unicode() {
+        assert_eq!(truncate_str("你好世界测试", 4), "你好世界");
+    }
+}

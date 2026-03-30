@@ -51,33 +51,14 @@ pub fn update(
     group_id: Option<Option<&str>>,
     sort_order: Option<i32>,
 ) -> Result<Collection, rusqlite::Error> {
-    let mut sets: Vec<String> = Vec::new();
-    let mut values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-
-    if let Some(n) = name {
-        sets.push(format!("name = ?{}", values.len() + 1));
-        values.push(Box::new(n.to_string()));
-    }
-    if let Some(d) = description {
-        sets.push(format!("description = ?{}", values.len() + 1));
-        values.push(Box::new(d.to_string()));
-    }
+    let mut u = super::DynamicUpdate::new();
+    u.set_opt("name", name.map(|s| s.to_string()));
+    u.set_opt("description", description.map(|s| s.to_string()));
     if let Some(gid) = group_id {
-        sets.push(format!("group_id = ?{}", values.len() + 1));
-        values.push(Box::new(gid.map(|s| s.to_string())));
+        u.set("group_id", gid.map(|s| s.to_string()));
     }
-    if let Some(so) = sort_order {
-        sets.push(format!("sort_order = ?{}", values.len() + 1));
-        values.push(Box::new(so));
-    }
-    if !sets.is_empty() {
-        sets.push("updated_at = datetime('now', 'localtime')".to_string());
-        let idx = values.len() + 1;
-        let sql = format!("UPDATE collections SET {} WHERE id = ?{}", sets.join(", "), idx);
-        values.push(Box::new(id.to_string()));
-        let params: Vec<&dyn rusqlite::types::ToSql> = values.iter().map(|v| v.as_ref()).collect();
-        conn.execute(&sql, params.as_slice())?;
-    }
+    u.set_opt("sort_order", sort_order);
+    u.execute(conn, "collections", id)?;
     get(conn, id)
 }
 
@@ -89,7 +70,7 @@ pub fn delete(conn: &Connection, id: &str) -> Result<(), rusqlite::Error> {
 /// 构建集合树（从 collection_items 读取）
 pub fn get_tree(conn: &Connection, collection_id: &str) -> Result<CollectionTreeNode, rusqlite::Error> {
     let collection = get(conn, collection_id)?;
-    let items = crate::db::item::list_by_collection(conn, collection_id)?;
+    let items = crate::db::item::list_summary_by_collection(conn, collection_id)?;
 
     // 按 parent_id 预分组，O(N) 构建
     let mut children_map: std::collections::HashMap<Option<String>, Vec<&CollectionItem>> =
@@ -139,4 +120,92 @@ pub fn get_tree(conn: &Connection, collection_id: &str) -> Result<CollectionTree
         expect_status: None,
         children: build_children(None, &children_map),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::init::create_test_db;
+
+    #[test]
+    fn test_create_and_get() {
+        let conn = create_test_db();
+        let g = crate::db::group::create(&conn, "G", None).unwrap();
+        let c = create(&conn, "Suite", "desc", Some(&g.id)).unwrap();
+        assert_eq!(c.name, "Suite");
+        assert_eq!(c.description, "desc");
+        assert_eq!(c.group_id.as_deref(), Some(g.id.as_str()));
+        let fetched = get(&conn, &c.id).unwrap();
+        assert_eq!(fetched.name, "Suite");
+    }
+
+    #[test]
+    fn test_create_without_group() {
+        let conn = create_test_db();
+        let c = create(&conn, "NoGroup", "", None).unwrap();
+        assert!(c.group_id.is_none());
+    }
+
+    #[test]
+    fn test_list_all() {
+        let conn = create_test_db();
+        create(&conn, "A", "", None).unwrap();
+        create(&conn, "B", "", None).unwrap();
+        let all = list_all(&conn).unwrap();
+        assert_eq!(all.len(), 2);
+    }
+
+    #[test]
+    fn test_update() {
+        let conn = create_test_db();
+        let c = create(&conn, "Old", "old desc", None).unwrap();
+        let updated = update(&conn, &c.id, Some("New"), Some("new desc"), None, None).unwrap();
+        assert_eq!(updated.name, "New");
+        assert_eq!(updated.description, "new desc");
+    }
+
+    #[test]
+    fn test_update_sort_order() {
+        let conn = create_test_db();
+        let c = create(&conn, "C", "", None).unwrap();
+        let updated = update(&conn, &c.id, None, None, None, Some(10)).unwrap();
+        assert_eq!(updated.sort_order, 10);
+    }
+
+    #[test]
+    fn test_delete() {
+        let conn = create_test_db();
+        let c = create(&conn, "Del", "", None).unwrap();
+        delete(&conn, &c.id).unwrap();
+        assert!(get(&conn, &c.id).is_err());
+    }
+
+    #[test]
+    fn test_delete_group_sets_null() {
+        let conn = create_test_db();
+        let g = crate::db::group::create(&conn, "G", None).unwrap();
+        let c = create(&conn, "C", "", Some(&g.id)).unwrap();
+        crate::db::group::delete(&conn, &g.id).unwrap();
+        let fetched = get(&conn, &c.id).unwrap();
+        assert!(fetched.group_id.is_none());
+    }
+
+    #[test]
+    fn test_get_tree_empty() {
+        let conn = create_test_db();
+        let c = create(&conn, "Empty", "", None).unwrap();
+        let tree = get_tree(&conn, &c.id).unwrap();
+        assert_eq!(tree.name, "Empty");
+        assert!(tree.children.is_empty());
+    }
+
+    #[test]
+    fn test_get_tree_with_items() {
+        let conn = create_test_db();
+        let c = create(&conn, "Suite", "", None).unwrap();
+        crate::db::item::create(&conn, &c.id, None, "request", "Login", "POST").unwrap();
+        crate::db::item::create(&conn, &c.id, None, "folder", "Users", "GET").unwrap();
+        let tree = get_tree(&conn, &c.id).unwrap();
+        assert_eq!(tree.children.len(), 2);
+    }
 }

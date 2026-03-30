@@ -54,3 +54,79 @@ pub fn delete(conn: &Connection, id: &str) -> Result<(), rusqlite::Error> {
     conn.execute("DELETE FROM groups WHERE id = ?1", params![id])?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::init::create_test_db;
+
+    #[test]
+    fn test_create_and_get() {
+        let conn = create_test_db();
+        let g = create(&conn, "API Tests", None).unwrap();
+        assert_eq!(g.name, "API Tests");
+        assert!(g.parent_id.is_none());
+
+        let fetched = get(&conn, &g.id).unwrap();
+        assert_eq!(fetched.name, "API Tests");
+    }
+
+    #[test]
+    fn test_list_all() {
+        let conn = create_test_db();
+        create(&conn, "Group A", None).unwrap();
+        create(&conn, "Group B", None).unwrap();
+        let all = list_all(&conn).unwrap();
+        assert_eq!(all.len(), 2);
+    }
+
+    #[test]
+    fn test_create_nested() {
+        let conn = create_test_db();
+        let parent = create(&conn, "Parent", None).unwrap();
+        let child = create(&conn, "Child", Some(&parent.id)).unwrap();
+        assert_eq!(child.parent_id.as_deref(), Some(parent.id.as_str()));
+    }
+
+    #[test]
+    fn test_update_name() {
+        let conn = create_test_db();
+        let g = create(&conn, "Old", None).unwrap();
+        let updated = update(&conn, &g.id, Some("New"), None, None).unwrap();
+        assert_eq!(updated.name, "New");
+    }
+
+    #[test]
+    fn test_update_sort_order() {
+        let conn = create_test_db();
+        let g = create(&conn, "G", None).unwrap();
+        let updated = update(&conn, &g.id, None, None, Some(5)).unwrap();
+        assert_eq!(updated.sort_order, 5);
+    }
+
+    #[test]
+    fn test_delete() {
+        let conn = create_test_db();
+        let g = create(&conn, "ToDelete", None).unwrap();
+        delete(&conn, &g.id).unwrap();
+        assert!(get(&conn, &g.id).is_err());
+    }
+
+    #[test]
+    fn test_delete_cascades_children() {
+        let conn = create_test_db();
+        let parent = create(&conn, "Parent", None).unwrap();
+        let child = create(&conn, "Child", Some(&parent.id)).unwrap();
+        delete(&conn, &parent.id).unwrap();
+        assert!(get(&conn, &child.id).is_err());
+    }
+
+    #[test]
+    fn test_sort_order_auto_increment() {
+        let conn = create_test_db();
+        let g1 = create(&conn, "First", None).unwrap();
+        let g2 = create(&conn, "Second", None).unwrap();
+        assert_eq!(g1.sort_order, 0);
+        assert_eq!(g2.sort_order, 1);
+    }
+}

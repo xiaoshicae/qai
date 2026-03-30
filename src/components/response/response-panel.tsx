@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { ArrowDownToLine, Clock, HardDrive, Plug, Download, Music, Image, Film, FileDown } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -32,6 +33,7 @@ function dataUriToBytes(dataUri: string): Uint8Array {
 
 /** 统一媒体预览组件 */
 function MediaPreview({ body, sizeBytes }: { body: string; sizeBytes: number }) {
+  const { t } = useTranslation()
   const { mime, ext } = parseDataUri(body)
   const isAudio = mime.startsWith('audio/')
   const isImage = mime.startsWith('image/')
@@ -54,7 +56,7 @@ function MediaPreview({ body, sizeBytes }: { body: string; sizeBytes: number }) 
         {!isAudio && !isImage && !isVideo && (
           <div className="flex flex-col items-center py-6 text-muted-foreground">
             <FileDown className="h-8 w-8 mb-2" />
-            <span className="text-sm">二进制文件</span>
+            <span className="text-sm">{t('response.binary_file')}</span>
           </div>
         )}
       </div>
@@ -69,7 +71,7 @@ function MediaPreview({ body, sizeBytes }: { body: string; sizeBytes: number }) 
         <span className="text-xs text-muted-foreground">{formatSize(sizeBytes)}</span>
         <div className="flex-1" />
         <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={handleSave}>
-          <Download className="h-3 w-3" /> 保存
+          <Download className="h-3 w-3" /> {t('response.save')}
         </Button>
       </div>
     </div>
@@ -77,6 +79,7 @@ function MediaPreview({ body, sizeBytes }: { body: string; sizeBytes: number }) 
 }
 
 export default function ResponsePanel() {
+  const { t } = useTranslation()
   const { currentRequest, currentResponse, streaming, streamContent, streamChunks } = useRequestStore()
   const isWebSocket = currentRequest?.protocol === 'websocket'
   const [activeTab, setActiveTab] = useState('body')
@@ -142,7 +145,7 @@ export default function ResponsePanel() {
     return (
       <div className="flex flex-col items-center justify-center h-full">
         <ArrowDownToLine className="h-5 w-5 text-muted-foreground/30 mb-2" />
-        <span className="text-sm text-muted-foreground/50">发送请求查看响应</span>
+        <span className="text-sm text-muted-foreground/50">{t('response.send_hint')}</span>
       </div>
     )
   }
@@ -150,7 +153,7 @@ export default function ResponsePanel() {
   if (currentResponse.error_message && !response) {
     return (
       <div className="rounded-lg bg-destructive/10 p-4 text-sm">
-        <p className="font-medium text-destructive mb-1">请求失败</p>
+        <p className="font-medium text-destructive mb-1">{t('response.request_failed')}</p>
         <p className="text-xs text-muted-foreground font-mono">{currentResponse.error_message}</p>
       </div>
     )
@@ -180,8 +183,8 @@ export default function ResponsePanel() {
         {assertionResults.length > 0 && (
           <div className="ml-auto">
             {failedCount === 0
-              ? <Badge variant="success">{passedCount}/{assertionResults.length} 通过</Badge>
-              : <Badge variant="destructive">{failedCount} 失败</Badge>
+              ? <Badge variant="success">{t('response.passed', { passed: passedCount, total: assertionResults.length })}</Badge>
+              : <Badge variant="destructive">{t('response.failed', { count: failedCount })}</Badge>
             }
           </div>
         )}

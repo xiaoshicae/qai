@@ -1,5 +1,5 @@
 use std::process::Stdio;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 use tauri::{AppHandle, Emitter, State};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
@@ -13,6 +13,10 @@ impl ClaudeState {
     pub fn new() -> Self {
         Self { pid: Mutex::new(None), session_id: Mutex::new(None) }
     }
+}
+
+fn lock_claude<T>(m: &Mutex<T>) -> Result<MutexGuard<'_, T>, String> {
+    m.lock().map_err(|_| "内部状态不可用（锁冲突）".to_string())
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -30,7 +34,7 @@ pub async fn claude_send(
     mcp_config_path: Option<String>,
 ) -> Result<serde_json::Value, String> {
     let claude_bin = which_claude().unwrap_or_else(|| "claude".to_string());
-    let existing_session = claude_state.session_id.lock().unwrap().clone();
+    let existing_session = lock_claude(&claude_state.session_id)?.clone();
 
     let mut args: Vec<String> = vec![
         "-p".into(),
@@ -61,7 +65,9 @@ pub async fn claude_send(
     cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
 
     let mut child = cmd.spawn().map_err(|e| format!("启动 Claude 失败: {e}"))?;
-    if let Some(pid) = child.id() { *claude_state.pid.lock().unwrap() = Some(pid); }
+    if let Some(pid) = child.id() {
+        *lock_claude(&claude_state.pid)? = Some(pid);
+    }
 
     let stdout = child.stdout.take().ok_or("无法获取 stdout")?;
     let reader = BufReader::new(stdout);
@@ -101,7 +107,9 @@ pub async fn claude_send(
             "result" => {
                 // 保存 session_id 用于下次 --resume
                 if let Some(sid) = json.get("session_id").and_then(|s| s.as_str()) {
-                    *claude_state.session_id.lock().unwrap() = Some(sid.to_string());
+                    if let Ok(mut g) = claude_state.session_id.lock() {
+                        *g = Some(sid.to_string());
+                    }
                 }
                 let _ = app.emit("claude-event", ClaudeEvent { event_type: "result".into(), content: String::new(), raw: Some(json.clone()) });
                 final_result = json;
@@ -119,21 +127,27 @@ pub async fn claude_send(
     }
 
     let _ = child.wait().await;
-    *claude_state.pid.lock().unwrap() = None;
+    if let Ok(mut g) = claude_state.pid.lock() {
+        *g = None;
+    }
     Ok(final_result)
 }
 
 #[tauri::command]
 pub fn claude_stop(claude_state: State<'_, ClaudeState>) -> Result<(), String> {
-    if let Some(pid) = claude_state.pid.lock().unwrap().take() {
-        unsafe { libc::kill(pid as i32, libc::SIGTERM); }
+    if let Some(pid) = lock_claude(&claude_state.pid)?.take() {
+        // SAFETY: `pid` 来自 `claude_send` 中 `tokio::process::Command::spawn` 的子进程；仅发送 SIGTERM 请求其退出。
+        let rc = unsafe { libc::kill(pid as i32, libc::SIGTERM) };
+        if rc != 0 {
+            log::warn!("[claude_stop] kill(pid={pid}) returned {rc}");
+        }
     }
     Ok(())
 }
 
 #[tauri::command]
 pub fn claude_reset_session(claude_state: State<'_, ClaudeState>) -> Result<(), String> {
-    *claude_state.session_id.lock().unwrap() = None;
+    *lock_claude(&claude_state.session_id)? = None;
     Ok(())
 }
 

@@ -5,6 +5,8 @@ import type { CollectionTreeNode } from '@/types'
 
 const mockedInvoke = vi.mocked(invoke)
 
+vi.mock('sonner', () => ({ toast: { error: vi.fn() } }))
+
 // 构建测试用树
 function makeTree(): CollectionTreeNode {
   return {
@@ -51,6 +53,7 @@ describe('collection-store', () => {
       groups: [],
       selectedNodeId: null,
       selectedRequestId: null,
+      contextCollectionId: null,
     })
     vi.clearAllMocks()
   })
@@ -87,6 +90,7 @@ describe('collection-store', () => {
       const state = useCollectionStore.getState()
       expect(state.selectedNodeId).toBe('req-1')
       expect(state.selectedRequestId).toBe('req-1')
+      expect(state.contextCollectionId).toBe('col-1')
     })
 
     it('选中 folder 节点清空 selectedRequestId', () => {
@@ -109,7 +113,7 @@ describe('collection-store', () => {
   // ─── loadCollections ──────────────────────────────────────
 
   describe('loadCollections', () => {
-    it('成功加载集合列表', async () => {
+    it('成功加载集合列表（不预加载树）', async () => {
       const mockCollections = [
         { id: 'col-1', name: 'Test', description: '', group_id: null, sort_order: 0, created_at: '', updated_at: '' },
       ]
@@ -122,7 +126,7 @@ describe('collection-store', () => {
       await useCollectionStore.getState().loadCollections()
       const state = useCollectionStore.getState()
       expect(state.collections).toEqual(mockCollections)
-      expect(state.trees['col-1']).toBeDefined()
+      expect(state.trees['col-1']).toBeUndefined()
     })
 
     it('加载失败不崩溃', async () => {

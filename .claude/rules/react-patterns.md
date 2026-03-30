@@ -97,6 +97,36 @@ const formatTime = (ms: number) => ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixe
 import { formatDuration, formatSize } from '@/lib/formatters'
 ```
 
+## 三面板一致性（请求编辑体验）
+
+项目中有三个场景涉及 HTTP 请求的编辑和发送，**修改其中任何一处时必须检查另外两处是否需要同步**：
+
+| 面板 | 文件 | 场景 |
+|------|------|------|
+| 工作台请求面板 | `components/request/request-panel.tsx` + `stores/request-store.ts` | 选中请求后编辑和发送 |
+| 新建/编辑弹窗 | `components/collection/collection-overview-edit-parts.tsx` | 集合概览中编辑测试用例 |
+| 快速调试弹窗 | `components/quick-test-dialog.tsx` | 侧边栏快速调试 |
+
+### 必须保持一致的功能
+
+- **HTTP 方法颜色**：所有 Method Select 都应用 `METHOD_COLORS`
+- **URL 输入**：统一使用 `VarInput` 组件（支持变量高亮）
+- **Body 类型**：None / Form Data / URL Encoded / JSON / Raw 五种
+- **发送按钮**：只有一个"发送"按钮，**禁止**暴露"普通/流式"选择给用户
+- **流式响应**：后端自动检测 SSE（`text/event-stream`），前端通过 `listen('stream-chunk')` 自动展示
+- **响应展示**：统一使用 `MiniResponseViewer` 组件（弹窗场景）或 `ResponsePanel`（工作台场景）
+- **错误处理**：统一 `toast.error(invokeErrorMessage(e))`
+- **⌘+Enter 快捷键**：所有面板都支持
+- **i18n**：按钮/标签全部走 `t()` 调用
+
+### 检查清单（改动请求面板相关代码时）
+
+- [ ] 三个面板的 Body 类型选项是否一致？
+- [ ] 新增的 UI 交互是否在三个面板都需要？
+- [ ] Method Select 是否都有颜色？
+- [ ] 流式监听是否都正确设置和清理？
+- [ ] 响应展示格式是否统一？
+
 ## 禁止事项
 
 - 生产代码中留 `console.log`
@@ -104,3 +134,4 @@ import { formatDuration, formatSize } from '@/lib/formatters'
 - 直接修改 state 引用（`a.type = x` 后 `setX([...arr])`）
 - 在 JSX 中写复杂逻辑（提取为 useMemo 或函数）
 - 在多个组件中重复定义相同的工具函数（提取到 `lib/`）
+- 向用户暴露"普通/流式"发送选项（后端自动检测，前端只需一个"发送"按钮）

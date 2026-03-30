@@ -3,7 +3,7 @@ use futures_util::StreamExt;
 use uuid::Uuid;
 
 use crate::models::execution::ExecutionResult;
-use crate::models::item::{CollectionItem, HttpResponse, KeyValuePair};
+use crate::models::item::{CollectionItem, HttpResponse};
 
 #[derive(Clone, serde::Serialize)]
 pub struct StreamChunk {
@@ -26,18 +26,9 @@ pub async fn execute_stream(
 
     let status = resp.status().as_u16();
     let status_text = resp.status().canonical_reason().unwrap_or("").to_string();
-    let resp_headers: Vec<KeyValuePair> = resp
-        .headers()
-        .iter()
-        .map(|(k, v)| KeyValuePair {
-            key: k.to_string(),
-            value: v.to_str().unwrap_or("").to_string(),
-            enabled: true,
-            field_type: String::new(),
-        })
-        .collect();
+    let resp_headers = super::response::extract_headers(resp.headers());
 
-    let ttfb = start.elapsed().as_millis() as u64;
+    let _ttfb = start.elapsed().as_millis() as u64;
 
     // 流式读取响应体
     let mut stream = resp.bytes_stream();
@@ -112,8 +103,7 @@ pub async fn execute_stream(
     let size_bytes = full_body.len() as u64;
     let execution_id = Uuid::new_v4().to_string();
 
-    // 尝试从 SSE 事件中提取 content 拼接为可读文本
-    let readable_body = extract_sse_content(&full_body);
+    let is_success = super::response::is_success_status(status, item.expect_status);
 
     Ok(ExecutionResult {
         execution_id,
@@ -121,16 +111,12 @@ pub async fn execute_stream(
         item_name: item.name.clone(),
         request_url: item.url.clone(),
         request_method: item.method.clone(),
-        status: if status >= 200 && status < 400 {
-            crate::models::status::SUCCESS.to_string()
-        } else {
-            crate::models::status::FAILED.to_string()
-        },
+        status: super::response::status_string(is_success),
         response: Some(HttpResponse {
             status,
             status_text,
             headers: resp_headers,
-            body: readable_body,
+            body: full_body,
             time_ms: total_time,
             size_bytes,
         }),
@@ -140,6 +126,7 @@ pub async fn execute_stream(
 }
 
 /// 从 SSE JSON 事件中提取 content 文本（兼容 OpenAI 格式）
+#[cfg(test)]
 fn extract_sse_content(raw: &str) -> String {
     let mut content_parts: Vec<String> = Vec::new();
 
@@ -174,5 +161,56 @@ fn extract_sse_content(raw: &str) -> String {
         raw.to_string()
     } else {
         content_parts.join("")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_sse_content;
+
+    #[test]
+    fn test_openai_streaming_delta() {
+        let raw = r#"{"choices":[{"delta":{"content":"Hello"}}]}
+{"choices":[{"delta":{"content":" World"}}]}"#;
+        assert_eq!(extract_sse_content(raw), "Hello World");
+    }
+
+    #[test]
+    fn test_openai_non_streaming() {
+        let raw = r#"{"choices":[{"message":{"content":"Full response"}}]}"#;
+        assert_eq!(extract_sse_content(raw), "Full response");
+    }
+
+    #[test]
+    fn test_non_openai_passthrough() {
+        let raw = "just plain text response";
+        assert_eq!(extract_sse_content(raw), raw);
+    }
+
+    #[test]
+    fn test_empty_input() {
+        assert_eq!(extract_sse_content(""), "");
+    }
+
+    #[test]
+    fn test_mixed_lines_with_empty() {
+        let raw = r#"
+{"choices":[{"delta":{"content":"A"}}]}
+
+{"choices":[{"delta":{"content":"B"}}]}
+"#;
+        assert_eq!(extract_sse_content(raw), "AB");
+    }
+
+    #[test]
+    fn test_no_content_in_delta() {
+        let raw = r#"{"choices":[{"delta":{"role":"assistant"}}]}"#;
+        assert_eq!(extract_sse_content(raw), raw);
+    }
+
+    #[test]
+    fn test_invalid_json_passthrough() {
+        let raw = "not json {{{";
+        assert_eq!(extract_sse_content(raw), raw);
     }
 }

@@ -1,10 +1,15 @@
 import { useState, useEffect } from 'react'
 import { invoke } from '@tauri-apps/api/core'
+import { useTranslation } from 'react-i18next'
 import { CheckCircle, XCircle, AlertCircle, ChevronDown, ChevronRight } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { toast } from 'sonner'
+import { invokeErrorMessage } from '@/lib/invoke-error'
+import { TruncatedPre } from '@/components/ui/truncated-pre'
 import type { RunRecord, AssertionResultItem } from '@/types'
 
 export default function RunsTab({ requestId }: { requestId: string }) {
+  const { t } = useTranslation()
   const [runs, setRuns] = useState<RunRecord[]>([])
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
@@ -13,12 +18,12 @@ export default function RunsTab({ requestId }: { requestId: string }) {
       try {
         const list = await invoke<RunRecord[]>('list_item_runs', { itemId: requestId, limit: 20 })
         setRuns(list)
-      } catch {}
+      } catch (e) { toast.error(invokeErrorMessage(e)) }
     })()
   }, [requestId])
 
   if (runs.length === 0) {
-    return <div className="text-sm text-muted-foreground text-center py-8">暂无运行记录</div>
+    return <div className="text-sm text-muted-foreground text-center py-8">{t('scenario.not_run')}</div>
   }
 
   return (
@@ -67,7 +72,7 @@ export default function RunsTab({ requestId }: { requestId: string }) {
               <div className="border-t border-overlay/[0.06] px-3 py-2 space-y-2 bg-card text-xs">
                 {/* 请求 */}
                 <div>
-                  <div className="text-muted-foreground mb-1 font-medium">请求</div>
+                  <div className="text-muted-foreground mb-1 font-medium">{t('history.request')}</div>
                   <pre className="font-mono bg-overlay/[0.04] rounded p-2 whitespace-pre-wrap break-all max-h-[120px] overflow-y-auto">
                     {run.request_method} {run.request_url}
                   </pre>
@@ -76,17 +81,17 @@ export default function RunsTab({ requestId }: { requestId: string }) {
                 {/* 响应 */}
                 {run.response_body && (
                   <div>
-                    <div className="text-muted-foreground mb-1 font-medium">响应</div>
-                    <pre className="font-mono bg-overlay/[0.04] rounded p-2 whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto">
-                      {tryPrettyJson(run.response_body)}
-                    </pre>
+                    <div className="text-muted-foreground mb-1 font-medium">{t('history.response')}</div>
+                    <div className="bg-overlay/[0.04] rounded p-2 max-h-[200px] overflow-y-auto">
+                      <TruncatedPre content={tryPrettyJson(run.response_body)} />
+                    </div>
                   </div>
                 )}
 
                 {/* 断言结果 */}
                 {assertions.length > 0 && (
                   <div>
-                    <div className="text-muted-foreground mb-1 font-medium">断言</div>
+                    <div className="text-muted-foreground mb-1 font-medium">{t('history.assertions')}</div>
                     <div className="space-y-0.5">
                       {assertions.map((a) => (
                         <div key={a.assertion_id} className="flex items-center gap-1.5">
@@ -119,10 +124,10 @@ function formatTime(s: string) {
     const d = new Date(s + 'Z')
     const now = new Date()
     const diff = now.getTime() - d.getTime()
-    if (diff < 60000) return 'Just now'
-    if (diff < 3600000) return `${Math.floor(diff / 60000)} 分钟前`
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小时前`
-    return d.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+    if (diff < 60000) return 'just now'
+    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`
+    return d.toLocaleDateString(undefined, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
   } catch { return s }
 }
 

@@ -38,8 +38,8 @@ coverage/
 .env.production
 .vercel
 
-# Debug screenshots
-*.png
-*.jpg
-*.jpeg
+# Debug screenshots (root only, don't ignore src-tauri/icons/)
+/*.png
+/*.jpg
+/*.jpeg
 .playwright-mcp/

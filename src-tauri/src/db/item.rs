@@ -90,50 +90,155 @@ pub fn update(
     id: &str,
     payload: &crate::models::item::UpdateItemPayload,
 ) -> Result<CollectionItem, rusqlite::Error> {
-    let mut sets: Vec<String> = Vec::new();
-    let mut values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-
-    macro_rules! push_field {
-        ($field:expr, $col:expr) => {
-            if let Some(ref v) = $field {
-                sets.push(format!("{} = ?{}", $col, values.len() + 1));
-                values.push(Box::new(v.clone()));
-            }
-        };
-    }
-
-    push_field!(payload.name, "name");
-    push_field!(payload.method, "method");
-    push_field!(payload.url, "url");
-    push_field!(payload.headers, "headers");
-    push_field!(payload.query_params, "query_params");
-    push_field!(payload.body_type, "body_type");
-    push_field!(payload.body_content, "body_content");
-    push_field!(payload.extract_rules, "extract_rules");
-    push_field!(payload.description, "description");
-    push_field!(payload.protocol, "protocol");
-    if let Some(es) = payload.expect_status {
-        sets.push(format!("expect_status = ?{}", values.len() + 1));
-        values.push(Box::new(es as i32));
-    }
+    let mut u = super::DynamicUpdate::new();
+    u.set_opt("name", payload.name.clone());
+    u.set_opt("method", payload.method.clone());
+    u.set_opt("url", payload.url.clone());
+    u.set_opt("headers", payload.headers.clone());
+    u.set_opt("query_params", payload.query_params.clone());
+    u.set_opt("body_type", payload.body_type.clone());
+    u.set_opt("body_content", payload.body_content.clone());
+    u.set_opt("extract_rules", payload.extract_rules.clone());
+    u.set_opt("description", payload.description.clone());
+    u.set_opt("protocol", payload.protocol.clone());
+    u.set_opt("expect_status", payload.expect_status.map(|es| es as i32));
     if let Some(ref pid) = payload.parent_id {
-        sets.push(format!("parent_id = ?{}", values.len() + 1));
-        values.push(Box::new(pid.clone()));
+        u.set("parent_id", pid.clone());
     }
-
-    if !sets.is_empty() {
-        sets.push("updated_at = datetime('now', 'localtime')".to_string());
-        let idx = values.len() + 1;
-        let sql = format!("UPDATE collection_items SET {} WHERE id = ?{}", sets.join(", "), idx);
-        values.push(Box::new(id.to_string()));
-        let params: Vec<&dyn rusqlite::types::ToSql> = values.iter().map(|v| v.as_ref()).collect();
-        conn.execute(&sql, params.as_slice())?;
-    }
-
+    u.execute(conn, "collection_items", id)?;
     get(conn, id)
+}
+
+/// 轻量级列表查询 — 不取 body_content/headers/query_params 等大字段，用于树/列表展示
+pub fn list_summary_by_collection(conn: &Connection, collection_id: &str) -> Result<Vec<CollectionItem>, rusqlite::Error> {
+    let mut stmt = conn.prepare(
+        "SELECT id, collection_id, parent_id, type, name, sort_order, method, url, \
+         '' as headers, '' as query_params, body_type, '' as body_content, \
+         '' as extract_rules, description, expect_status, '' as poll_config, protocol, \
+         created_at, updated_at \
+         FROM collection_items WHERE collection_id = ?1 ORDER BY sort_order",
+    )?;
+    let rows = stmt.query_map(params![collection_id], item_from_row)?;
+    rows.collect()
 }
 
 pub fn delete(conn: &Connection, id: &str) -> Result<(), rusqlite::Error> {
     conn.execute("DELETE FROM collection_items WHERE id = ?1", params![id])?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::init::create_test_db;
+
+    fn setup() -> (Connection, String) {
+        let conn = create_test_db();
+        let c = crate::db::collection::create(&conn, "Suite", "", None).unwrap();
+        (conn, c.id)
+    }
+
+    #[test]
+    fn test_create_request() {
+        let (conn, cid) = setup();
+        let item = create(&conn, &cid, None, "request", "Login", "POST").unwrap();
+        assert_eq!(item.name, "Login");
+        assert_eq!(item.method, "POST");
+        assert_eq!(item.item_type, "request");
+        assert_eq!(item.collection_id, cid);
+    }
+
+    #[test]
+    fn test_create_folder() {
+        let (conn, cid) = setup();
+        let item = create(&conn, &cid, None, "folder", "Auth", "GET").unwrap();
+        assert_eq!(item.item_type, "folder");
+    }
+
+    #[test]
+    fn test_create_with_parent() {
+        let (conn, cid) = setup();
+        let folder = create(&conn, &cid, None, "folder", "Folder", "GET").unwrap();
+        let req = create(&conn, &cid, Some(&folder.id), "request", "Req", "GET").unwrap();
+        assert_eq!(req.parent_id.as_deref(), Some(folder.id.as_str()));
+    }
+
+    #[test]
+    fn test_get() {
+        let (conn, cid) = setup();
+        let item = create(&conn, &cid, None, "request", "Test", "GET").unwrap();
+        let fetched = get(&conn, &item.id).unwrap();
+        assert_eq!(fetched.name, "Test");
+    }
+
+    #[test]
+    fn test_list_by_collection() {
+        let (conn, cid) = setup();
+        create(&conn, &cid, None, "request", "A", "GET").unwrap();
+        create(&conn, &cid, None, "request", "B", "POST").unwrap();
+        let items = list_by_collection(&conn, &cid).unwrap();
+        assert_eq!(items.len(), 2);
+    }
+
+    #[test]
+    fn test_list_by_parent() {
+        let (conn, cid) = setup();
+        let folder = create(&conn, &cid, None, "folder", "F", "GET").unwrap();
+        create(&conn, &cid, Some(&folder.id), "request", "Child", "GET").unwrap();
+        let children = list_by_parent(&conn, &folder.id).unwrap();
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0].name, "Child");
+    }
+
+    #[test]
+    fn test_list_requests_by_collection() {
+        let (conn, cid) = setup();
+        create(&conn, &cid, None, "folder", "F", "GET").unwrap();
+        create(&conn, &cid, None, "request", "R", "GET").unwrap();
+        let reqs = list_requests_by_collection(&conn, &cid).unwrap();
+        assert_eq!(reqs.len(), 1);
+        assert_eq!(reqs[0].item_type, "request");
+    }
+
+    #[test]
+    fn test_update() {
+        let (conn, cid) = setup();
+        let item = create(&conn, &cid, None, "request", "Old", "GET").unwrap();
+        let payload = crate::models::item::UpdateItemPayload {
+            name: Some("New".to_string()),
+            method: Some("POST".to_string()),
+            url: Some("http://example.com".to_string()),
+            ..Default::default()
+        };
+        let updated = update(&conn, &item.id, &payload).unwrap();
+        assert_eq!(updated.name, "New");
+        assert_eq!(updated.method, "POST");
+        assert_eq!(updated.url, "http://example.com");
+    }
+
+    #[test]
+    fn test_delete() {
+        let (conn, cid) = setup();
+        let item = create(&conn, &cid, None, "request", "Del", "GET").unwrap();
+        delete(&conn, &item.id).unwrap();
+        assert!(get(&conn, &item.id).is_err());
+    }
+
+    #[test]
+    fn test_sort_order_auto() {
+        let (conn, cid) = setup();
+        let a = create(&conn, &cid, None, "request", "A", "GET").unwrap();
+        let b = create(&conn, &cid, None, "request", "B", "GET").unwrap();
+        assert_eq!(a.sort_order, 0);
+        assert_eq!(b.sort_order, 1);
+    }
+
+    #[test]
+    fn test_cascade_delete_collection() {
+        let (conn, cid) = setup();
+        create(&conn, &cid, None, "request", "R", "GET").unwrap();
+        crate::db::collection::delete(&conn, &cid).unwrap();
+        let items = list_by_collection(&conn, &cid).unwrap();
+        assert!(items.is_empty());
+    }
 }

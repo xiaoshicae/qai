@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { ChevronRight, ChevronDown, Folder, FolderOpen, Play, Plus, FolderPlus, Trash2, Pencil, MoreHorizontal, Link2 } from 'lucide-react'
 import { invoke } from '@tauri-apps/api/core'
+import { toast } from 'sonner'
+import { invokeErrorMessage } from '@/lib/invoke-error'
 import { cn } from '@/lib/utils'
 import type { Collection, CollectionTreeNode } from '@/types'
 import { useCollectionStore } from '@/stores/collection-store'
@@ -85,7 +87,7 @@ export default function CollectionTree({ collections, trees, selectedNodeId, onS
         await invoke('update_item', { id, payload: { name } })
         await loadTree(collectionId)
       }
-    } catch {}
+    } catch (e) { toast.error(invokeErrorMessage(e)) }
   }
 
   const handleMenuAction = async (action: string) => {
@@ -114,9 +116,14 @@ export default function CollectionTree({ collections, trees, selectedNodeId, onS
       case 'rename':
         startRename(id, name)
         break
-      case 'run':
-        navigate('/runner', { state: { collectionId, itemId: type === 'folder' ? id : undefined } })
+      case 'run': {
+        await loadTree(collectionId)
+        const nodeId = type === 'collection' ? collectionId : id
+        selectNode(nodeId)
+        onSelect(nodeId)
+        navigate('/')
         break
+      }
       case 'delete':
         if (type === 'collection') {
           await deleteCollection(id)
@@ -125,7 +132,7 @@ export default function CollectionTree({ collections, trees, selectedNodeId, onS
             await invoke('delete_item', { id })
             await loadTree(collectionId)
             if (selectedNodeId === id) selectNode(null)
-          } catch {}
+          } catch (e) { toast.error(invokeErrorMessage(e)) }
         }
         break
     }

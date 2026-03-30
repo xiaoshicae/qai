@@ -1,13 +1,14 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { invoke } from '@tauri-apps/api/core'
-import { Send, Loader2, Radio, Braces, Copy, Check, Plug } from 'lucide-react'
+import { Send, Loader2, Braces, Copy, Check, Plug } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
 import { CodeEditor } from '@/components/ui/code-editor'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useRequestStore } from '@/stores/request-store'
+import { useEnvVars } from '@/hooks/use-env-vars'
 import KeyValueTable from './key-value-table'
+import { BodyTypeSelector } from './body-type-selector'
 import AssertionEditor from '@/components/assertion/assertion-editor'
 import ExtractRulesEditor from './extract-rules-editor'
 import RunsTab from './runs-tab'
@@ -32,7 +33,9 @@ const PROTOCOL_OPTIONS = [
 
 export default function RequestPanel() {
   const { t } = useTranslation()
-  const { currentRequest, loading, updateRequest, sendRequest, sendRequestStream } = useRequestStore()
+  const { currentRequest, loading, updateRequest, sendRequest } = useRequestStore()
+  const [name, setName] = useState('')
+  const nameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [method, setMethod] = useState('GET')
   const [url, setUrl] = useState('')
   const [headers, setHeaders] = useState<KeyValuePair[]>([])
@@ -41,30 +44,11 @@ export default function RequestPanel() {
   const [bodyContent, setBodyContent] = useState('')
   const [activeTab, setActiveTab] = useState('params')
   const [protocol, setProtocol] = useState('http')
-  const [envVars, setEnvVars] = useState<Record<string, string>>({})
-
-  useEffect(() => {
-    const loadEnvVars = async () => {
-      try {
-        const envs = await invoke<{ id: string; name: string; is_active: boolean }[]>('list_environments')
-        const active = envs.find((e) => e.is_active)
-        if (active) {
-          const data = await invoke<{ variables: { key: string; value: string; enabled: boolean }[] }>('get_environment_with_vars', { id: active.id })
-          const map: Record<string, string> = {}
-          for (const v of data.variables) if (v.enabled) map[v.key] = v.value
-          setEnvVars(map)
-        } else {
-          setEnvVars({})
-        }
-      } catch {}
-    }
-    loadEnvVars()
-    window.addEventListener('env-changed', loadEnvVars)
-    return () => window.removeEventListener('env-changed', loadEnvVars)
-  }, [])
+  const { envVars, activeEnvName } = useEnvVars()
 
   useEffect(() => {
     if (currentRequest) {
+      setName(currentRequest.name)
       setMethod(currentRequest.method)
       setUrl(currentRequest.url)
       setHeaders(JSON.parse(currentRequest.headers || '[]'))
@@ -106,6 +90,29 @@ export default function RequestPanel() {
     setTimeout(() => setCopied(false), 1500)
   }, [bodyContent])
 
+  const handleNameChange = (value: string) => {
+    setName(value)
+    if (nameTimerRef.current) clearTimeout(nameTimerRef.current)
+    nameTimerRef.current = setTimeout(() => {
+      updateRequest({ name: value })
+    }, 500)
+  }
+
+  const flushName = () => {
+    if (nameTimerRef.current) {
+      clearTimeout(nameTimerRef.current)
+      nameTimerRef.current = null
+    }
+    if (currentRequest && name !== currentRequest.name) {
+      updateRequest({ name })
+    }
+  }
+
+  // 组件卸载时刷新未保存的 name
+  useEffect(() => () => {
+    if (nameTimerRef.current) clearTimeout(nameTimerRef.current)
+  }, [])
+
   const handleProtocolChange = (newProtocol: string) => {
     setProtocol(newProtocol)
     if (newProtocol === 'websocket') {
@@ -127,16 +134,47 @@ export default function RequestPanel() {
     await sendRequest()
   }
 
+  const handleSendRef = useRef(handleSend)
+  handleSendRef.current = handleSend
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key !== 'Enter') return
+      const t = e.target as HTMLElement | null
+      if (t?.closest?.('[data-qai-monaco-host]')) return
+      const ae = document.activeElement as HTMLElement | null
+      if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA') && !ae.closest('[data-request-url]') && !ae.closest('[data-qai-monaco-host]')) return
+      e.preventDefault()
+      void handleSendRef.current()
+    }
+    document.addEventListener('keydown', onKey, true)
+    return () => document.removeEventListener('keydown', onKey, true)
+  }, [])
+
+  const unresolvedUrlVars = useMemo(() => {
+    const keys = [...url.matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1])
+    const uniq = [...new Set(keys)]
+    return uniq.filter((k) => envVars[k] === undefined)
+  }, [url, envVars])
+
   return (
     <div className="space-y-4">
       {/* 请求名称 */}
       {currentRequest && (
-        <input
-          value={currentRequest.name}
-          onChange={(e) => updateRequest({ name: e.target.value })}
-          className="text-sm font-medium bg-transparent border-0 outline-none text-foreground w-full px-0 placeholder:text-muted-foreground focus:ring-0"
-          placeholder="请求名称"
-        />
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <input
+            value={name}
+            onChange={(e) => handleNameChange(e.target.value)}
+            onBlur={flushName}
+            className="text-sm font-medium bg-transparent border-0 outline-none text-foreground flex-1 min-w-[120px] px-0 placeholder:text-muted-foreground focus:ring-0"
+            placeholder={t('request.name_placeholder')}
+          />
+          {activeEnvName && (
+            <span className="text-[10px] text-muted-foreground shrink-0">
+              {t('request.active_env')}: <span className="text-emerald-600/90 dark:text-emerald-400/90 font-medium">{activeEnvName}</span>
+            </span>
+          )}
+        </div>
       )}
 
       {/* URL 栏 */}
@@ -151,32 +189,25 @@ export default function RequestPanel() {
           <Select value={method} onChange={setMethod} options={METHOD_OPTIONS} className={`w-28 ${METHOD_COLORS[method] ?? ''}`} />
         )}
         <input
+          data-request-url=""
           value={url}
           onChange={(e) => setUrl(e.target.value)}
-          placeholder={isWebSocket ? '输入 WebSocket URL (ws:// 或 wss://)' : '输入请求 URL'}
+          placeholder={isWebSocket ? t('request.ws_url_placeholder') : t('request.url_placeholder')}
           className="flex-1 h-8 rounded-lg border border-input bg-transparent px-3 text-sm font-mono placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 outline-none transition-colors"
           onBlur={() => updateRequest({ url })}
-          onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !(e.metaKey || e.ctrlKey)) void handleSend() }}
         />
         <Button onClick={handleSend} disabled={loading} size="sm" className="gap-1.5 h-8">
           {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : isWebSocket ? <Plug className="h-3.5 w-3.5" /> : <Send className="h-3.5 w-3.5" />}
           {isWebSocket ? t('request.connect') : t('request.send')}
         </Button>
-        {!isWebSocket && (
-          <Button
-            variant="outline"
-            onClick={async () => {
-              await updateRequest({ method, url, headers: JSON.stringify(headers), queryParams: JSON.stringify(queryParams), bodyType, bodyContent })
-              await sendRequestStream()
-            }}
-            disabled={loading}
-            size="sm"
-            className="gap-1.5 h-8"
-            title="流式发送 (SSE)"
-          >
-            <Radio className="h-3.5 w-3.5" />
-            Stream
-          </Button>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 text-[10px]">
+        <span className="text-muted-foreground/70">{t('request.shortcut_send')}</span>
+        {unresolvedUrlVars.length > 0 && (
+          <span className="text-amber-600/90 dark:text-amber-400/90">
+            {t('request.unresolved_vars')}: {unresolvedUrlVars.join(', ')}
+          </span>
         )}
       </div>
 
@@ -202,14 +233,14 @@ export default function RequestPanel() {
           {isWebSocket ? (
             <>
               <div className="mb-3 flex items-center gap-1">
-                <span className="px-2.5 py-1 rounded-lg text-xs font-medium bg-muted text-foreground">JSON</span>
+                <span className="px-2.5 py-1 rounded-lg text-xs font-medium bg-overlay/[0.06] text-foreground">JSON</span>
                 {bodyContent && (
                   <div className="ml-auto flex items-center gap-0.5">
-                    <button onClick={formatJson} className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer transition-colors" title="格式化 JSON">
+                    <button onClick={formatJson} className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-overlay/[0.04] cursor-pointer transition-colors" title={t('request.format_json')}>
                       <Braces className="h-3 w-3" /> Format
                     </button>
-                    <button onClick={compactJson} className="px-2 py-1 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer transition-colors" title="压缩 JSON">Compact</button>
-                    <button onClick={copyBody} className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer transition-colors" title="复制">
+                    <button onClick={compactJson} className="px-2 py-1 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-overlay/[0.04] cursor-pointer transition-colors" title={t('request.compact_json')}>Compact</button>
+                    <button onClick={copyBody} className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-overlay/[0.04] cursor-pointer transition-colors" title={t('request.copy')}>
                       {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
                     </button>
                   </div>
@@ -222,38 +253,25 @@ export default function RequestPanel() {
                 language="json"
                 placeholder='{ "text": "Hello", "voice": "Linda" }'
                 className="h-[280px]"
+                onSubmitChord={() => { void handleSend() }}
               />
             </>
           ) : (
             <>
               <div className="mb-3 flex items-center gap-1">
-                {['none', 'form-data', 'urlencoded', 'json', 'raw'].map((t) => {
-                  const label: Record<string, string> = { none: 'None', 'form-data': 'Form Data', urlencoded: 'URL Encoded', json: 'JSON', raw: 'Raw' }
-                  return (
-                    <button
-                      key={t}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-medium cursor-pointer transition-colors ${
-                        bodyType === t
-                          ? 'bg-muted text-foreground'
-                          : 'text-muted-foreground hover:text-foreground'
-                      }`}
-                      onClick={() => setBodyType(t)}
-                    >
-                      {label[t] ?? t}
-                    </button>
-                  )
-                })}
+                <BodyTypeSelector value={bodyType} onChange={setBodyType}>
                 {bodyType === 'json' && bodyContent && (
                   <div className="ml-auto flex items-center gap-0.5">
-                    <button onClick={formatJson} className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer transition-colors" title="格式化 JSON">
+                    <button onClick={formatJson} className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-overlay/[0.04] cursor-pointer transition-colors" title={t('request.format_json')}>
                       <Braces className="h-3 w-3" /> Format
                     </button>
-                    <button onClick={compactJson} className="px-2 py-1 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer transition-colors" title="压缩 JSON">Compact</button>
-                    <button onClick={copyBody} className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer transition-colors" title="复制">
+                    <button onClick={compactJson} className="px-2 py-1 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-overlay/[0.04] cursor-pointer transition-colors" title={t('request.compact_json')}>Compact</button>
+                    <button onClick={copyBody} className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-overlay/[0.04] cursor-pointer transition-colors" title={t('request.copy')}>
                       {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
                     </button>
                   </div>
                 )}
+                </BodyTypeSelector>
               </div>
               {bodyType !== 'none' && bodyType !== 'form' && bodyType !== 'form-data' && bodyType !== 'urlencoded' && (
                 <CodeEditor
@@ -263,6 +281,7 @@ export default function RequestPanel() {
                   language={bodyType === 'json' ? 'json' : 'plaintext'}
                   placeholder='{ "key": "value" }'
                   className="h-[280px]"
+                  onSubmitChord={() => { void handleSend() }}
                 />
               )}
               {(bodyType === 'form' || bodyType === 'form-data' || bodyType === 'urlencoded') && (

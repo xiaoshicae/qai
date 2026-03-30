@@ -36,7 +36,6 @@ qai/
 │   │   ├── response/     # ResponsePanel
 │   │   ├── assertion/    # AssertionEditor, AssertionResult
 │   │   ├── collection/   # CollectionOverview (编辑弹窗, 批量执行)
-│   │   ├── runner/       # RunnerPanel, ChainRunnerPanel
 │   │   ├── tree/         # CollectionTree
 │   │   ├── terminal/     # TerminalPanel (xterm.js)
 │   │   └── ai/           # AIPanel, AIGenerateDialog
@@ -45,8 +44,7 @@ qai/
 │   │   ├── workbench-view.tsx    # 主工作台
 │   │   ├── settings-view.tsx     # 设置 (主题/语言/AI 配置)
 │   │   ├── environments-view.tsx # 环境变量管理
-│   │   ├── history-view.tsx      # 请求历史
-│   │   └── runner-view.tsx       # 批量执行入口
+│   │   └── history-view.tsx      # 请求历史
 │   ├── locales/          # 国际化翻译
 │   │   ├── zh.json       # 中文
 │   │   └── en.json       # 英文

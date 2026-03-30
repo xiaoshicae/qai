@@ -137,7 +137,7 @@ pub async fn execute(item: &CollectionItem) -> Result<ExecutionResult, anyhow::E
             item_name: item.name.clone(),
             request_url: item.url.clone(),
             request_method: "WS".to_string(),
-            status: crate::models::status::FAILED.to_string(),
+            status: crate::models::Status::Failed.as_str().to_string(),
             response: Some(HttpResponse {
                 status: 0,
                 status_text: "WebSocket Error".into(),
@@ -163,11 +163,11 @@ pub async fn execute(item: &CollectionItem) -> Result<ExecutionResult, anyhow::E
 
     let expected = item.expect_status;
     let result_status = if expected > 0 {
-        if status_code == expected { crate::models::status::SUCCESS } else { crate::models::status::FAILED }
+        if status_code == expected { crate::models::Status::Success.as_str() } else { crate::models::Status::Failed.as_str() }
     } else if is_success {
-        crate::models::status::SUCCESS
+        crate::models::Status::Success.as_str()
     } else {
-        crate::models::status::FAILED
+        crate::models::Status::Failed.as_str()
     };
 
     Ok(ExecutionResult {
@@ -200,7 +200,7 @@ fn make_error_result(execution_id: &str, item: &CollectionItem, start: Instant, 
         item_name: item.name.clone(),
         request_url: item.url.clone(),
         request_method: "WS".to_string(),
-        status: crate::models::status::ERROR.to_string(),
+        status: crate::models::Status::Error.as_str().to_string(),
         response: Some(HttpResponse {
             status: 0,
             status_text: "Error".into(),

@@ -62,8 +62,10 @@ pub fn delete(conn: &Connection, id: &str) -> Result<(), rusqlite::Error> {
 }
 
 pub fn set_active(conn: &Connection, id: &str) -> Result<(), rusqlite::Error> {
-    conn.execute("UPDATE environments SET is_active = 0", [])?;
-    conn.execute("UPDATE environments SET is_active = 1 WHERE id = ?1", params![id])?;
+    conn.execute(
+        "UPDATE environments SET is_active = CASE WHEN id = ?1 THEN 1 ELSE 0 END",
+        params![id],
+    )?;
     Ok(())
 }
 
@@ -91,13 +93,124 @@ pub fn list_variables(conn: &Connection, environment_id: &str) -> Result<Vec<Env
 }
 
 pub fn save_variables(conn: &Connection, environment_id: &str, variables: &[EnvVariable]) -> Result<(), rusqlite::Error> {
-    conn.execute("DELETE FROM env_variables WHERE environment_id = ?1", params![environment_id])?;
+    let tx = conn.unchecked_transaction()?;
+    tx.execute("DELETE FROM env_variables WHERE environment_id = ?1", params![environment_id])?;
     for (i, v) in variables.iter().enumerate() {
         let id = if v.id.is_empty() { Uuid::new_v4().to_string() } else { v.id.clone() };
-        conn.execute(
+        tx.execute(
             "INSERT INTO env_variables (id, environment_id, key, value, enabled, sort_order) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![id, environment_id, v.key, v.value, v.enabled as i32, i as i32],
         )?;
     }
-    Ok(())
+    tx.commit()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::init::create_test_db;
+
+    #[test]
+    fn test_create_and_get() {
+        let conn = create_test_db();
+        let env = create(&conn, "Production").unwrap();
+        assert_eq!(env.name, "Production");
+        assert!(!env.is_active);
+        let fetched = get(&conn, &env.id).unwrap();
+        assert_eq!(fetched.name, "Production");
+    }
+
+    #[test]
+    fn test_list_all() {
+        let conn = create_test_db();
+        create(&conn, "Dev").unwrap();
+        create(&conn, "Staging").unwrap();
+        let all = list_all(&conn).unwrap();
+        assert_eq!(all.len(), 2);
+    }
+
+    #[test]
+    fn test_update() {
+        let conn = create_test_db();
+        let env = create(&conn, "Old").unwrap();
+        let updated = update(&conn, &env.id, "New").unwrap();
+        assert_eq!(updated.name, "New");
+    }
+
+    #[test]
+    fn test_delete() {
+        let conn = create_test_db();
+        let env = create(&conn, "Del").unwrap();
+        delete(&conn, &env.id).unwrap();
+        assert!(get(&conn, &env.id).is_err());
+    }
+
+    #[test]
+    fn test_set_active() {
+        let conn = create_test_db();
+        let e1 = create(&conn, "E1").unwrap();
+        let e2 = create(&conn, "E2").unwrap();
+        set_active(&conn, &e1.id).unwrap();
+        let f1 = get(&conn, &e1.id).unwrap();
+        assert!(f1.is_active);
+
+        set_active(&conn, &e2.id).unwrap();
+        let f1 = get(&conn, &e1.id).unwrap();
+        let f2 = get(&conn, &e2.id).unwrap();
+        assert!(!f1.is_active);
+        assert!(f2.is_active);
+    }
+
+    #[test]
+    fn test_get_active_none() {
+        let conn = create_test_db();
+        let result = get_active(&conn).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_active_with_vars() {
+        let conn = create_test_db();
+        let env = create(&conn, "E").unwrap();
+        set_active(&conn, &env.id).unwrap();
+        let vars = vec![
+            EnvVariable { id: String::new(), environment_id: env.id.clone(), key: "base_url".into(), value: "http://localhost".into(), enabled: true, sort_order: 0 },
+            EnvVariable { id: String::new(), environment_id: env.id.clone(), key: "token".into(), value: "abc123".into(), enabled: true, sort_order: 1 },
+        ];
+        save_variables(&conn, &env.id, &vars).unwrap();
+        let active = get_active(&conn).unwrap().unwrap();
+        assert_eq!(active.environment.name, "E");
+        assert_eq!(active.variables.len(), 2);
+        assert_eq!(active.variables[0].key, "base_url");
+    }
+
+    #[test]
+    fn test_save_variables_replaces() {
+        let conn = create_test_db();
+        let env = create(&conn, "E").unwrap();
+        let v1 = vec![EnvVariable { id: String::new(), environment_id: env.id.clone(), key: "a".into(), value: "1".into(), enabled: true, sort_order: 0 }];
+        save_variables(&conn, &env.id, &v1).unwrap();
+        assert_eq!(list_variables(&conn, &env.id).unwrap().len(), 1);
+
+        let v2 = vec![
+            EnvVariable { id: String::new(), environment_id: env.id.clone(), key: "b".into(), value: "2".into(), enabled: true, sort_order: 0 },
+            EnvVariable { id: String::new(), environment_id: env.id.clone(), key: "c".into(), value: "3".into(), enabled: false, sort_order: 1 },
+        ];
+        save_variables(&conn, &env.id, &v2).unwrap();
+        let loaded = list_variables(&conn, &env.id).unwrap();
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded[0].key, "b");
+        assert!(!loaded[1].enabled);
+    }
+
+    #[test]
+    fn test_cascade_delete_env_vars() {
+        let conn = create_test_db();
+        let env = create(&conn, "E").unwrap();
+        let vars = vec![EnvVariable { id: String::new(), environment_id: env.id.clone(), key: "k".into(), value: "v".into(), enabled: true, sort_order: 0 }];
+        save_variables(&conn, &env.id, &vars).unwrap();
+        delete(&conn, &env.id).unwrap();
+        let loaded = list_variables(&conn, &env.id).unwrap();
+        assert!(loaded.is_empty());
+    }
 }

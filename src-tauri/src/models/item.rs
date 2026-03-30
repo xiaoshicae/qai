@@ -67,6 +67,58 @@ pub struct UpdateItemPayload {
     pub protocol: Option<String>,
 }
 
+/// quick_test 的请求载体：不依赖已保存的 item，纯临时执行
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickTestPayload {
+    pub method: String,
+    pub url: String,
+    #[serde(default)]
+    pub headers: String,
+    #[serde(default)]
+    pub query_params: String,
+    #[serde(default = "default_body_type")]
+    pub body_type: String,
+    #[serde(default)]
+    pub body_content: String,
+    #[serde(default = "default_protocol")]
+    pub protocol: String,
+}
+
+fn default_body_type() -> String {
+    "none".to_string()
+}
+fn default_protocol() -> String {
+    "http".to_string()
+}
+
+impl QuickTestPayload {
+    /// 转换为临时 CollectionItem（不入库）
+    pub fn to_temp_item(&self) -> CollectionItem {
+        CollectionItem {
+            id: String::new(),
+            collection_id: String::new(),
+            parent_id: None,
+            item_type: "request".to_string(),
+            name: String::new(),
+            sort_order: 0,
+            method: self.method.clone(),
+            url: self.url.clone(),
+            headers: self.headers.clone(),
+            query_params: self.query_params.clone(),
+            body_type: self.body_type.clone(),
+            body_content: self.body_content.clone(),
+            extract_rules: "[]".to_string(),
+            description: String::new(),
+            expect_status: 0,
+            poll_config: String::new(),
+            protocol: self.protocol.clone(),
+            created_at: String::new(),
+            updated_at: String::new(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HttpResponse {
     pub status: u16,

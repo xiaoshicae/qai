@@ -1,5 +1,6 @@
 import { useRef, useEffect } from 'react'
 import Editor, { type OnMount, type OnChange } from '@monaco-editor/react'
+import * as monaco from 'monaco-editor'
 import type * as monacoType from 'monaco-editor'
 import { useThemeStore } from '@/stores/theme-store'
 import '@/lib/monaco-setup'
@@ -13,6 +14,8 @@ interface CodeEditorProps {
   className?: string
   onBlur?: () => void
   onMount?: (editor: monacoType.editor.IStandaloneCodeEditor) => void
+  /** Cmd/Ctrl+Enter 触发（发送请求等） */
+  onSubmitChord?: () => void
 }
 
 export function CodeEditor({
@@ -24,6 +27,7 @@ export function CodeEditor({
   className,
   onBlur,
   onMount: onMountProp,
+  onSubmitChord,
 }: CodeEditorProps) {
   const { resolved } = useThemeStore()
   const editorRef = useRef<monacoType.editor.IStandaloneCodeEditor | null>(null)
@@ -32,6 +36,11 @@ export function CodeEditor({
   const handleMount: OnMount = (editor) => {
     editorRef.current = editor
     editor.onDidBlurEditorWidget(() => onBlur?.())
+    if (onSubmitChord) {
+      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
+        onSubmitChord()
+      })
+    }
     onMountProp?.(editor)
   }
 
@@ -48,7 +57,7 @@ export function CodeEditor({
   }, [])
 
   return (
-    <div ref={containerRef} className={`relative overflow-hidden rounded-xl border border-overlay/[0.08] ${className ?? ''}`}>
+    <div ref={containerRef} data-qai-monaco-host="" className={`relative overflow-hidden rounded-xl border border-overlay/[0.08] ${className ?? ''}`}>
       {/* placeholder 层 */}
       {!value && placeholder && (
         <div className="absolute inset-0 px-4 py-2 text-xs text-muted-foreground/40 font-mono pointer-events-none z-10 whitespace-pre-wrap">

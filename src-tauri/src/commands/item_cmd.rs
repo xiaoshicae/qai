@@ -68,8 +68,20 @@ pub fn delete_item(db: State<'_, DbState>, id: String) -> Result<(), String> {
     crate::db::item::delete(&conn, &id).map_err(|e| e.to_string())
 }
 
+/// 保留旧命令名以兼容前端，但内部统一用 execute_smart
 #[tauri::command]
 pub async fn send_request_stream(
+    app: AppHandle,
+    db: State<'_, DbState>,
+    http: State<'_, HttpClient>,
+    id: String,
+) -> Result<ExecutionResult, String> {
+    send_request(app, db, http, id).await
+}
+
+/// 智能发送：自动检测流式响应，通过 event 逐块推送
+#[tauri::command]
+pub async fn send_request(
     app: AppHandle,
     db: State<'_, DbState>,
     http: State<'_, HttpClient>,
@@ -81,31 +93,55 @@ pub async fn send_request_stream(
         crate::websocket::client::execute(&item).await.map_err(|e| e.to_string())?
     } else {
         let app_clone = app.clone();
-        crate::http::stream::execute_stream(&http.0, &item, move |chunk| {
+        crate::http::client::execute_smart(&http.0, &item, Some(Box::new(move |chunk| {
             let _ = app_clone.emit("stream-chunk", &chunk);
-        }).await.map_err(|e| e.to_string())?
+        }))).await.map_err(|e| e.to_string())?
     };
 
     finalize_result(&db, &item, &mut result, &assertions)?;
     Ok(result)
 }
 
+/// 快速调试：智能执行，自动检测流式
 #[tauri::command]
-pub async fn send_request(
+pub async fn quick_test(
+    app: AppHandle,
     db: State<'_, DbState>,
     http: State<'_, HttpClient>,
-    id: String,
+    payload: crate::models::item::QuickTestPayload,
 ) -> Result<ExecutionResult, String> {
-    let (item, assertions) = prepare_request(&db, &id)?;
+    let mut item = payload.to_temp_item();
+
+    {
+        let conn = db.conn()?;
+        if let Ok(Some(env)) = crate::db::environment::get_active(&conn) {
+            let var_map = crate::http::vars::build_var_map(&env.variables);
+            item = crate::http::vars::apply_vars(&item, &var_map);
+        }
+    }
 
     let mut result = if item.protocol == "websocket" {
         crate::websocket::client::execute(&item).await.map_err(|e| e.to_string())?
     } else {
-        crate::http::client::execute(&http.0, &item).await.map_err(|e| e.to_string())?
+        let app_clone = app.clone();
+        crate::http::client::execute_smart(&http.0, &item, Some(Box::new(move |chunk| {
+            let _ = app_clone.emit("stream-chunk", &chunk);
+        }))).await.map_err(|e| e.to_string())?
     };
 
-    finalize_result(&db, &item, &mut result, &assertions)?;
+    result.item_name = item.url.clone();
     Ok(result)
+}
+
+/// 保留旧命令名以兼容前端
+#[tauri::command]
+pub async fn quick_test_stream(
+    app: AppHandle,
+    db: State<'_, DbState>,
+    http: State<'_, HttpClient>,
+    payload: crate::models::item::QuickTestPayload,
+) -> Result<ExecutionResult, String> {
+    quick_test(app, db, http, payload).await
 }
 
 /// 读取本地图片文件，返回 data URI（base64）用于前端缩略图预览

@@ -18,7 +18,7 @@ pub async fn run_chain(
     let total_steps = steps.len() as u32;
     let mut accumulated_vars = base_vars;
     let mut step_results: Vec<ChainStepResult> = Vec::new();
-    let mut overall_status = crate::models::status::SUCCESS.to_string();
+    let mut overall_status = crate::models::Status::Success.as_str().to_string();
     let mut total_time: u64 = 0;
 
     for (i, (raw_item, assertions)) in steps.into_iter().enumerate() {
@@ -29,7 +29,7 @@ pub async fn run_chain(
             item_id: chain_item_id.clone(),
             step_index,
             step_name: raw_item.name.clone(),
-            status: crate::models::status::RUNNING.to_string(),
+            status: crate::models::Status::Running.as_str().to_string(),
             total_steps,
         });
 
@@ -62,17 +62,17 @@ pub async fn run_chain(
                     item_name: item.name.clone(),
                     request_url: item.url.clone(),
                     request_method: item.method.clone(),
-                    status: crate::models::status::ERROR.to_string(),
+                    status: crate::models::Status::Error.as_str().to_string(),
                     response: None,
                     assertion_results: vec![],
                     error_message: Some(e.to_string()),
                 };
                 progress_callback(ChainProgress {
                     chain_id: chain_id.clone(), item_id: chain_item_id.clone(),
-                    step_index, step_name: item.name.clone(), status: crate::models::status::ERROR.to_string(), total_steps,
+                    step_index, step_name: item.name.clone(), status: crate::models::Status::Error.as_str().to_string(), total_steps,
                 });
                 step_results.push(ChainStepResult { step_index, execution_result: err_result, extracted_variables: HashMap::new() });
-                overall_status = crate::models::status::ERROR.to_string();
+                overall_status = crate::models::Status::Error.as_str().to_string();
                 break;
             }
         };
@@ -109,7 +109,7 @@ pub async fn run_chain(
 
         step_results.push(ChainStepResult { step_index, execution_result: result, extracted_variables: extracted });
 
-        if step_status != crate::models::status::SUCCESS {
+        if step_status != crate::models::Status::Success.as_str() {
             overall_status = step_status;
             break;
         }
@@ -140,11 +140,10 @@ async fn execute_with_poll(
 
         if let Some(ref response) = result.response {
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(&response.body) {
-                if let Some(val) = json.get(&poll.field) {
-                    let val_str = match val {
-                        serde_json::Value::String(s) => s.clone(),
-                        other => other.to_string(),
-                    };
+                // 支持 JSON Path 格式（$.status）和直接 key（status）
+                let extracted = crate::runner::assertion::json_path::extract_json_path(&json, &poll.field);
+                if let Some(val) = extracted {
+                    let val_str = crate::runner::assertion::json_path::value_to_string(&val);
                     if val_str == poll.target {
                         return Ok(result);
                     }
@@ -154,6 +153,7 @@ async fn execute_with_poll(
 
         if start.elapsed() >= max_duration {
             let mut result = result;
+            result.status = crate::models::Status::Failed.as_str().to_string();
             result.error_message = Some(format!(
                 "轮询超时: {} 未在 {}s 内达到 {} = {}",
                 item.name, poll.max_seconds, poll.field, poll.target

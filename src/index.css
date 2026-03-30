@@ -141,6 +141,17 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* 禁用 macOS WebKit 输入建议/自动纠正 */
+input, textarea {
+  -webkit-text-security: none;
+}
+input::-webkit-contacts-auto-fill-button,
+input::-webkit-credentials-auto-fill-button {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none;
+}
+
 /* 滚动条 */
 ::-webkit-scrollbar {
   width: 4px;

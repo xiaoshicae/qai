@@ -23,6 +23,13 @@ pub fn initialize_database(app: &AppHandle) -> Result<(), Box<dyn std::error::Er
     migrate_if_needed(&conn)?;
     migrate_add_columns(&conn)?;
 
+    // 启动时自动清理旧历史，每个 item 保留最近 50 条
+    match crate::db::execution::cleanup(&conn, 50) {
+        Ok(0) => {}
+        Ok(n) => log::info!("启动清理：删除 {n} 条旧执行记录"),
+        Err(e) => log::warn!("启动清理失败: {e}"),
+    }
+
     app.manage(DbState(Mutex::new(conn)));
     app.manage(HttpClient(
         reqwest::Client::builder()
@@ -137,6 +144,7 @@ pub fn create_tables(conn: &Connection) -> Result<(), rusqlite::Error> {
         CREATE INDEX IF NOT EXISTS idx_executions_item ON executions(item_id);
         CREATE INDEX IF NOT EXISTS idx_executions_batch ON executions(batch_id);
         CREATE INDEX IF NOT EXISTS idx_executions_collection ON executions(collection_id);
+        CREATE INDEX IF NOT EXISTS idx_executions_executed_at ON executions(executed_at DESC);
         CREATE INDEX IF NOT EXISTS idx_env_variables_env ON env_variables(environment_id);
         ",
     )?;
@@ -288,5 +296,17 @@ pub fn migrate_add_columns(conn: &Connection) -> Result<(), rusqlite::Error> {
     for sql in &alterations {
         let _ = conn.execute(sql, []);
     }
+    let _ = conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_executions_executed_at ON executions(executed_at DESC);",
+    );
     Ok(())
+}
+
+/// 创建内存数据库（用于测试）
+#[cfg(test)]
+pub fn create_test_db() -> Connection {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
+    create_tables(&conn).unwrap();
+    conn
 }

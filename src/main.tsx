@@ -10,6 +10,12 @@ if (!import.meta.env.DEV) {
   document.addEventListener('contextmenu', (e) => e.preventDefault())
 }
 
+// 全局禁用 macOS WebKit 输入建议/拼写检查/自动纠正
+document.documentElement.setAttribute('spellcheck', 'false')
+document.documentElement.setAttribute('autocomplete', 'off')
+document.documentElement.setAttribute('autocorrect', 'off')
+document.documentElement.setAttribute('autocapitalize', 'off')
+
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null }
   static getDerivedStateFromError(error: Error) { return { error } }

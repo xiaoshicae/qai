@@ -1,6 +1,6 @@
-//! QAI MCP Server — 通过 stdio 暴露 QAI 测试用例管理能力给 Claude Code
+//! QAI MCP Server — expose QAI API testing capabilities to Claude Code via stdio
 //!
-//! 用法: qai-mcp <db-path>
+//! Usage: qai-mcp <db-path>
 
 use std::io::{self, BufRead, Write};
 use rusqlite::Connection;
@@ -9,6 +9,8 @@ use rusqlite::Connection;
 mod protocol;
 #[path = "server.rs"]
 mod server;
+#[path = "handlers.rs"]
+mod handlers;
 #[path = "tools.rs"]
 mod tools;
 
@@ -23,25 +25,34 @@ fn main() {
         std::process::exit(1);
     });
 
-    conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;")
-        .unwrap();
+    if let Err(e) = conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;") {
+        eprintln!("Failed to set PRAGMA: {e}");
+        std::process::exit(1);
+    }
 
-    // 确保表存在（与主应用相同的迁移）
     qai_lib::db::init::create_tables(&conn).unwrap_or_else(|e| {
         eprintln!("Failed to create tables: {e}");
         std::process::exit(1);
     });
 
+    // 创建 tokio 运行时（用于 send_request / run_collection 等异步工具）
+    let rt = tokio::runtime::Runtime::new().unwrap_or_else(|e| {
+        eprintln!("Failed to create tokio runtime: {e}");
+        std::process::exit(1);
+    });
+
+    // 创建 HTTP 客户端（用于执行 API 请求）
+    let client = reqwest::Client::new();
+
     eprintln!("[qai-mcp] Started, db={db_path}");
 
-    // MCP 服务主循环：Content-Length 分帧的 JSON-RPC (stdio transport)
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut reader = io::BufReader::new(stdin.lock());
     let mut out = stdout.lock();
 
     loop {
-        // 读取 headers（Content-Length: N\r\n\r\n）
+        // 读取 Content-Length 头
         let mut content_length: Option<usize> = None;
         loop {
             let mut header_line = String::new();
@@ -51,9 +62,7 @@ fn main() {
                 _ => {}
             }
             let trimmed = header_line.trim();
-            if trimmed.is_empty() {
-                break; // 空行 = headers 结束
-            }
+            if trimmed.is_empty() { break; }
             if let Some(len_str) = trimmed.strip_prefix("Content-Length:") {
                 content_length = len_str.trim().parse().ok();
             }
@@ -61,31 +70,34 @@ fn main() {
 
         let len = match content_length {
             Some(l) => l,
-            None => {
-                // 也尝试纯行模式（兼容简单测试）
-                continue;
-            }
+            None => continue,
         };
 
-        // 读取 body
         let mut body = vec![0u8; len];
-        if io::Read::read_exact(&mut reader, &mut body).is_err() {
-            break;
-        }
+        if io::Read::read_exact(&mut reader, &mut body).is_err() { break; }
 
         let line = match String::from_utf8(body) {
             Ok(s) => s,
             Err(_) => continue,
         };
 
-        let response = server::handle_request(&conn, &line);
-        let response_json = serde_json::to_string(&response).unwrap();
+        let response = server::handle_request(&conn, &client, &rt, &line);
+        let response_json = match serde_json::to_string(&response) {
+            Ok(j) => j,
+            Err(e) => {
+                eprintln!("[qai-mcp] Failed to serialize response: {e}");
+                continue;
+            }
+        };
 
-        // 写入 Content-Length 头 + body
         let resp_bytes = response_json.as_bytes();
-        write!(out, "Content-Length: {}\r\n\r\n", resp_bytes.len()).unwrap();
-        out.write_all(resp_bytes).unwrap();
-        out.flush().unwrap();
+        if write!(out, "Content-Length: {}\r\n\r\n", resp_bytes.len()).is_err()
+            || out.write_all(resp_bytes).is_err()
+            || out.flush().is_err()
+        {
+            eprintln!("[qai-mcp] Failed to write to stdout, exiting");
+            break;
+        }
     }
 
     eprintln!("[qai-mcp] Exiting");

@@ -24,7 +24,7 @@ function Tabs({ value, onValueChange, children, className }: TabsProps) {
 function TabsList({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
     <div className={cn(
-      "inline-flex h-8 items-center gap-0.5 rounded-lg bg-muted p-[3px] text-muted-foreground",
+      "inline-flex h-8 items-center gap-0.5 rounded-lg bg-overlay/[0.06] p-[3px] text-muted-foreground",
       className
     )}>
       {children}

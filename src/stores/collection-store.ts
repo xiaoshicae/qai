@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
+import { toast } from 'sonner'
 import type { Collection, CollectionTreeNode, Group } from '@/types'
+import { invokeErrorMessage } from '@/lib/invoke-error'
 
 interface CollectionState {
   collections: Collection[]
@@ -8,6 +10,8 @@ interface CollectionState {
   groups: Group[]
   selectedNodeId: string | null
   selectedRequestId: string | null
+  /** 当前侧栏请求树所属的集合（点击集合 / 请求时更新） */
+  contextCollectionId: string | null
   loadCollections: () => Promise<void>
   loadTree: (collectionId: string) => Promise<void>
   loadGroups: () => Promise<void>
@@ -42,16 +46,17 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
   collections: [],
   trees: {},
   groups: [],
-  selectedNodeId: null,
+  selectedNodeId: (() => { try { const s = localStorage.getItem('qai.selectedNode'); return s ? JSON.parse(s).nodeId : null } catch { return null } })(),
   selectedRequestId: null,
+  contextCollectionId: (() => { try { const s = localStorage.getItem('qai.selectedNode'); return s ? JSON.parse(s).contextCollectionId : null } catch { return null } })(),
 
   loadCollections: async () => {
     try {
       const collections = await invoke<Collection[]>('list_collections')
       set({ collections })
-      await Promise.allSettled(collections.map((col) => get().loadTree(col.id)))
     } catch (e) {
       console.error('loadCollections failed:', e)
+      toast.error(invokeErrorMessage(e))
     }
   },
 
@@ -61,6 +66,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
       set((state) => ({ trees: { ...state.trees, [collectionId]: tree } }))
     } catch (e) {
       console.error('loadTree failed:', collectionId, e)
+      toast.error(invokeErrorMessage(e))
     }
   },
 
@@ -70,6 +76,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
       set({ groups })
     } catch (e) {
       console.error('loadGroups failed:', e)
+      toast.error(invokeErrorMessage(e))
     }
   },
 
@@ -88,6 +95,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
         trees: rest,
         selectedNodeId: state.selectedNodeId === id ? null : state.selectedNodeId,
         selectedRequestId: state.selectedRequestId === id ? null : state.selectedRequestId,
+        contextCollectionId: state.contextCollectionId === id ? null : state.contextCollectionId,
       }
     })
   },
@@ -132,18 +140,31 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
   },
 
   selectNode: (nodeId: string | null) => {
-    if (!nodeId) { set({ selectedNodeId: null, selectedRequestId: null }); return }
-    set({ selectedNodeId: nodeId })
-    const { trees } = get()
+    if (!nodeId) {
+      set({ selectedNodeId: null, selectedRequestId: null, contextCollectionId: null })
+      try { localStorage.removeItem('qai.selectedNode') } catch {}
+      return
+    }
+    const { trees, collections, contextCollectionId: prevCtx } = get()
+    const isTopLevelCollection = collections.some((c) => c.id === nodeId)
+    const colFromTree = findCollectionForNode(trees, nodeId)
+    const contextCollectionId = colFromTree ?? (isTopLevelCollection ? nodeId : prevCtx)
+
+    let selectedRequestId: string | null = null
     for (const tree of Object.values(trees)) {
       const node = findNode(tree, nodeId)
-      if (node && node.node_type === 'request') {
-        set({ selectedRequestId: nodeId })
-        return
+      if (node?.node_type === 'request') {
+        selectedRequestId = nodeId
+        break
       }
     }
-    // 不是 request 节点（集合或文件夹），清空 requestId 以显示概览
-    set({ selectedRequestId: null })
+
+    set({
+      selectedNodeId: nodeId,
+      selectedRequestId,
+      contextCollectionId,
+    })
+    try { localStorage.setItem('qai.selectedNode', JSON.stringify({ nodeId, contextCollectionId })) } catch {}
   },
 }))
 

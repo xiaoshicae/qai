@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
+import { invokeErrorMessage } from '@/lib/invoke-error'
 
 export interface ChatMessage {
   id: string
@@ -19,7 +20,7 @@ interface AIState {
   clearMessages: () => void
 }
 
-let msgId = 0
+function uid() { return `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` }
 
 export const useAIStore = create<AIState>((set) => ({
   open: false,
@@ -31,14 +32,14 @@ export const useAIStore = create<AIState>((set) => ({
 
   sendMessage: async (content: string) => {
     const userMsg: ChatMessage = {
-      id: `msg-${++msgId}`,
+      id: uid(),
       role: 'user',
       content,
       timestamp: Date.now(),
     }
 
     const assistantMsg: ChatMessage = {
-      id: `msg-${++msgId}`,
+      id: uid(),
       role: 'assistant',
       content: '',
       timestamp: Date.now(),
@@ -59,10 +60,10 @@ export const useAIStore = create<AIState>((set) => ({
         sending: false,
       }))
     } catch (e: any) {
-      const errMsg = typeof e === 'string' ? e : e.message ?? 'Request failed'
+      const errMsg = invokeErrorMessage(e)
       set((s) => ({
         messages: s.messages.map((m) =>
-          m.id === assistantMsg.id ? { ...m, content: `错误: ${errMsg}`, loading: false } : m
+          m.id === assistantMsg.id ? { ...m, content: `⚠ ${errMsg}`, loading: false } : m
         ),
         sending: false,
       }))

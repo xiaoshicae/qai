@@ -1,12 +1,13 @@
 mod commands;
 pub mod db;
-mod http;
+pub mod http;
 pub mod models;
 pub mod runner;
 pub mod ai;
 mod report;
 pub mod websocket;
 pub mod pty;
+mod import;
 
 use db::init::initialize_database;
 use tauri::Manager;
@@ -14,6 +15,12 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // 已有实例运行时，聚焦到主窗口
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -49,6 +56,8 @@ pub fn run() {
             commands::item_cmd::delete_item,
             commands::item_cmd::send_request,
             commands::item_cmd::send_request_stream,
+            commands::item_cmd::quick_test,
+            commands::item_cmd::quick_test_stream,
             commands::item_cmd::parse_curl,
             commands::item_cmd::export_curl,
             commands::item_cmd::read_file_preview,
@@ -88,6 +97,7 @@ pub fn run() {
             commands::claude_cmd::claude_stop,
             commands::claude_cmd::claude_reset_session,
             commands::import_cmd::import_yaml_cases,
+            commands::import_cmd::import_postman_collection,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

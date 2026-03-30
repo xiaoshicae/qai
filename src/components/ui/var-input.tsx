@@ -40,7 +40,7 @@ export function VarInput({ value, onChange, onBlur, placeholder, className = '',
     return (
       <div className="flex-1 min-w-0">
         <div
-          className={`h-8 rounded-lg border border-overlay/[0.08] bg-transparent px-3 text-sm leading-8 overflow-hidden whitespace-nowrap cursor-text transition-colors hover:border-overlay/[0.12] ${className}`}
+          className={`h-8 rounded-xl border border-overlay/[0.08] bg-transparent px-3 text-sm leading-8 overflow-hidden whitespace-nowrap cursor-text transition-colors hover:border-overlay/[0.12] ${className}`}
           style={{ fontFamily: MONO }}
           onClick={() => { setFocused(true); requestAnimationFrame(() => inputRef.current?.focus()) }}
         >
@@ -48,12 +48,6 @@ export function VarInput({ value, onChange, onBlur, placeholder, className = '',
         </div>
         {/* 隐藏 input 保持 ref 可用 */}
         <input ref={inputRef} value={value} onChange={(e) => onChange(e.target.value)} className="sr-only" tabIndex={-1} />
-        {/* 解析预览行 */}
-        {segments?.some((s) => s.type === 'var' && s.resolved) && (
-          <div className="text-[10px] text-muted-foreground/50 truncate font-mono mt-0.5 px-1">
-            {value.replace(/\{\{(\w+)\}\}/g, (m, key) => envVars[key] ?? m)}
-          </div>
-        )}
       </div>
     )
   }
@@ -104,12 +98,6 @@ export function VarInput({ value, onChange, onBlur, placeholder, className = '',
           style={{ fontFamily: MONO }}
         />
       </div>
-      {/* 解析预览行 */}
-      {hasVars && segments?.some((s) => s.type === 'var' && s.resolved) && (
-        <div className="text-[10px] text-muted-foreground/50 truncate font-mono mt-0.5 px-1">
-          {value.replace(/\{\{(\w+)\}\}/g, (m, key) => envVars[key] ?? m)}
-        </div>
-      )}
     </div>
   )
 }

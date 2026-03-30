@@ -56,7 +56,7 @@ pub async fn run_batch(
                 batch_id: bid.clone(),
                 item_id: item.id.clone(),
                 item_name: item.name.clone(),
-                status: crate::models::status::RUNNING.to_string(),
+                status: crate::models::Status::Running.as_str().to_string(),
                 current: index as u32 + 1,
                 total,
             });
@@ -74,7 +74,7 @@ pub async fn run_batch(
                     item_name: item.name.clone(),
                     request_url: item.url.clone(),
                     request_method: item.method.clone(),
-                    status: crate::models::status::ERROR.to_string(),
+                    status: crate::models::Status::Error.as_str().to_string(),
                     response: None,
                     assertion_results: vec![],
                     error_message: Some(e.to_string()),
@@ -106,9 +106,9 @@ pub async fn run_batch(
     }
     let total_time_ms = start.elapsed().as_millis() as u64;
 
-    let passed = results.iter().filter(|r| r.status == crate::models::status::SUCCESS).count() as u32;
-    let failed = results.iter().filter(|r| r.status == crate::models::status::FAILED).count() as u32;
-    let errors = results.iter().filter(|r| r.status == crate::models::status::ERROR).count() as u32;
+    let passed = results.iter().filter(|r| r.status == crate::models::Status::Success.as_str()).count() as u32;
+    let failed = results.iter().filter(|r| r.status == crate::models::Status::Failed.as_str()).count() as u32;
+    let errors = results.iter().filter(|r| r.status == crate::models::Status::Error.as_str()).count() as u32;
 
     BatchResult {
         batch_id,

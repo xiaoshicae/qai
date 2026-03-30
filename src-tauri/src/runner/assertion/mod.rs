@@ -20,9 +20,9 @@ pub fn apply_assertions(result: &mut ExecutionResult, assertions: &[Assertion]) 
         if !assertions.is_empty() {
             result.assertion_results = evaluate_assertions(assertions, response);
             if result.assertion_results.iter().any(|a| !a.passed) {
-                result.status = crate::models::status::FAILED.to_string();
+                result.status = crate::models::Status::Failed.to_string();
             } else {
-                result.status = crate::models::status::SUCCESS.to_string();
+                result.status = crate::models::Status::Success.to_string();
             }
         }
     }

@@ -1,33 +1,43 @@
+import { useEffect } from 'react'
+import { Zap } from 'lucide-react'
+import { EmptyState } from '@/components/ui/empty-state'
 import { useCollectionStore } from '@/stores/collection-store'
 import CollectionOverview from '@/components/collection/collection-overview'
-import { Zap } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 export default function WorkbenchView() {
   const { t } = useTranslation()
-  const { selectedNodeId, collections, trees } = useCollectionStore()
+  const { selectedNodeId, collections, trees, loadTree, contextCollectionId } = useCollectionStore()
 
-  const selectedCollection = collections.find((c) => c.id === selectedNodeId)
+  const overviewCollection =
+    collections.find((c) => c.id === selectedNodeId)
+    ?? (contextCollectionId ? collections.find((c) => c.id === contextCollectionId) : undefined)
 
-  if (selectedCollection) {
-    return (
-      <div className="h-full overflow-y-auto">
-        <CollectionOverview
-          collection={selectedCollection}
-          tree={trees[selectedCollection.id]}
-        />
-      </div>
-    )
-  }
+  useEffect(() => {
+    if (overviewCollection && !trees[overviewCollection.id]) {
+      void loadTree(overviewCollection.id)
+    }
+  }, [overviewCollection?.id, trees, loadTree])
+
+  useEffect(() => {
+    if (contextCollectionId && !trees[contextCollectionId]) {
+      void loadTree(contextCollectionId)
+    }
+  }, [contextCollectionId, trees, loadTree])
 
   return (
-    <div className="flex h-full items-center justify-center">
-      <div className="text-center">
-        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted mx-auto mb-4">
-          <Zap className="h-6 w-6 text-muted-foreground" />
-        </div>
-        <h2 className="text-sm font-medium text-muted-foreground">{t('app.select_collection')}</h2>
-        <p className="text-xs text-muted-foreground/60 mt-1">{t('app.select_collection_hint')}</p>
+    <div className="relative h-full min-h-0 w-full bg-background">
+      <div className="h-full min-h-0 w-full overflow-y-auto">
+        {overviewCollection ? (
+          <CollectionOverview
+            collection={overviewCollection}
+            tree={trees[overviewCollection.id]}
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center">
+            <EmptyState icon={Zap} title={t('app.select_collection')} description={t('app.select_collection_hint')} />
+          </div>
+        )}
       </div>
     </div>
   )

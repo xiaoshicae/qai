@@ -81,40 +81,107 @@ pub fn update(
     expected: Option<&str>,
     enabled: Option<bool>,
 ) -> Result<Assertion, rusqlite::Error> {
-    let mut sets: Vec<String> = Vec::new();
-    let mut values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-
-    macro_rules! push_field {
-        ($field:expr, $col:expr) => {
-            if let Some(v) = $field {
-                sets.push(format!("{} = ?{}", $col, values.len() + 1));
-                values.push(Box::new(v.to_string()));
-            }
-        };
-    }
-
-    push_field!(assertion_type, "type");
-    push_field!(expression, "expression");
-    push_field!(operator, "operator");
-    push_field!(expected, "expected");
-
-    if let Some(v) = enabled {
-        sets.push(format!("enabled = ?{}", values.len() + 1));
-        values.push(Box::new(v as i32));
-    }
-
-    if !sets.is_empty() {
-        let idx = values.len() + 1;
-        let sql = format!("UPDATE assertions SET {} WHERE id = ?{}", sets.join(", "), idx);
-        values.push(Box::new(id.to_string()));
-        let params: Vec<&dyn rusqlite::types::ToSql> = values.iter().map(|v| v.as_ref()).collect();
-        conn.execute(&sql, params.as_slice())?;
-    }
-
+    let mut u = super::DynamicUpdate::new();
+    u.set_opt("type", assertion_type.map(|s| s.to_string()));
+    u.set_opt("expression", expression.map(|s| s.to_string()));
+    u.set_opt("operator", operator.map(|s| s.to_string()));
+    u.set_opt("expected", expected.map(|s| s.to_string()));
+    u.set_opt("enabled", enabled.map(|v| v as i32));
+    // assertions 表没有 updated_at 字段
+    u.execute_without_timestamp(conn, "assertions", id)?;
     get(conn, id)
 }
 
 pub fn delete(conn: &Connection, id: &str) -> Result<(), rusqlite::Error> {
     conn.execute("DELETE FROM assertions WHERE id = ?1", params![id])?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::init::create_test_db;
+
+    fn setup() -> (Connection, String) {
+        let conn = create_test_db();
+        let c = crate::db::collection::create(&conn, "S", "", None).unwrap();
+        let item = crate::db::item::create(&conn, &c.id, None, "request", "R", "GET").unwrap();
+        (conn, item.id)
+    }
+
+    #[test]
+    fn test_create_and_get() {
+        let (conn, item_id) = setup();
+        let a = create(&conn, &item_id, "status_code", "", "eq", "200").unwrap();
+        assert_eq!(a.assertion_type, "status_code");
+        assert_eq!(a.operator, "eq");
+        assert_eq!(a.expected, "200");
+        let fetched = get(&conn, &a.id).unwrap();
+        assert_eq!(fetched.id, a.id);
+    }
+
+    #[test]
+    fn test_list_by_item() {
+        let (conn, item_id) = setup();
+        create(&conn, &item_id, "status_code", "", "eq", "200").unwrap();
+        create(&conn, &item_id, "json_path", "$.id", "exists", "").unwrap();
+        let list = list_by_item(&conn, &item_id).unwrap();
+        assert_eq!(list.len(), 2);
+    }
+
+    #[test]
+    fn test_list_by_items_batch() {
+        let conn = create_test_db();
+        let c = crate::db::collection::create(&conn, "S", "", None).unwrap();
+        let i1 = crate::db::item::create(&conn, &c.id, None, "request", "R1", "GET").unwrap();
+        let i2 = crate::db::item::create(&conn, &c.id, None, "request", "R2", "GET").unwrap();
+        create(&conn, &i1.id, "status_code", "", "eq", "200").unwrap();
+        create(&conn, &i2.id, "status_code", "", "eq", "201").unwrap();
+        create(&conn, &i2.id, "json_path", "$.ok", "eq", "true").unwrap();
+        let map = list_by_items(&conn, &[i1.id.clone(), i2.id.clone()]).unwrap();
+        assert_eq!(map.get(&i1.id).unwrap().len(), 1);
+        assert_eq!(map.get(&i2.id).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_list_by_items_empty() {
+        let conn = create_test_db();
+        let map = list_by_items(&conn, &[]).unwrap();
+        assert!(map.is_empty());
+    }
+
+    #[test]
+    fn test_update() {
+        let (conn, item_id) = setup();
+        let a = create(&conn, &item_id, "status_code", "", "eq", "200").unwrap();
+        let updated = update(&conn, &a.id, Some("json_path"), Some("$.id"), Some("exists"), Some(""), None).unwrap();
+        assert_eq!(updated.assertion_type, "json_path");
+        assert_eq!(updated.expression, "$.id");
+    }
+
+    #[test]
+    fn test_update_enabled() {
+        let (conn, item_id) = setup();
+        let a = create(&conn, &item_id, "status_code", "", "eq", "200").unwrap();
+        assert!(a.enabled);
+        let updated = update(&conn, &a.id, None, None, None, None, Some(false)).unwrap();
+        assert!(!updated.enabled);
+    }
+
+    #[test]
+    fn test_delete() {
+        let (conn, item_id) = setup();
+        let a = create(&conn, &item_id, "status_code", "", "eq", "200").unwrap();
+        delete(&conn, &a.id).unwrap();
+        assert!(get(&conn, &a.id).is_err());
+    }
+
+    #[test]
+    fn test_cascade_delete_item() {
+        let (conn, item_id) = setup();
+        create(&conn, &item_id, "status_code", "", "eq", "200").unwrap();
+        crate::db::item::delete(&conn, &item_id).unwrap();
+        let list = list_by_item(&conn, &item_id).unwrap();
+        assert!(list.is_empty());
+    }
 }

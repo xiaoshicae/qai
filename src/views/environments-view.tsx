@@ -4,9 +4,14 @@ import { invoke } from '@tauri-apps/api/core'
 import { Plus, Trash2, Pencil, Cloud, CloudOff } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import type { Environment, EnvVariable } from '@/types'
+import { ViewLoader } from '@/components/ui/view-loader'
+import { useConfirmStore } from '@/components/ui/confirm-dialog'
+import { toast } from 'sonner'
+import { invokeErrorMessage } from '@/lib/invoke-error'
 
 export default function EnvironmentsView() {
   const { t } = useTranslation()
+  const confirmFn = useConfirmStore((s) => s.confirm)
   const [envs, setEnvs] = useState<Environment[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [variables, setVariables] = useState<EnvVariable[]>([])
@@ -26,7 +31,7 @@ export default function EnvironmentsView() {
         const active = list.find((e) => e.is_active) ?? list[0]
         setSelectedId(active.id)
       }
-    } catch {}
+    } catch (e) { toast.error(invokeErrorMessage(e)) }
   }, [selectedId])
 
   useEffect(() => {
@@ -70,17 +75,21 @@ export default function EnvironmentsView() {
       setSelectedId(env.id)
       setEditingName(env.id)
       setEditName(t('env.new_env'))
-    } catch {}
+      window.dispatchEvent(new Event('env-changed'))
+    } catch (e) { toast.error(invokeErrorMessage(e)) }
   }
 
-  const deleteEnv = async (id: string) => {
+  const deleteEnv = async (id: string, name: string) => {
+    const ok = await confirmFn(t('common.confirm_delete', { name }), { title: t('common.delete'), kind: 'warning' })
+    if (!ok) return
     try {
       await invoke('delete_environment', { id })
       setEnvs((prev) => prev.filter((e) => e.id !== id))
       if (selectedId === id) {
         setSelectedId(envs.find((e) => e.id !== id)?.id ?? null)
       }
-    } catch {}
+      window.dispatchEvent(new Event('env-changed'))
+    } catch (e) { toast.error(invokeErrorMessage(e)) }
   }
 
   const renameEnv = async (id: string) => {
@@ -88,13 +97,18 @@ export default function EnvironmentsView() {
     try {
       const updated = await invoke<Environment>('update_environment', { id, name: editName.trim() })
       setEnvs((prev) => prev.map((e) => e.id === id ? updated : e))
-    } catch {}
+      window.dispatchEvent(new Event('env-changed'))
+    } catch (e) { toast.error(invokeErrorMessage(e)) }
     setEditingName(null)
   }
 
   const updateVariable = (index: number, field: keyof EnvVariable, val: string | boolean) => {
     setVariables((prev) => {
-      const next = prev.map((v, i) => i === index ? { ...v, [field]: val } : v)
+      // 如果 index 超出已有数组（编辑的是 displayVars 追加的虚拟空行），先补上这一行
+      const base = index >= prev.length
+        ? [...prev, { id: '', environment_id: selectedId ?? '', key: '', value: '', enabled: true, sort_order: prev.length }]
+        : [...prev]
+      const next = base.map((v, i) => i === index ? { ...v, [field]: val } : v)
       // 自动追加空行：最后一行被编辑时，追加新空行
       const lastFilled = next.length > 0 && (next[next.length - 1].key.trim() || next[next.length - 1].value.trim())
       if (lastFilled) {
@@ -118,13 +132,13 @@ export default function EnvironmentsView() {
     ? [...variables, { id: '', environment_id: selectedId ?? '', key: '', value: '', enabled: true, sort_order: variables.length }]
     : variables
 
-  if (!loaded) return null
+  if (!loaded) return <ViewLoader />
 
   const selectedEnv = envs.find((e) => e.id === selectedId)
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-6">
-      <h1 className="text-lg font-semibold mb-6">环境变量</h1>
+      <h1 className="text-lg font-semibold mb-6">{t('env.title')}</h1>
 
       <div className="flex gap-4">
         {/* 左侧：环境列表 */}
@@ -133,7 +147,7 @@ export default function EnvironmentsView() {
             <div
               key={env.id}
               className={`group flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors ${
-                selectedId === env.id ? 'bg-primary/10 ring-1 ring-primary/30' : 'hover:bg-muted'
+                selectedId === env.id ? 'bg-primary/10 ring-1 ring-primary/30' : 'hover:bg-overlay/[0.04]'
               }`}
               onClick={() => setSelectedId(env.id)}
             >
@@ -157,7 +171,7 @@ export default function EnvironmentsView() {
                   </button>
                   <button
                     className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive cursor-pointer p-0.5"
-                    onClick={(e) => { e.stopPropagation(); deleteEnv(env.id) }}
+                    onClick={(e) => { e.stopPropagation(); deleteEnv(env.id, env.name) }}
                   >
                     <Trash2 className="h-3 w-3" />
                   </button>
@@ -166,11 +180,11 @@ export default function EnvironmentsView() {
             </div>
           ))}
           <button
-            className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer transition-colors"
+            className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-overlay/[0.04] cursor-pointer transition-colors"
             onClick={createEnv}
           >
             <Plus className="h-3.5 w-3.5" />
-            新建环境
+            {t('env.create')}
           </button>
         </div>
 
@@ -182,16 +196,16 @@ export default function EnvironmentsView() {
                 <span className="text-sm font-medium">{selectedEnv.name}</span>
                 {/* 自动保存状态指示 */}
                 <div className="flex items-center gap-1 text-[10px] text-muted-foreground/60 transition-opacity">
-                  {saveIndicator === 'saving' && <><Cloud className="h-3 w-3 animate-pulse" /> 保存中...</>}
-                  {saveIndicator === 'saved' && <><Cloud className="h-3 w-3 text-emerald-500" /> 已保存</>}
-                  {saveIndicator === 'error' && <><CloudOff className="h-3 w-3 text-destructive" /> 保存失败</>}
+                  {saveIndicator === 'saving' && <><Cloud className="h-3 w-3 animate-pulse" /> {t('env.saving')}</>}
+                  {saveIndicator === 'saved' && <><Cloud className="h-3 w-3 text-emerald-500" /> {t('env.saved')}</>}
+                  {saveIndicator === 'error' && <><CloudOff className="h-3 w-3 text-destructive" /> {t('env.save_failed')}</>}
                 </div>
               </div>
 
               {/* 表头 */}
               <div className="flex items-center gap-2 px-1">
-                <span className="flex-1 text-[10px] text-muted-foreground uppercase tracking-wider">变量名</span>
-                <span className="flex-1 text-[10px] text-muted-foreground uppercase tracking-wider">值</span>
+                <span className="flex-1 text-xs text-muted-foreground uppercase tracking-wider">{t('env.key')}</span>
+                <span className="flex-1 text-xs text-muted-foreground uppercase tracking-wider">{t('env.value')}</span>
                 <span className="w-7" />
               </div>
 
@@ -228,12 +242,16 @@ export default function EnvironmentsView() {
               })}
 
               <p className="text-[11px] text-muted-foreground">
-                在请求中使用 <code className="bg-muted px-1 py-0.5 rounded text-xs font-mono">{'{{KEY}}'}</code> 引用变量
+                {t('env.usage_hint', { KEY: '{{KEY}}' }).split('<code>').map((part, i) => {
+                  if (i === 0) return part
+                  const [code, rest] = part.split('</code>')
+                  return <span key={i}><code className="bg-overlay/[0.06] px-1 py-0.5 rounded text-xs font-mono">{code}</code>{rest}</span>
+                })}
               </p>
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center text-center py-20">
-              <p className="text-sm text-muted-foreground">创建一个环境开始使用</p>
+              <p className="text-sm text-muted-foreground">{t('env.empty_hint')}</p>
             </div>
           )}
         </div>

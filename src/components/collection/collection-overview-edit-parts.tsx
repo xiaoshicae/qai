@@ -1,0 +1,483 @@
+import { useState, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
+import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
+import { Download, Copy, CheckCircle2, XCircle, Plus, Trash2, Pencil, Loader2, Bug, Braces } from 'lucide-react'
+import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
+import { CodeEditor } from '@/components/ui/code-editor'
+import KeyValueTable from '@/components/request/key-value-table'
+import { VarInput } from '@/components/ui/var-input'
+import type { CollectionItem, ExecutionResult } from '@/types'
+import { BodyTypeSelector } from '@/components/request/body-type-selector'
+import { MiniResponseViewer } from '@/components/request/mini-response-viewer'
+import { invokeErrorMessage } from '@/lib/invoke-error'
+
+type EditFormTab = 'body' | 'headers' | 'expect' | 'extract' | 'poll'
+
+export function StatCard({ label, value, color }: { label: string; value: number; color?: string }) {
+  return (
+    <div className="rounded-xl border border-overlay/[0.06] px-4 py-3">
+      <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{label}</span>
+      <div className={`text-xl font-bold tabular-nums mt-0.5 ${color ?? ''}`}>{value}</div>
+    </div>
+  )
+}
+
+export function InlineEdit({ value, placeholder, onSave }: { value: string; placeholder: string; onSave: (v: string) => void }) {
+  const { t } = useTranslation()
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(value)
+
+  useEffect(() => { setDraft(value) }, [value])
+
+  const commit = () => {
+    setEditing(false)
+    if (draft !== value) onSave(draft)
+  }
+
+  if (editing) {
+    return (
+      <Input
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setDraft(value); setEditing(false) } }}
+        className="h-7 text-xs"
+        autoFocus
+      />
+    )
+  }
+
+  return (
+    <span
+      className="text-xs text-muted-foreground cursor-pointer hover:text-foreground transition-colors inline-flex items-center gap-1 group"
+      onDoubleClick={() => setEditing(true)}
+      title={t('edit.double_click_edit')}
+    >
+      {value || <span className="text-muted-foreground/40 italic">{placeholder}</span>}
+      <Pencil className="h-2.5 w-2.5 opacity-0 group-hover:opacity-50 hover:!opacity-100 transition-opacity cursor-pointer" onClick={(e) => { e.stopPropagation(); setEditing(true) }} />
+    </span>
+  )
+}
+
+function ExtractRulesEditor({ value, onChange }: {
+  value: { var_name: string; source: string; expression: string }[]
+  onChange: (rules: { var_name: string; source: string; expression: string }[]) => void
+}) {
+  const { t } = useTranslation()
+  const addRule = () => onChange([...value, { var_name: '', source: 'json_body', expression: '' }])
+  const removeRule = (idx: number) => onChange(value.filter((_, i) => i !== idx))
+  const updateRule = (idx: number, field: string, val: string) => {
+    const updated = [...value]
+    updated[idx] = { ...updated[idx], [field]: val }
+    onChange(updated)
+  }
+
+  return (
+    <div className="space-y-2">
+      {value.map((rule, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <Input value={rule.var_name} onChange={(e) => updateRule(i, 'var_name', e.target.value)} className="h-7 text-xs flex-1" placeholder={t('edit.var_name_placeholder')} />
+          <Select value={rule.source} onChange={(v) => updateRule(i, 'source', v)} options={[
+            { value: 'json_body', label: 'JSON Body' },
+            { value: 'header', label: 'Header' },
+            { value: 'status_code', label: 'Status Code' },
+          ]} className="w-32" />
+          <Input value={rule.expression} onChange={(e) => updateRule(i, 'expression', e.target.value)} className="h-7 text-xs flex-1" placeholder={t('edit.expression_placeholder')} />
+          <button type="button" onClick={() => removeRule(i)} className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-destructive/10 cursor-pointer transition-colors shrink-0">
+            <Trash2 className="h-3 w-3 text-destructive" />
+          </button>
+        </div>
+      ))}
+      <button type="button" onClick={addRule} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground cursor-pointer transition-colors">
+        <Plus className="h-3 w-3" /> {t('edit.add_extract')}
+      </button>
+      {value.length > 0 && (
+        <p className="text-[10px] text-muted-foreground/60">{t('common.extract_hint')}</p>
+      )}
+    </div>
+  )
+}
+
+function PollConfigEditor({ value, onChange }: {
+  value: { field: string; target: string; interval_seconds: number; max_seconds: number } | null
+  onChange: (cfg: { field: string; target: string; interval_seconds: number; max_seconds: number } | null) => void
+}) {
+  const { t } = useTranslation()
+  const enabled = value !== null
+
+  const toggle = () => {
+    if (enabled) {
+      onChange(null)
+    } else {
+      onChange({ field: '', target: '', interval_seconds: 5, max_seconds: 60 })
+    }
+  }
+
+  const update = (field: string, val: string | number) => {
+    if (!value) return
+    onChange({ ...value, [field]: val })
+  }
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-1.5">
+        <label className="text-xs text-muted-foreground">{t('edit.poll_label')}</label>
+        <button
+          type="button"
+          onClick={toggle}
+          className={`px-2 py-0.5 rounded-md text-[10px] font-medium cursor-pointer transition-colors ${enabled ? 'bg-amber-500/15 text-amber-500' : 'bg-overlay/[0.04] text-muted-foreground hover:text-foreground'}`}
+        >
+          {enabled ? t('assertion.enabled') : t('assertion.disabled')}
+        </button>
+      </div>
+      {enabled && value && (
+        <div className="grid grid-cols-2 gap-2 p-3 rounded-xl border border-overlay/[0.06] bg-overlay/[0.02]">
+          <div>
+            <label className="text-[10px] text-muted-foreground mb-0.5 block">{t('edit.poll_field')}</label>
+            <Input value={value.field} onChange={(e) => update('field', e.target.value)} className="h-7 text-xs" placeholder={t('edit.field_placeholder')} />
+          </div>
+          <div>
+            <label className="text-[10px] text-muted-foreground mb-0.5 block">{t('edit.poll_target')}</label>
+            <Input value={value.target} onChange={(e) => update('target', e.target.value)} className="h-7 text-xs" placeholder={t('edit.target_placeholder')} />
+          </div>
+          <div>
+            <label className="text-[10px] text-muted-foreground mb-0.5 block">{t('edit.poll_interval')}</label>
+            <Input type="number" value={value.interval_seconds} onChange={(e) => update('interval_seconds', Number(e.target.value))} className="h-7 text-xs" />
+          </div>
+          <div>
+            <label className="text-[10px] text-muted-foreground mb-0.5 block">{t('edit.poll_max')}</label>
+            <Input type="number" value={value.max_seconds} onChange={(e) => update('max_seconds', Number(e.target.value))} className="h-7 text-xs" />
+          </div>
+          <p className="col-span-2 text-[10px] text-muted-foreground/60">
+            {t('edit.poll_desc', { interval: value.interval_seconds, field: value.field, target: value.target, max: value.max_seconds })}
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+interface ParseCurlResult {
+  method?: string
+  url?: string
+  headers?: unknown
+  body_type?: string
+  body_content?: string
+}
+
+export function EditForm({ req, onChange, onSave, onCancel, envVars, saving }: {
+  req: CollectionItem
+  onChange: (r: CollectionItem) => void
+  onSave: () => void
+  onCancel: () => void
+  envVars: Record<string, string>
+  saving?: boolean
+}) {
+  const { t } = useTranslation()
+  const set = (field: keyof CollectionItem, value: string | number) => onChange({ ...req, [field]: value })
+  const [activeTab, setActiveTab] = useState<EditFormTab>('body')
+  const [showCurlImport, setShowCurlImport] = useState(false)
+  const [curlInput, setCurlInput] = useState('')
+  const [curlCopied, setCurlCopied] = useState(false)
+  const [debugLoading, setDebugLoading] = useState(false)
+  const [debugResult, setDebugResult] = useState<ExecutionResult | null>(null)
+  const [debugStreamContent, setDebugStreamContent] = useState('')
+  const [debugStreaming, setDebugStreaming] = useState(false)
+  const streamContentRef = useRef('')
+  const streamScrollRef = useRef<HTMLPreElement>(null)
+  const [touched, setTouched] = useState(false)
+  const nameError = touched && !req.name.trim()
+
+  useEffect(() => {
+    setDebugResult(null)
+    setDebugStreamContent('')
+  }, [req.id])
+
+  const importFromCurl = async () => {
+    if (!curlInput.trim()) return
+    try {
+      const parsed = await invoke<ParseCurlResult>('parse_curl', { curlCommand: curlInput })
+      onChange({
+        ...req,
+        method: parsed.method || req.method,
+        url: parsed.url || req.url,
+        headers: JSON.stringify(parsed.headers || []),
+        body_type: parsed.body_type || req.body_type,
+        body_content: parsed.body_content || req.body_content,
+      })
+      setShowCurlImport(false)
+      setCurlInput('')
+    } catch (e: unknown) {
+      toast.error(`${t('edit.parse_failed')}: ${invokeErrorMessage(e)}`)
+    }
+  }
+
+  const exportToCurl = async () => {
+    try {
+      const hdrs: { key: string; value: string; enabled: boolean }[] = (() => { try { return JSON.parse(req.headers || '[]') } catch { return [] } })()
+      const parts = [`curl -X ${req.method}`, `  '${req.url}'`]
+      for (const h of hdrs.filter((h) => h.enabled)) parts.push(`  -H '${h.key}: ${h.value}'`)
+      if (req.body_type !== 'none' && req.body_content) {
+        try { parts.push(`  -d '${JSON.stringify(JSON.parse(req.body_content))}'`) } catch { parts.push(`  -d '${req.body_content}'`) }
+      }
+      const curl = parts.join(' \\\n')
+      await navigator.clipboard.writeText(curl)
+      setCurlCopied(true)
+      setTimeout(() => setCurlCopied(false), 1500)
+    } catch (e) {
+      toast.error(invokeErrorMessage(e))
+    }
+  }
+
+  const headers: { key: string; value: string; enabled: boolean }[] = (() => {
+    try { const p = JSON.parse(req.headers || '[]'); return Array.isArray(p) ? p : [] } catch { return [] }
+  })()
+  const setHeaders = (h: typeof headers) => set('headers', JSON.stringify(h))
+
+  const extractRules = (() => { try { const p = JSON.parse(req.extract_rules || '[]'); return Array.isArray(p) ? p : [] } catch { return [] } })()
+  const hasPollConfig = !!req.poll_config && req.poll_config !== '{}'
+
+  const runDebug = async () => {
+    if (!req.url?.trim()) return
+    setDebugLoading(true)
+    setDebugResult(null)
+    setDebugStreamContent('')
+    streamContentRef.current = ''
+
+    const payload = {
+      method: req.method || 'GET',
+      url: req.url,
+      headers: req.headers || '[]',
+      queryParams: req.query_params || '[]',
+      bodyType: req.body_type || 'none',
+      bodyContent: req.body_content || '',
+      protocol: req.protocol || 'http',
+    }
+
+    // 始终监听 stream-chunk，后端自动检测 SSE 响应
+    let unlisten: (() => void) | undefined
+    let streamStarted = false
+    try {
+      unlisten = await listen<{ chunk: string }>('stream-chunk', (event) => {
+        if (!streamStarted) { streamStarted = true; setDebugStreaming(true) }
+        streamContentRef.current += event.payload.chunk
+        setDebugStreamContent(streamContentRef.current)
+        requestAnimationFrame(() => {
+          streamScrollRef.current?.scrollTo({ top: streamScrollRef.current.scrollHeight })
+        })
+      })
+      const result = await invoke<ExecutionResult>('quick_test', { payload })
+      setDebugResult(result)
+      if (result.status !== 'success' && result.error_message) {
+        toast.error(result.error_message)
+      }
+    } catch (e: unknown) {
+      toast.error(invokeErrorMessage(e))
+    } finally {
+      unlisten?.()
+      setDebugLoading(false)
+      setDebugStreaming(false)
+    }
+  }
+
+  const tabDefs: { key: EditFormTab; label: string; count?: number; dot?: boolean }[] = [
+    { key: 'body', label: t('edit.body') },
+    { key: 'headers', label: 'Headers', count: headers.filter((h) => h.key).length },
+    { key: 'expect', label: t('edit.expect_status') },
+    { key: 'extract', label: t('edit.extract_tab'), dot: extractRules.length > 0 },
+    { key: 'poll', label: t('edit.poll_config'), dot: hasPollConfig },
+  ]
+  // debug 不再作为页签，而是底部操作按钮
+
+  return (
+    <div className="flex flex-col gap-4 flex-1 min-h-0 overflow-hidden">
+      <div className="grid grid-cols-2 gap-3 shrink-0">
+        <div>
+          <label className="text-xs text-muted-foreground mb-1 block">{t('edit.name')}</label>
+          <Input value={req.name} onChange={(e) => set('name', e.target.value)} className="h-8 text-sm" error={nameError} />
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground mb-1 block">{t('edit.desc')}</label>
+          <Input value={req.description} onChange={(e) => set('description', e.target.value)} className="h-8 text-sm" placeholder={t('edit.desc_placeholder')} />
+        </div>
+      </div>
+
+      <div className="flex gap-2 items-center">
+        <Select value={req.method} onChange={(v) => set('method', v)} options={['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD'].map((m) => ({ value: m, label: m }))} className="w-28" />
+        <VarInput value={req.url} onChange={(v) => set('url', v)} placeholder={t('edit.url_placeholder')} envVars={envVars} />
+        <div className="flex gap-1 shrink-0">
+          <button
+            type="button"
+            onClick={() => setShowCurlImport(!showCurlImport)}
+            className="h-8 px-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-overlay/[0.06] cursor-pointer transition-colors flex items-center gap-1"
+            title={t('edit.import_curl')}
+          >
+            <Download className="h-3.5 w-3.5" />
+            <span className="text-[10px]">cURL</span>
+          </button>
+          {req.id && req.url && (
+            <button
+              type="button"
+              onClick={exportToCurl}
+              className="h-8 px-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-overlay/[0.06] cursor-pointer transition-colors flex items-center gap-1"
+              title={t('edit.copy_curl')}
+            >
+              {curlCopied
+                ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                : <Copy className="h-3.5 w-3.5" />}
+              <span className="text-[10px]">{curlCopied ? 'Copied' : 'cURL'}</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {showCurlImport && (
+        <div className="relative">
+          <textarea
+            value={curlInput}
+            onChange={(e) => setCurlInput(e.target.value)}
+            rows={4}
+            className="w-full rounded-xl border border-overlay/[0.08] bg-overlay/[0.03] px-3 py-2.5 pr-10 text-xs resize-y outline-none focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/20 transition-all"
+            style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}
+            placeholder={'curl -X POST https://api.example.com \\\n  -H \'Content-Type: application/json\' \\\n  -d \'{"key":"value"}\''}
+            autoFocus
+          />
+          <button type="button" onClick={() => { setShowCurlImport(false); setCurlInput('') }} className="absolute top-2.5 right-2.5 text-muted-foreground/40 hover:text-foreground cursor-pointer transition-colors">
+            <XCircle className="h-3.5 w-3.5" />
+          </button>
+          {curlInput.trim() && (
+            <div className="absolute bottom-2.5 right-2.5">
+              <Button size="sm" onClick={importFromCurl}>{t('edit.parse_import')}</Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="flex items-center gap-4 border-b border-overlay/[0.06] flex-wrap">
+        {tabDefs.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            className={`relative pb-2 text-xs font-medium cursor-pointer transition-colors ${activeTab === tab.key ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+            onClick={() => setActiveTab(tab.key)}
+          >
+            <span className="flex items-center gap-1.5">
+              {tab.label}
+              {tab.count ? <span className="text-[10px] text-muted-foreground/60">({tab.count})</span> : null}
+              {tab.dot ? <span className="h-1.5 w-1.5 rounded-full bg-primary" /> : null}
+            </span>
+            {activeTab === tab.key && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />}
+          </button>
+        ))}
+      </div>
+
+      <div className="min-h-[240px]">
+        {activeTab === 'body' && (
+          <div>
+            <div className="mb-2">
+              <BodyTypeSelector value={req.body_type} onChange={(v) => set('body_type', v)}>
+                {req.body_type === 'json' && req.body_content && (
+                  <button
+                    type="button"
+                    className="ml-auto flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-overlay/[0.04] cursor-pointer transition-colors"
+                    onClick={() => { try { set('body_content', JSON.stringify(JSON.parse(req.body_content), null, 2)) } catch { /* ignore */ } }}
+                  >
+                    <Braces className="h-3 w-3" /> Format
+                  </button>
+                )}
+              </BodyTypeSelector>
+            </div>
+            <div className="relative h-[220px]">
+              {req.body_type === 'none' ? (
+                <div className="w-full h-full rounded-xl border border-overlay/[0.06] bg-overlay/[0.02] flex items-center justify-center">
+                  <span className="text-xs text-muted-foreground/40">{t('scenario.no_body')}</span>
+                </div>
+              ) : (req.body_type === 'form-data' || req.body_type === 'urlencoded' || req.body_type === 'form') ? (
+                <div className="h-full overflow-y-auto">
+                  <KeyValueTable
+                    value={(() => { try { const p = JSON.parse(req.body_content || '[]'); return Array.isArray(p) ? p : [] } catch { return [] } })()}
+                    onChange={(v) => set('body_content', JSON.stringify(v))}
+                    allowFiles={req.body_type === 'form-data'}
+                    envVars={envVars}
+                  />
+                </div>
+              ) : (
+                <CodeEditor
+                  value={req.body_content}
+                  onChange={(v) => set('body_content', v)}
+                  language={req.body_type === 'json' ? 'json' : 'plaintext'}
+                  className="w-full h-full"
+                  placeholder='{ "key": "value" }'
+                />
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'headers' && (
+          <KeyValueTable
+            value={headers}
+            onChange={setHeaders}
+            envVars={envVars}
+          />
+        )}
+
+        {activeTab === 'expect' && (
+          <div className="flex items-center gap-3 pt-1">
+            <label className="text-xs text-muted-foreground">{t('edit.expect_status')}</label>
+            <Input type="number" value={req.expect_status} onChange={(e) => set('expect_status', Number(e.target.value))} className="h-8 w-24 text-sm text-center" />
+          </div>
+        )}
+
+        {activeTab === 'extract' && (
+          <ExtractRulesEditor
+            value={extractRules}
+            onChange={(rules) => set('extract_rules', JSON.stringify(rules))}
+          />
+        )}
+
+        {activeTab === 'poll' && (
+          <PollConfigEditor
+            value={(() => { try { return req.poll_config ? JSON.parse(req.poll_config) : null } catch { return null } })()}
+            onChange={(cfg) => set('poll_config', cfg ? JSON.stringify(cfg) : '')}
+          />
+        )}
+
+      </div>
+
+      {/* 流式输出 — fills remaining space */}
+      {debugStreaming && debugStreamContent && (
+        <div className="rounded-xl border border-overlay/[0.06] bg-overlay/[0.02] overflow-hidden text-xs flex-1 min-h-0 flex flex-col">
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-overlay/[0.06] shrink-0">
+            <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="text-muted-foreground">Streaming...</span>
+          </div>
+          <pre ref={streamScrollRef} className="font-mono text-xs leading-relaxed whitespace-pre-wrap break-all flex-1 min-h-0 overflow-y-auto p-3">
+            {debugStreamContent}<span className="animate-pulse text-primary">|</span>
+          </pre>
+        </div>
+      )}
+
+      {/* 调试结果 — fills remaining space, internal scroll only */}
+      {debugResult && !debugStreaming && <MiniResponseViewer result={debugResult} className="flex-1 min-h-0" />}
+
+      {/* 底部操作栏 */}
+      <div className="flex items-center gap-2 pt-3 border-t border-overlay/[0.06] shrink-0">
+        <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={() => runDebug()} disabled={debugLoading || !req.url?.trim()}>
+          {debugLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Bug className="h-3.5 w-3.5" />}
+          {t('edit.debug_send')}
+        </Button>
+        <div className="flex-1" />
+        <Button variant="outline" size="sm" onClick={onCancel}>{t('edit.cancel')}</Button>
+        <Button size="sm" onClick={() => { setTouched(true); if (req.name.trim()) onSave() }} disabled={saving}>
+          {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          {t('edit.save')}
+        </Button>
+      </div>
+    </div>
+  )
+}

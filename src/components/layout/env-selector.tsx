@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { Check, ChevronDown } from 'lucide-react'
+import { toast } from 'sonner'
+import { invokeErrorMessage } from '@/lib/invoke-error'
 
 interface Env {
   id: string
@@ -17,6 +19,12 @@ export default function EnvSelector() {
 
   useEffect(() => { load() }, [])
 
+  // 监听环境变更事件（环境页创建/删除/重命名时触发）
+  useEffect(() => {
+    window.addEventListener('env-changed', load)
+    return () => window.removeEventListener('env-changed', load)
+  }, [])
+
   // 点击外部关闭
   useEffect(() => {
     if (!open) return
@@ -31,7 +39,7 @@ export default function EnvSelector() {
     try {
       const list = await invoke<Env[]>('list_environments')
       setEnvs(list)
-    } catch {}
+    } catch (e) { toast.error(invokeErrorMessage(e)) }
   }
 
   const select = async (id: string | null) => {
@@ -47,7 +55,7 @@ export default function EnvSelector() {
       await load()
       setOpen(false)
       window.dispatchEvent(new Event('env-changed'))
-    } catch {}
+    } catch (e) { toast.error(invokeErrorMessage(e)) }
   }
 
   return (

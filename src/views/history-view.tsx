@@ -146,7 +146,7 @@ export default function HistoryView() {
 
   const formatTime = (s: string) => {
     try {
-      const d = new Date(s + 'Z')
+      const d = new Date(s.replace(' ', 'T'))
       const now = Date.now()
       const diff = now - d.getTime()
       if (diff < 0 || isNaN(diff)) return '-'

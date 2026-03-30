@@ -121,7 +121,7 @@ export default function RunsTab({ requestId }: { requestId: string }) {
 
 function formatTime(s: string) {
   try {
-    const d = new Date(s + 'Z')
+    const d = new Date(s.replace(' ', 'T'))
     const now = new Date()
     const diff = now.getTime() - d.getTime()
     if (diff < 60000) return 'just now'

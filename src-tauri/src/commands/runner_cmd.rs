@@ -1,19 +1,42 @@
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Emitter, State};
 
 use crate::db::init::{DbState, HttpClient};
 use crate::models::execution::ChainResult;
 use crate::runner::batch::{self, BatchResult};
 
+pub struct RunnerState {
+    pub cancelled: Arc<AtomicBool>,
+}
+
+impl RunnerState {
+    pub fn new() -> Self {
+        Self { cancelled: Arc::new(AtomicBool::new(false)) }
+    }
+}
+
+#[tauri::command]
+pub async fn cancel_run(runner: State<'_, RunnerState>) -> Result<(), String> {
+    runner.cancelled.store(true, Ordering::Relaxed);
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn run_collection(
     app: AppHandle,
     db: State<'_, DbState>,
     http: State<'_, HttpClient>,
+    runner: State<'_, RunnerState>,
     collection_id: String,
     parent_id: Option<String>,
     concurrency: Option<usize>,
     exclude_ids: Option<Vec<String>>,
 ) -> Result<BatchResult, String> {
+    // 重置取消标志
+    runner.cancelled.store(false, Ordering::Relaxed);
+    let cancel_token = runner.cancelled.clone();
+
     let excluded: std::collections::HashSet<String> = exclude_ids.unwrap_or_default().into_iter().collect();
     // 分离：chain 类型 item 内的子请求用链式执行，其余并行
     let (normal_items, chain_groups, chain_names, var_map) = {
@@ -119,19 +142,21 @@ pub async fn run_collection(
     // 1. 先执行所有 chain groups（顺序执行每条链）
     let overall_total = (normal_items.len() + chain_groups.values().map(|v| v.len()).sum::<usize>()) as u32;
     for (chain_item_id, steps) in &chain_groups {
+        if cancel_token.load(Ordering::Relaxed) { break; }
         let name = chain_names.get(chain_item_id).cloned().unwrap_or_default();
-        // 预构建 step_index → item_id 映射，用于实时进度回调
         let step_ids: Vec<String> = steps.iter().map(|(item, _)| item.id.clone()).collect();
         let step_names: Vec<String> = steps.iter().map(|(item, _)| item.name.clone()).collect();
         let app_chain = app.clone();
         let batch_id_chain = batch_id.clone();
         let chain_offset = all_results.len() as u32;
+        let cancel_chain = cancel_token.clone();
         let chain_result = crate::runner::chain::run_chain(
             &http.0,
             steps.clone(),
             var_map.clone(),
             chain_item_id.clone(),
             name,
+            Some(cancel_chain),
             move |progress| {
                 let step_item_id = step_ids.get(progress.step_index as usize)
                     .cloned().unwrap_or_default();
@@ -157,9 +182,10 @@ pub async fn run_collection(
         }
     }
 
-    // 2. 并行执行普通请求（链全部成功时才执行）
+    // 2. 并行执行普通请求（链全部成功且未取消时才执行）
     let any_chain_failed = all_results.iter().any(|r| r.status != crate::models::Status::Success.as_str());
-    if !normal_items.is_empty() && !any_chain_failed {
+    let was_cancelled = cancel_token.load(Ordering::Relaxed);
+    if !normal_items.is_empty() && !any_chain_failed && !was_cancelled {
         let chain_done = all_results.len() as u32;
         let total = chain_done + normal_items.len() as u32;
         let app_clone = app.clone();
@@ -168,6 +194,7 @@ pub async fn run_collection(
             &http.0,
             normal_items,
             concurrency.unwrap_or(5),
+            cancel_token.clone(),
             move |mut progress| {
                 progress.batch_id = batch_id_clone.clone();
                 progress.current += chain_done;
@@ -260,6 +287,7 @@ pub async fn run_chain(
         base_vars,
         item_id,
         item_name,
+        None,
         move |progress| {
             let _ = app_clone.emit("chain-progress", &progress);
         },

@@ -44,14 +44,8 @@ export default function EnvSelector() {
 
   const select = async (id: string | null) => {
     try {
-      if (id) {
-        await invoke('set_active_environment', { id })
-      } else {
-        // 取消所有激活
-        for (const e of envs) {
-          if (e.is_active) await invoke('set_active_environment', { id: e.id })
-        }
-      }
+      // 传空字符串时，SQL CASE 的 id 匹配不到任何行，全部置 0
+      await invoke('set_active_environment', { id: id ?? '' })
       await load()
       setOpen(false)
       window.dispatchEvent(new Event('env-changed'))

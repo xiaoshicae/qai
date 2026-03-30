@@ -29,6 +29,7 @@ pub fn run() {
             initialize_database(app_handle)?;
             app.manage(pty::PtyState::new());
             app.manage(commands::claude_cmd::ClaudeState::new());
+            app.manage(commands::runner_cmd::RunnerState::new());
 
             if cfg!(debug_assertions) {
                 app_handle.plugin(
@@ -66,6 +67,7 @@ pub fn run() {
             commands::assertion_cmd::update_assertion,
             commands::assertion_cmd::delete_assertion,
             commands::runner_cmd::run_collection,
+            commands::runner_cmd::cancel_run,
             commands::runner_cmd::run_chain,
             commands::runner_cmd::export_report_html,
             commands::runner_cmd::list_history,

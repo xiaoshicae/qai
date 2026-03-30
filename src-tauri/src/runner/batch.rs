@@ -32,6 +32,7 @@ pub async fn run_batch(
     client: &reqwest::Client,
     items: Vec<(CollectionItem, Vec<Assertion>)>,
     concurrency: usize,
+    cancel_token: Arc<std::sync::atomic::AtomicBool>,
     progress_callback: impl Fn(TestProgress) + Send + Sync + 'static,
 ) -> BatchResult {
     let batch_id = Uuid::new_v4().to_string();
@@ -48,9 +49,13 @@ pub async fn run_batch(
         let cb = callback.clone();
         let bid = batch_id.clone();
         let client = client.clone();
+        let ct = cancel_token.clone();
 
         let handle = tokio::spawn(async move {
             let _permit = sem.acquire().await.expect("semaphore closed");
+            if ct.load(std::sync::atomic::Ordering::Relaxed) {
+                return None;
+            }
 
             cb(TestProgress {
                 batch_id: bid.clone(),
@@ -93,14 +98,14 @@ pub async fn run_batch(
                 total,
             });
 
-            result
+            Some(result)
         });
         handles.push(handle);
     }
 
     let mut results = Vec::new();
     for handle in handles {
-        if let Ok(result) = handle.await {
+        if let Ok(Some(result)) = handle.await {
             results.push(result);
         }
     }
@@ -112,7 +117,7 @@ pub async fn run_batch(
 
     BatchResult {
         batch_id,
-        total,
+        total: results.len() as u32,
         passed,
         failed,
         errors,

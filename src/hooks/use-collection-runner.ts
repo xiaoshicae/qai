@@ -39,7 +39,7 @@ export function useCollectionRunner({ collectionId, allRequests }: Options) {
       const map: Record<string, ItemLastStatus> = {}
       for (const s of list) map[s.item_id] = s
       setStatuses(map)
-    } catch { /* ignore */ }
+    } catch (e) { console.warn('loadStatuses failed:', e) }
   }
 
   const getStatus = (id: string) => {
@@ -83,7 +83,16 @@ export function useCollectionRunner({ collectionId, allRequests }: Options) {
         try {
           const result = await invoke<ExecutionResult>('send_request_stream', { id: item.id })
           setSingleResults((prev) => ({ ...prev, [item.id]: result }))
-        } catch { /* ignore single failure */ }
+        } catch (e: unknown) {
+          setSingleResults((prev) => ({
+            ...prev,
+            [item.id]: {
+              execution_id: '', item_id: item.id, item_name: item.name,
+              status: 'error', response: null, assertion_results: [],
+              error_message: invokeErrorMessage(e),
+            },
+          }))
+        }
         delete contents[item.id]
         setStreamingContents({ ...contents })
         setRunningIds((prev) => { const n = new Set(prev); n.delete(item.id); return n })
@@ -115,6 +124,7 @@ export function useCollectionRunner({ collectionId, allRequests }: Options) {
 
   const stopRun = () => {
     abortRef.current = true
+    invoke('cancel_run').catch(() => {})
     setRunning(false)
     setProgress([])
     setStreamingContents({})

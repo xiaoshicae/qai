@@ -108,9 +108,16 @@ export default function RequestPanel() {
     }
   }
 
-  // 组件卸载时刷新未保存的 name
+  // 用 ref 追踪最新 name，卸载时保存未提交的修改
+  const nameRef = useRef(name)
+  const requestRef = useRef(currentRequest)
+  useEffect(() => { nameRef.current = name }, [name])
+  useEffect(() => { requestRef.current = currentRequest }, [currentRequest])
   useEffect(() => () => {
     if (nameTimerRef.current) clearTimeout(nameTimerRef.current)
+    if (requestRef.current && nameRef.current !== requestRef.current.name) {
+      useRequestStore.getState().updateRequest({ name: nameRef.current })
+    }
   }, [])
 
   const handleProtocolChange = (newProtocol: string) => {

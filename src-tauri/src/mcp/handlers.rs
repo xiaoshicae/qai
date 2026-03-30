@@ -237,13 +237,13 @@ pub async fn run_collection(
     // 执行 chains
     for (chain_id, steps) in &chains {
         let name = chain_names.get(chain_id).cloned().unwrap_or_default();
-        let cr = qai_lib::runner::chain::run_chain(client, steps.clone(), var_map.clone(), chain_id.clone(), name, |_| {}).await;
+        let cr = qai_lib::runner::chain::run_chain(client, steps.clone(), var_map.clone(), chain_id.clone(), name, None, |_| {}).await;
         for step in cr.steps { all_results.push(step.execution_result); }
     }
 
     // 并行执行普通请求
     if !normal.is_empty() {
-        let br = qai_lib::runner::batch::run_batch(client, normal, concurrency.unwrap_or(5), |_| {}).await;
+        let br = qai_lib::runner::batch::run_batch(client, normal, concurrency.unwrap_or(5), std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)), |_| {}).await;
         all_results.extend(br.results);
     }
 

@@ -12,6 +12,7 @@ pub async fn run_chain(
     base_vars: HashMap<String, String>,
     chain_item_id: String,
     chain_item_name: String,
+    cancel_token: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     progress_callback: impl Fn(ChainProgress) + Send + Sync + 'static,
 ) -> ChainResult {
     let chain_id = uuid::Uuid::new_v4().to_string();
@@ -19,10 +20,13 @@ pub async fn run_chain(
     let mut accumulated_vars = base_vars;
     let mut step_results: Vec<ChainStepResult> = Vec::new();
     let mut overall_status = crate::models::Status::Success.as_str().to_string();
-    let mut total_time: u64 = 0;
+    let start = std::time::Instant::now();
 
     for (i, (raw_item, assertions)) in steps.into_iter().enumerate() {
         let step_index = i as u32;
+        if cancel_token.as_ref().is_some_and(|ct| ct.load(std::sync::atomic::Ordering::Relaxed)) {
+            break;
+        }
 
         progress_callback(ChainProgress {
             chain_id: chain_id.clone(),
@@ -81,11 +85,6 @@ pub async fn run_chain(
         let mut result = result;
         apply_assertions(&mut result, &assertions);
 
-        // 记录耗时
-        if let Some(ref response) = result.response {
-            total_time += response.time_ms;
-        }
-
         // 提取变量
         let extracted = if let Some(ref response) = result.response {
             let rules: Vec<ExtractRule> = serde_json::from_str(&raw_item.extract_rules).unwrap_or_default();
@@ -119,7 +118,7 @@ pub async fn run_chain(
         chain_id, item_id: chain_item_id, item_name: chain_item_name, total_steps,
         completed_steps: step_results.len() as u32,
         status: overall_status,
-        total_time_ms: total_time,
+        total_time_ms: start.elapsed().as_millis() as u64,
         steps: step_results,
         final_variables: accumulated_vars,
     }

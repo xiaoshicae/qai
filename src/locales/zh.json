@@ -259,6 +259,13 @@
     "hours_ago": "{{n}}小时前",
     "days_ago": "{{n}}天前"
   },
+  "console": {
+    "title": "Console",
+    "clear": "清空",
+    "empty": "暂无请求日志",
+    "empty_hint": "发送请求后日志将自动显示在此",
+    "error": "错误"
+  },
   "common": {
     "confirm_delete": "确定删除「{{name}}」？此操作不可撤销。",
     "confirm_delete_group": "确定删除分组「{{name}}」及其下所有测试集？此操作不可撤销。",

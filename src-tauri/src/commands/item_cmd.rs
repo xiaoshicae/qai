@@ -99,6 +99,7 @@ pub async fn send_request(
     };
 
     finalize_result(&db, &item, &mut result, &assertions)?;
+    crate::http::emit_request_log_with_item(&app, &result, &item);
     Ok(result)
 }
 
@@ -130,6 +131,7 @@ pub async fn quick_test(
     };
 
     result.item_name = item.url.clone();
+    crate::http::emit_request_log_with_item(&app, &result, &item);
     Ok(result)
 }
 

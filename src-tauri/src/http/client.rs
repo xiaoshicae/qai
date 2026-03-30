@@ -29,6 +29,9 @@ pub async fn execute_smart(
     let resp = builder.send().await?;
 
     let status = resp.status().as_u16();
+    log::info!("[response] {} {} status={} content-type={:?}",
+        item.method, item.url, status,
+        resp.headers().get("content-type").and_then(|v| v.to_str().ok()));
     let status_text = resp.status().canonical_reason().unwrap_or("").to_string();
     let resp_headers = super::response::extract_headers(resp.headers());
 

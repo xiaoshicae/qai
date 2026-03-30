@@ -107,19 +107,25 @@ function PollConfigEditor({ value, onChange }: {
   onChange: (cfg: { field: string; target: string; interval_seconds: number; max_seconds: number } | null) => void
 }) {
   const { t } = useTranslation()
-  const enabled = value !== null
+  const defaults = { field: '', target: '', interval_seconds: 5, max_seconds: 60 }
+  const [localConfig, setLocalConfig] = useState(value ?? defaults)
+  const [enabled, setEnabled] = useState(value !== null)
+
+  // 外部 value 变化时同步本地（如初始加载）
+  useEffect(() => {
+    if (value) { setLocalConfig(value); setEnabled(true) }
+  }, [value])
 
   const toggle = () => {
-    if (enabled) {
-      onChange(null)
-    } else {
-      onChange({ field: '', target: '', interval_seconds: 5, max_seconds: 60 })
-    }
+    const next = !enabled
+    setEnabled(next)
+    onChange(next ? localConfig : null)
   }
 
   const update = (field: string, val: string | number) => {
-    if (!value) return
-    onChange({ ...value, [field]: val })
+    const updated = { ...localConfig, [field]: val }
+    setLocalConfig(updated)
+    if (enabled) onChange(updated)
   }
 
   return (
@@ -134,26 +140,26 @@ function PollConfigEditor({ value, onChange }: {
           {enabled ? t('assertion.enabled') : t('assertion.disabled')}
         </button>
       </div>
-      {enabled && value && (
+      {enabled && (
         <div className="grid grid-cols-2 gap-2 p-3 rounded-xl border border-overlay/[0.06] bg-overlay/[0.02]">
           <div>
             <label className="text-[10px] text-muted-foreground mb-0.5 block">{t('edit.poll_field')}</label>
-            <Input value={value.field} onChange={(e) => update('field', e.target.value)} className="h-7 text-xs" placeholder={t('edit.field_placeholder')} />
+            <Input value={localConfig.field} onChange={(e) => update('field', e.target.value)} className="h-7 text-xs" placeholder={t('edit.field_placeholder')} />
           </div>
           <div>
             <label className="text-[10px] text-muted-foreground mb-0.5 block">{t('edit.poll_target')}</label>
-            <Input value={value.target} onChange={(e) => update('target', e.target.value)} className="h-7 text-xs" placeholder={t('edit.target_placeholder')} />
+            <Input value={localConfig.target} onChange={(e) => update('target', e.target.value)} className="h-7 text-xs" placeholder={t('edit.target_placeholder')} />
           </div>
           <div>
             <label className="text-[10px] text-muted-foreground mb-0.5 block">{t('edit.poll_interval')}</label>
-            <Input type="number" value={value.interval_seconds} onChange={(e) => update('interval_seconds', Number(e.target.value))} className="h-7 text-xs" />
+            <Input type="number" value={localConfig.interval_seconds} onChange={(e) => update('interval_seconds', Number(e.target.value))} className="h-7 text-xs" />
           </div>
           <div>
             <label className="text-[10px] text-muted-foreground mb-0.5 block">{t('edit.poll_max')}</label>
-            <Input type="number" value={value.max_seconds} onChange={(e) => update('max_seconds', Number(e.target.value))} className="h-7 text-xs" />
+            <Input type="number" value={localConfig.max_seconds} onChange={(e) => update('max_seconds', Number(e.target.value))} className="h-7 text-xs" />
           </div>
           <p className="col-span-2 text-[10px] text-muted-foreground/60">
-            {t('edit.poll_desc', { interval: value.interval_seconds, field: value.field, target: value.target, max: value.max_seconds })}
+            {t('edit.poll_desc', { interval: localConfig.interval_seconds, field: localConfig.field, target: localConfig.target, max: localConfig.max_seconds })}
           </p>
         </div>
       )}
@@ -218,11 +224,29 @@ export function EditForm({ req, onChange, onSave, onCancel, envVars, saving }: {
 
   const exportToCurl = async () => {
     try {
+      const vars = envVars ?? {}
+      const rv = (s: string) => s.replace(/\{\{(\w+)\}\}/g, (m, k) => vars[k] ?? m)
       const hdrs: { key: string; value: string; enabled: boolean }[] = (() => { try { return JSON.parse(req.headers || '[]') } catch { return [] } })()
-      const parts = [`curl -X ${req.method}`, `  '${req.url}'`]
-      for (const h of hdrs.filter((h) => h.enabled)) parts.push(`  -H '${h.key}: ${h.value}'`)
+      const autoContentType = ['form-data', 'json', 'urlencoded', 'form'].includes(req.body_type)
+      const parts = [`curl -X ${req.method}`, `  '${rv(req.url)}'`]
+      for (const h of hdrs.filter((h) => h.enabled)) {
+        if (autoContentType && h.key.toLowerCase() === 'content-type') continue
+        parts.push(`  -H '${rv(h.key)}: ${rv(h.value)}'`)
+      }
       if (req.body_type !== 'none' && req.body_content) {
-        try { parts.push(`  -d '${JSON.stringify(JSON.parse(req.body_content))}'`) } catch { parts.push(`  -d '${req.body_content}'`) }
+        if (req.body_type === 'form-data') {
+          const fields: { key: string; value: string; enabled: boolean; fieldType?: string }[] = (() => { try { return JSON.parse(req.body_content) } catch { return [] } })()
+          for (const f of fields.filter((f) => f.enabled && f.key)) {
+            if (f.fieldType === 'file') parts.push(`  -F '${rv(f.key)}=@${rv(f.value)}'`)
+            else parts.push(`  -F '${rv(f.key)}=${rv(f.value)}'`)
+          }
+        } else if (req.body_type === 'urlencoded' || req.body_type === 'form') {
+          const fields: { key: string; value: string; enabled: boolean }[] = (() => { try { return JSON.parse(req.body_content) } catch { return [] } })()
+          const encoded = fields.filter((f) => f.enabled && f.key).map((f) => `${encodeURIComponent(rv(f.key))}=${encodeURIComponent(rv(f.value))}`).join('&')
+          if (encoded) parts.push(`  -d '${encoded}'`)
+        } else {
+          parts.push(`  -d '${rv(req.body_content)}'`)
+        }
       }
       const curl = parts.join(' \\\n')
       await navigator.clipboard.writeText(curl)
@@ -284,12 +308,12 @@ export function EditForm({ req, onChange, onSave, onCancel, envVars, saving }: {
     }
   }
 
-  const tabDefs: { key: EditFormTab; label: string; count?: number; dot?: boolean }[] = [
+  const tabDefs: { key: EditFormTab; label: string; count?: number }[] = [
     { key: 'body', label: t('edit.body') },
     { key: 'headers', label: 'Headers', count: headers.filter((h) => h.key).length },
     { key: 'expect', label: t('edit.expect_status') },
-    { key: 'extract', label: t('edit.extract_tab'), dot: extractRules.length > 0 },
-    { key: 'poll', label: t('edit.poll_config'), dot: hasPollConfig },
+    { key: 'extract', label: t('edit.extract_tab'), count: extractRules.length || undefined },
+    { key: 'poll', label: t('edit.poll_config'), count: hasPollConfig ? 1 : undefined },
   ]
   // debug 不再作为页签，而是底部操作按钮
 
@@ -368,17 +392,16 @@ export function EditForm({ req, onChange, onSave, onCancel, envVars, saving }: {
             <span className="flex items-center gap-1.5">
               {tab.label}
               {tab.count ? <span className="text-[10px] text-muted-foreground/60">({tab.count})</span> : null}
-              {tab.dot ? <span className="h-1.5 w-1.5 rounded-full bg-primary" /> : null}
             </span>
             {activeTab === tab.key && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />}
           </button>
         ))}
       </div>
 
-      <div className="min-h-[240px]">
+      <div className="flex-1 min-h-0 overflow-y-auto">
         {activeTab === 'body' && (
-          <div>
-            <div className="mb-2">
+          <div className="flex flex-col h-full">
+            <div className="mb-2 shrink-0">
               <BodyTypeSelector value={req.body_type} onChange={(v) => set('body_type', v)}>
                 {req.body_type === 'json' && req.body_content && (
                   <button
@@ -391,30 +414,26 @@ export function EditForm({ req, onChange, onSave, onCancel, envVars, saving }: {
                 )}
               </BodyTypeSelector>
             </div>
-            <div className="relative h-[220px]">
-              {req.body_type === 'none' ? (
-                <div className="w-full h-full rounded-xl border border-overlay/[0.06] bg-overlay/[0.02] flex items-center justify-center">
-                  <span className="text-xs text-muted-foreground/40">{t('scenario.no_body')}</span>
-                </div>
-              ) : (req.body_type === 'form-data' || req.body_type === 'urlencoded' || req.body_type === 'form') ? (
-                <div className="h-full overflow-y-auto">
-                  <KeyValueTable
-                    value={(() => { try { const p = JSON.parse(req.body_content || '[]'); return Array.isArray(p) ? p : [] } catch { return [] } })()}
-                    onChange={(v) => set('body_content', JSON.stringify(v))}
-                    allowFiles={req.body_type === 'form-data'}
-                    envVars={envVars}
-                  />
-                </div>
-              ) : (
-                <CodeEditor
-                  value={req.body_content}
-                  onChange={(v) => set('body_content', v)}
-                  language={req.body_type === 'json' ? 'json' : 'plaintext'}
-                  className="w-full h-full"
-                  placeholder='{ "key": "value" }'
-                />
-              )}
-            </div>
+            {req.body_type === 'none' ? (
+              <div className="flex-1 min-h-[120px] rounded-xl border border-overlay/[0.06] bg-overlay/[0.02] flex items-center justify-center">
+                <span className="text-xs text-muted-foreground/40">{t('scenario.no_body')}</span>
+              </div>
+            ) : (req.body_type === 'form-data' || req.body_type === 'urlencoded' || req.body_type === 'form') ? (
+              <KeyValueTable
+                value={(() => { try { const p = JSON.parse(req.body_content || '[]'); return Array.isArray(p) ? p : [] } catch { return [] } })()}
+                onChange={(v) => set('body_content', JSON.stringify(v))}
+                allowFiles={req.body_type === 'form-data'}
+                envVars={envVars}
+              />
+            ) : (
+              <CodeEditor
+                value={req.body_content}
+                onChange={(v) => set('body_content', v)}
+                language={req.body_type === 'json' ? 'json' : 'plaintext'}
+                className="w-full flex-1 min-h-[160px]"
+                placeholder='{ "key": "value" }'
+              />
+            )}
           </div>
         )}
 
@@ -446,7 +465,6 @@ export function EditForm({ req, onChange, onSave, onCancel, envVars, saving }: {
             onChange={(cfg) => set('poll_config', cfg ? JSON.stringify(cfg) : '')}
           />
         )}
-
       </div>
 
       {/* 流式输出 — fills remaining space */}

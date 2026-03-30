@@ -150,6 +150,7 @@ pub async fn run_collection(
         let batch_id_chain = batch_id.clone();
         let chain_offset = all_results.len() as u32;
         let cancel_chain = cancel_token.clone();
+        let app_result_chain = app.clone();
         let chain_result = crate::runner::chain::run_chain(
             &http.0,
             steps.clone(),
@@ -171,6 +172,9 @@ pub async fn run_collection(
                     total: overall_total,
                 });
             },
+            Some(Box::new(move |result| {
+                let _ = app_result_chain.emit("execution-result", result);
+            })),
         ).await;
 
         let chain_failed = chain_result.status != crate::models::Status::Success.as_str();
@@ -189,6 +193,7 @@ pub async fn run_collection(
         let chain_done = all_results.len() as u32;
         let total = chain_done + normal_items.len() as u32;
         let app_clone = app.clone();
+        let app_result_batch = app.clone();
         let batch_id_clone = batch_id.clone();
         let normal_result = batch::run_batch(
             &http.0,
@@ -200,6 +205,9 @@ pub async fn run_collection(
                 progress.current += chain_done;
                 progress.total = total;
                 let _ = app_clone.emit("test-progress", &progress);
+            },
+            move |result| {
+                let _ = app_result_batch.emit("execution-result", result);
             },
         ).await;
         all_results.extend(normal_result.results);
@@ -220,10 +228,11 @@ pub async fn run_collection(
         results: all_results,
     };
 
-    // 保存执行记录
+    // 发射请求日志 + 保存执行记录
     {
         let conn = db.conn()?;
         for result in &batch_result.results {
+            crate::http::emit_request_log(&app, result);
             if let Ok(item) = crate::db::item::get(&conn, &result.item_id) {
                 let mut exec = crate::http::client::to_execution(&item, result);
                 exec.batch_id = Some(batch_id.clone());
@@ -281,6 +290,7 @@ pub async fn run_chain(
     }
 
     let app_clone = app.clone();
+    let app_result = app.clone();
     let chain_result = crate::runner::chain::run_chain(
         &http.0,
         steps,
@@ -291,14 +301,18 @@ pub async fn run_chain(
         move |progress| {
             let _ = app_clone.emit("chain-progress", &progress);
         },
+        Some(Box::new(move |result| {
+            let _ = app_result.emit("execution-result", result);
+        })),
     )
     .await;
 
-    // 保存每步执行记录
+    // 发射请求日志 + 保存每步执行记录
     {
         let conn = db.conn()?;
         for step in &chain_result.steps {
             let result = &step.execution_result;
+            crate::http::emit_request_log(&app, result);
             if let Ok(item) = crate::db::item::get(&conn, &result.item_id) {
                 let mut exec = crate::http::client::to_execution(&item, result);
                 exec.batch_id = Some(chain_result.chain_id.clone());

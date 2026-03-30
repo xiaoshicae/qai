@@ -34,11 +34,13 @@ pub async fn run_batch(
     concurrency: usize,
     cancel_token: Arc<std::sync::atomic::AtomicBool>,
     progress_callback: impl Fn(TestProgress) + Send + Sync + 'static,
+    on_result: impl Fn(&ExecutionResult) + Send + Sync + 'static,
 ) -> BatchResult {
     let batch_id = Uuid::new_v4().to_string();
     let total = items.len() as u32;
     let semaphore = Arc::new(Semaphore::new(concurrency));
     let callback = Arc::new(progress_callback);
+    let on_result = Arc::new(on_result);
     let client = client.clone();
     let start = std::time::Instant::now();
 
@@ -47,6 +49,7 @@ pub async fn run_batch(
     for (index, (item, assertions)) in items.into_iter().enumerate() {
         let sem = semaphore.clone();
         let cb = callback.clone();
+        let or = on_result.clone();
         let bid = batch_id.clone();
         let client = client.clone();
         let ct = cancel_token.clone();
@@ -87,6 +90,7 @@ pub async fn run_batch(
             };
 
             apply_assertions(&mut result, &assertions);
+            or(&result);
 
             let status = result.status.clone();
             cb(TestProgress {

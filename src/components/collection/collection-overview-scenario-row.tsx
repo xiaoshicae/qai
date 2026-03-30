@@ -31,21 +31,26 @@ function ResponseBody({ resp }: { resp: HttpResponse | null | undefined }) {
     const isImage = resp.body.startsWith('data:image/')
     const isAudio = resp.body.startsWith('data:audio/')
     const isVideo = resp.body.startsWith('data:video/')
-    if (isImage) return (
-      <div className="p-3 flex items-center justify-center max-h-64 overflow-hidden">
-        <img src={resp.body} alt="response" className="max-h-56 max-w-full object-contain rounded-lg" />
+    // 从 data URI 中提取 MIME type
+    const mimeMatch = resp.body.match(/^data:([^;,]+)/)
+    const mime = mimeMatch?.[1] ?? t('response.binary_file')
+    const mediaPreview = (isImage || isAudio || isVideo) ? (
+      <div className="p-3 space-y-2">
+        <div className="flex items-center justify-center">
+          {isImage && <img src={resp.body} alt="response" className="max-h-56 max-w-full object-contain rounded-lg" />}
+          {isAudio && <audio controls className="w-full max-w-md" src={resp.body} />}
+          {isVideo && <video controls className="max-h-56 max-w-full rounded-lg" src={resp.body} />}
+        </div>
+        <div className="text-[10px] text-muted-foreground/50 font-mono px-1 flex items-center gap-2">
+          <span>{mime}</span>
+          <span>·</span>
+          <span>{formatSize(resp.size_bytes)}</span>
+          <span>·</span>
+          <span>base64</span>
+        </div>
       </div>
-    )
-    if (isAudio) return (
-      <div className="p-3 flex items-center justify-center">
-        <audio controls className="w-full max-w-md" src={resp.body} />
-      </div>
-    )
-    if (isVideo) return (
-      <div className="p-3 flex items-center justify-center">
-        <video controls className="max-h-56 max-w-full rounded-lg" src={resp.body} />
-      </div>
-    )
+    ) : null
+    if (mediaPreview) return mediaPreview
   }
 
   const contentType = resp.headers.find((h: { key: string }) => h.key.toLowerCase() === 'content-type')?.value?.toLowerCase() || ''
@@ -139,13 +144,14 @@ function FilePreviewThumb({ path }: { path: string }) {
   )
 }
 
-export function ScenarioRow({ r, stepLabel, indent, envVars = {}, getResult, getStatus: _getStatus, statuses, progress, runningIds, expandedRows, detailData, loadDetail, toggleRow, runSingle, openEdit, deleteRequest, streamingContent, canRun = true, enabled = true, onToggleEnabled }: {
+export function ScenarioRow({ r, stepLabel, indent, envVars = {}, getResult, getStatus: _getStatus, statuses, progress, runningIds, expandedRows, detailData, loadDetail, toggleRow, runSingle, openEdit, deleteRequest, streamingContent, canRun = true, version, enabled = true, onToggleEnabled }: {
   r: { id: string; name: string; method: string; folder?: string; expect_status?: number }
   stepLabel?: string
   indent?: boolean
   envVars?: Record<string, string>
   streamingContent?: string
   canRun?: boolean
+  version?: number
   enabled?: boolean
   onToggleEnabled?: (id: string) => void
   getResult: (id: string) => ExecutionResult | undefined
@@ -179,8 +185,20 @@ export function ScenarioRow({ r, stepLabel, indent, envVars = {}, getResult, get
     error?: string
   } | null>(null)
 
+  // 编辑保存后 version 变化，清除旧执行数据并阻止重新加载
+  const skipLoadRef = useRef(false)
   useEffect(() => {
-    if (!expanded || result) return
+    if (version) {
+      setLastRun(null)
+      skipLoadRef.current = true
+    }
+  }, [version])
+
+  useEffect(() => {
+    if (!expanded || result || skipLoadRef.current) {
+      skipLoadRef.current = false
+      return
+    }
     invoke<RunRecordRow[]>('list_item_runs', { itemId: r.id, limit: 1 }).then((runs) => {
       if (runs.length > 0) {
         const run = runs[0]

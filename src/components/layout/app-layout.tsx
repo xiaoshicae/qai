@@ -1,9 +1,10 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { Outlet } from 'react-router-dom'
-import { Sparkles } from 'lucide-react'
+import { Sparkles, ScrollText } from 'lucide-react'
 import Sidebar from './sidebar'
 import AIPanel from '@/components/ai/ai-panel'
 import TerminalPanel from '@/components/terminal/terminal-panel'
+import ConsolePanel from '@/components/console/console-panel'
 import { useAIStore } from '@/stores/ai-store'
 import { useGlobalShortcuts } from '@/hooks/use-global-shortcuts'
 
@@ -56,7 +57,7 @@ function useResizable(initial: number, min: number, max: number, reverse = false
 export default function AppLayout() {
   useGlobalShortcuts()
   const { open, setOpen } = useAIStore()
-  const [panelMode, setPanelMode] = useState<'ai' | 'terminal'>('ai')
+  const [panelMode, setPanelMode] = useState<'ai' | 'terminal' | 'console'>('ai')
   const sidebar = useResizable(280, 200, 450, false, 'qai.sidebar.width')
   const aiPanel = useResizable(380, 280, 600, true, 'qai.aipanel.width')
 
@@ -74,6 +75,7 @@ export default function AppLayout() {
 
   const openTerminal = () => { setPanelMode('terminal'); setOpen(true) }
   const openAI = () => { setPanelMode('ai'); setOpen(true) }
+  const openConsole = () => { setPanelMode('console'); setOpen(true) }
 
   return (
     <div className="flex h-screen bg-background">
@@ -94,8 +96,15 @@ export default function AppLayout() {
         <div className="h-[calc(100%-2rem)] overflow-hidden">
           <Outlet />
         </div>
-        {!open && (showClaudeCode || showAI) && (
+        {!open && (
           <div className="absolute bottom-5 right-5 flex items-center gap-2">
+            <button
+              className="flex items-center justify-center h-10 w-10 rounded-full glass-card shadow-lg cursor-pointer transition-all duration-200 active:translate-y-px hover:shadow-xl hover:scale-105 text-muted-foreground hover:text-foreground"
+              onClick={openConsole}
+              title="Console"
+            >
+              <ScrollText className="h-4 w-4" />
+            </button>
             {showClaudeCode && (
               <button
                 className="flex items-center justify-center h-10 w-10 rounded-full glass-card shadow-lg cursor-pointer transition-all duration-200 active:translate-y-px hover:shadow-xl hover:scale-105"
@@ -131,10 +140,13 @@ export default function AppLayout() {
       {/* 右面板 */}
       {open && (
         <div className="flex-shrink-0 overflow-hidden" style={{ width: aiPanel.width }}>
-          {panelMode === 'terminal'
-            ? <TerminalPanel onClose={() => setOpen(false)} />
-            : <AIPanel />
-          }
+          {panelMode === 'terminal' ? (
+            <TerminalPanel onClose={() => setOpen(false)} />
+          ) : panelMode === 'console' ? (
+            <ConsolePanel onClose={() => setOpen(false)} />
+          ) : (
+            <AIPanel />
+          )}
         </div>
       )}
     </div>

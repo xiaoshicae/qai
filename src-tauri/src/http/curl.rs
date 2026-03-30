@@ -25,7 +25,7 @@ pub fn parse_curl(input: &str) -> Result<CurlParseResult, String> {
     let mut url = String::new();
     let mut headers: Vec<KeyValuePair> = Vec::new();
     let mut data: Option<String> = None;
-    let mut form_data = false;
+    let mut form_fields: Vec<KeyValuePair> = Vec::new();
 
     let mut i = 1;
     while i < tokens.len() {
@@ -54,14 +54,22 @@ pub fn parse_curl(input: &str) -> Result<CurlParseResult, String> {
             }
             "--data-urlencode" => {
                 i += 1;
-                if i < tokens.len() { data = Some(tokens[i].clone()); form_data = true; }
+                if i < tokens.len() { data = Some(tokens[i].clone()); }
             }
             "-F" | "--form" => {
                 i += 1;
-                form_data = true;
                 if i < tokens.len() {
-                    let existing = data.unwrap_or_default();
-                    data = Some(if existing.is_empty() { tokens[i].clone() } else { format!("{}&{}", existing, tokens[i]) });
+                    let val = &tokens[i];
+                    if let Some((key, value)) = val.split_once('=') {
+                        let is_file = value.starts_with('@');
+                        let actual_value = if is_file { &value[1..] } else { value };
+                        form_fields.push(KeyValuePair {
+                            key: key.to_string(),
+                            value: actual_value.to_string(),
+                            enabled: true,
+                            field_type: if is_file { "file".to_string() } else { String::new() },
+                        });
+                    }
                 }
             }
             // 跳过常见无关 flag（无参数）
@@ -92,10 +100,12 @@ pub fn parse_curl(input: &str) -> Result<CurlParseResult, String> {
         .find(|h| h.key.eq_ignore_ascii_case("content-type"))
         .map(|h| h.value.to_lowercase());
 
-    let (body_type, body_content) = if let Some(ref d) = data {
-        if form_data {
-            ("form-data".into(), d.clone())
-        } else if content_type.as_deref() == Some("application/x-www-form-urlencoded") {
+    let (body_type, body_content) = if !form_fields.is_empty() {
+        // -F 参数 → form-data，序列化为 JSON 数组（前端 KeyValueTable 格式）
+        let json = serde_json::to_string(&form_fields).unwrap_or_default();
+        ("form-data".into(), json)
+    } else if let Some(ref d) = data {
+        if content_type.as_deref() == Some("application/x-www-form-urlencoded") {
             ("urlencoded".into(), d.clone())
         } else if content_type.as_ref().map(|c| c.contains("json")).unwrap_or(false) || d.trim_start().starts_with('{') {
             ("json".into(), d.clone())
@@ -250,5 +260,20 @@ mod tests {
         assert!(curl.contains("-X POST"));
         assert!(curl.contains("-H 'Content-Type: application/json'"));
         assert!(curl.contains("-d"));
+    }
+
+    #[test]
+    fn test_parse_form_data_fields() {
+        let curl = r#"curl -X POST 'http://localhost:8000/api/v1/generate' -H 'Authorization: Bearer token' -F 'model=whisper_v3_turbo' -F 'language=en' -F 'file=@/Users/test/audio.wav'"#;
+        let result = parse_curl(curl).unwrap();
+        assert_eq!(result.method, "POST");
+        assert_eq!(result.body_type, "form-data");
+        let fields: Vec<serde_json::Value> = serde_json::from_str(&result.body_content).unwrap();
+        assert_eq!(fields.len(), 3);
+        assert_eq!(fields[0]["key"], "model");
+        assert_eq!(fields[0]["value"], "whisper_v3_turbo");
+        assert_eq!(fields[2]["key"], "file");
+        assert_eq!(fields[2]["value"], "/Users/test/audio.wav");
+        assert_eq!(fields[2]["field_type"], "file");
     }
 }

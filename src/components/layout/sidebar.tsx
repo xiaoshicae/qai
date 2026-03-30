@@ -14,11 +14,12 @@ import EnvSelector from '@/components/layout/env-selector'
 import { invokeErrorMessage } from '@/lib/invoke-error'
 import { useCollectionStore } from '@/stores/collection-store'
 import { Input } from '@/components/ui/input'
+import { Tooltip } from '@/components/ui/tooltip'
 import type { Collection } from '@/types'
 import { useTranslation } from 'react-i18next'
 import {
-  DndContext, closestCenter, DragOverlay, PointerSensor, useSensor, useSensors,
-  type DragStartEvent, type DragEndEvent, type DragOverEvent,
+  DndContext, pointerWithin, closestCenter, DragOverlay, PointerSensor, useSensor, useSensors,
+  type DragStartEvent, type DragEndEvent, type DragOverEvent, type CollisionDetection,
 } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { buildGroupTree, SortableGroupRow, GroupTreeNode, type GroupNode } from './sidebar-tree'
@@ -46,9 +47,17 @@ export default function Sidebar() {
   const [newTopValue, setNewTopValue] = useState('')
   const [showQuickTest, setShowQuickTest] = useState(false)
   const [activeId, setActiveId] = useState<string | null>(null)
+  const [overId, setOverId] = useState<string | null>(null)
 
   // dnd-kit sensors: 需要拖动 5px 才触发，避免和点击冲突
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
+
+  // 碰撞检测：pointerWithin 优先（精准），fallback 到 closestCenter
+  const collisionDetection: CollisionDetection = useCallback((args) => {
+    const hits = pointerWithin(args)
+    if (hits.length > 0) return [hits[0]]
+    return closestCenter(args)
+  }, [])
 
   useEffect(() => { loadCollections(); loadGroups() }, [])
 
@@ -94,18 +103,14 @@ export default function Sidebar() {
   const handleDragStart = (event: DragStartEvent) => { setActiveId(event.active.id as string) }
 
   const handleDragOver = useCallback((event: DragOverEvent) => {
-    const { active, over } = event
-    if (!over) return
-    const activeData = active.data.current
-    const overData = over.data.current
-    // 只有 collection 拖到 group 上时才展开（group 拖 group 不展开）
-    if (activeData?.type === 'collection' && overData?.type === 'group') {
-      setExpanded((prev) => new Set(prev).add(over.id as string))
-    }
+    const { over } = event
+    if (!over) { setOverId(null); return }
+    setOverId(over.id as string)
   }, [])
 
   const handleDragEnd = useCallback(async (event: DragEndEvent) => {
     setActiveId(null)
+    setOverId(null)
     const { active, over } = event
     if (!over || active.id === over.id) return
 
@@ -113,30 +118,85 @@ export default function Sidebar() {
     const overData = over.data.current
     const store = useCollectionStore.getState()
 
-    // Group 排序 — optimistic update
+    // Group 拖拽
     if (activeData?.type === 'group' && overData?.type === 'group') {
-      const topGroups = store.groups.filter((g) => !g.parent_id).sort((a, b) => a.sort_order - b.sort_order)
-      const oldIdx = topGroups.findIndex((g) => g.id === active.id)
-      const newIdx = topGroups.findIndex((g) => g.id === over.id)
-      if (oldIdx === -1 || newIdx === -1) return
-      const reordered = [...topGroups]
-      const [moved] = reordered.splice(oldIdx, 1)
-      reordered.splice(newIdx, 0, moved)
+      const activeGroup = store.groups.find((g) => g.id === active.id)
+      const overGroup = store.groups.find((g) => g.id === over.id)
+      if (!activeGroup || !overGroup) return
 
-      // 快照 + 乐观更新
-      const previousGroups = [...store.groups]
-      const updatedGroups = store.groups.map((g) => {
-        const idx = reordered.findIndex((r) => r.id === g.id)
-        return idx !== -1 ? { ...g, sort_order: idx } : g
-      })
-      useCollectionStore.setState({ groups: updatedGroups })
+      // 防止拖到自己的子分组内（会造成循环）
+      const isDescendant = (parentId: string | null, targetId: string): boolean => {
+        if (!parentId) return false
+        if (parentId === targetId) return true
+        const parent = store.groups.find((g) => g.id === parentId)
+        return parent ? isDescendant(parent.parent_id, targetId) : false
+      }
+      if (isDescendant(over.id as string, active.id as string)) return
 
-      // 异步保存到后端，失败时回滚
-      const groupOrders = reordered.map((g, i) => ({ id: g.id, sort_order: i }))
-      invoke('reorder_sidebar', { groups: groupOrders, collections: [] }).catch((e) => {
-        useCollectionStore.setState({ groups: previousGroups })
-        toast.error(invokeErrorMessage(e))
-      })
+      const sameParent = activeGroup.parent_id === overGroup.parent_id
+
+      if (sameParent) {
+        // 同级重排
+        const siblings = store.groups
+          .filter((g) => g.parent_id === activeGroup.parent_id)
+          .sort((a, b) => a.sort_order - b.sort_order)
+        const oldIdx = siblings.findIndex((g) => g.id === active.id)
+        const newIdx = siblings.findIndex((g) => g.id === over.id)
+        if (oldIdx === -1 || newIdx === -1) return
+        const reordered = [...siblings]
+        const [moved] = reordered.splice(oldIdx, 1)
+        reordered.splice(newIdx, 0, moved)
+
+        const previousGroups = [...store.groups]
+        const updatedGroups = store.groups.map((g) => {
+          const idx = reordered.findIndex((r) => r.id === g.id)
+          return idx !== -1 ? { ...g, sort_order: idx } : g
+        })
+        useCollectionStore.setState({ groups: updatedGroups })
+
+        const groupOrders = reordered.map((g, i) => ({ id: g.id, sort_order: i }))
+        invoke('reorder_sidebar', { groups: groupOrders, collections: [] }).catch((e) => {
+          useCollectionStore.setState({ groups: previousGroups })
+          toast.error(invokeErrorMessage(e))
+        })
+      } else if (activeGroup.parent_id && !overGroup.parent_id) {
+        // 子分组拖到顶级分组 → 提升为顶级（插到 over 位置前面）
+        const previousGroups = [...store.groups]
+        const topGroups = store.groups.filter((g) => !g.parent_id).sort((a, b) => a.sort_order - b.sort_order)
+        const overIdx = topGroups.findIndex((g) => g.id === over.id)
+        topGroups.splice(overIdx < 0 ? topGroups.length : overIdx, 0, { ...activeGroup, parent_id: null })
+
+        const updatedGroups = store.groups.map((g) => {
+          if (g.id === active.id) return { ...g, parent_id: null, sort_order: topGroups.findIndex((r) => r.id === g.id) }
+          const idx = topGroups.findIndex((r) => r.id === g.id)
+          return idx !== -1 ? { ...g, sort_order: idx } : g
+        })
+        useCollectionStore.setState({ groups: updatedGroups })
+
+        // 先更新 parent_id，再用 reorder_sidebar 同步所有顶级分组的 sort_order
+        const groupOrders = topGroups.map((g, i) => ({ id: g.id, sort_order: i }))
+        invoke('update_group', { id: active.id as string, parentId: null }).then(() =>
+          invoke('reorder_sidebar', { groups: groupOrders, collections: [] })
+        ).catch((e) => {
+          useCollectionStore.setState({ groups: previousGroups })
+          toast.error(invokeErrorMessage(e))
+        })
+      } else {
+        // 拖到其他分组上 → 成为子分组
+        const previousGroups = [...store.groups]
+        const newParentId = over.id as string
+        const childCount = store.groups.filter((g) => g.parent_id === newParentId).length
+        const updatedGroups = store.groups.map((g) =>
+          g.id === active.id ? { ...g, parent_id: newParentId, sort_order: childCount } : g
+        )
+        useCollectionStore.setState({ groups: updatedGroups })
+        setExpanded((prev) => new Set(prev).add(newParentId))
+
+        invoke('update_group', { id: active.id as string, parentId: newParentId, sortOrder: childCount }).catch((e) => {
+          useCollectionStore.setState({ groups: previousGroups })
+          toast.error(invokeErrorMessage(e))
+        })
+      }
       return
     }
 
@@ -144,6 +204,14 @@ export default function Sidebar() {
     if (activeData?.type === 'collection') {
       const activeCol = store.collections.find((c) => c.id === active.id)
       if (!activeCol) return
+
+      // 拖到自己同组的相邻 collection 且位置不变 → 跳过
+      if (overData?.type === 'collection' && overData.groupId === activeCol.group_id) {
+        const siblings = store.collections.filter((c) => c.group_id === activeCol.group_id).sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+        const oldIdx = siblings.findIndex((c) => c.id === active.id)
+        const newIdx = siblings.findIndex((c) => c.id === over.id)
+        if (oldIdx === newIdx || (oldIdx + 1 === newIdx)) return
+      }
 
       let targetGroupId: string | null = null
       if (overData?.type === 'collection') {
@@ -158,11 +226,11 @@ export default function Sidebar() {
         .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
 
       if (overData?.type === 'group') {
-        targetCols.unshift(activeCol)
+        targetCols.push(activeCol)
       } else {
         const overIdx = targetCols.findIndex((c) => c.id === over.id)
         if (overIdx !== -1) {
-          targetCols.splice(overIdx + 1, 0, activeCol)
+          targetCols.splice(overIdx, 0, activeCol)
         } else {
           targetCols.push(activeCol)
         }
@@ -270,21 +338,25 @@ export default function Sidebar() {
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/40" />
           <input data-sidebar-search="" type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('sidebar.search')} autoComplete="off" className="w-full h-7 pl-8 pr-2 rounded-lg bg-overlay/[0.04] text-xs placeholder:text-muted-foreground/40 border border-overlay/[0.06] outline-none focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/20 transition-all" />
         </div>
-        <button onClick={() => setShowQuickTest(true)} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-overlay/[0.06] cursor-pointer transition-colors" title={t('sidebar.quick_test')}>
-          <Zap className="h-3.5 w-3.5 text-muted-foreground" />
-        </button>
-        <button onClick={handleNewTopGroup} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-overlay/[0.06] cursor-pointer transition-colors" title={t('sidebar.new_group')}>
+        <Tooltip content={t('sidebar.quick_test')}>
+          <button onClick={() => setShowQuickTest(true)} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-overlay/[0.06] cursor-pointer transition-colors">
+            <Zap className="h-3.5 w-3.5 text-muted-foreground" />
+          </button>
+        </Tooltip>
+        <Tooltip content={t('sidebar.new_group')}>
+          <button onClick={handleNewTopGroup} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-overlay/[0.06] cursor-pointer transition-colors">
           <Plus className="h-3.5 w-3.5 text-muted-foreground" />
         </button>
+        </Tooltip>
       </div>
 
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
+      <DndContext sensors={sensors} collisionDetection={collisionDetection} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
         <div className="flex-1 flex flex-col min-h-0">
         <div className="flex-1 min-h-0 overflow-y-auto px-2.5">
           <SortableContext items={topGroupIds} strategy={verticalListSortingStrategy}>
             {filteredRoots.map((node) => (
-              <SortableGroupRow key={node.group.id} id={node.group.id}>
-                <GroupTreeNode node={node} level={0} expanded={expanded} selectedNodeId={selectedNodeId} renamingId={renamingId} renameValue={renameValue} inlineInput={inlineInput} inlineValue={inlineValue} onToggle={toggle} onSelect={handleSelect} onGroupMenu={openGroupMenu} onColMenu={openColMenu} onRenameChange={setRenameValue} onRenameCommit={commitRename} onRenameCancel={() => setRenamingId(null)} onInlineChange={setInlineValue} onInlineCommit={commitInline} onInlineCancel={() => setInlineInput(null)} />
+              <SortableGroupRow key={node.group.id} id={node.group.id} overId={activeId ? overId : null}>
+                <GroupTreeNode node={node} level={0} expanded={expanded} selectedNodeId={selectedNodeId} renamingId={renamingId} renameValue={renameValue} inlineInput={inlineInput} inlineValue={inlineValue} overId={activeId ? overId : null} onToggle={toggle} onSelect={handleSelect} onGroupMenu={openGroupMenu} onColMenu={openColMenu} onRenameChange={setRenameValue} onRenameCommit={commitRename} onRenameCancel={() => setRenamingId(null)} onInlineChange={setInlineValue} onInlineCommit={commitInline} onInlineCancel={() => setInlineInput(null)} />
               </SortableGroupRow>
             ))}
           </SortableContext>
@@ -327,13 +399,13 @@ export default function Sidebar() {
         {/* 拖拽浮层 */}
         <DragOverlay>
           {activeGroup && (
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg glass-card text-[10px] font-semibold tracking-wider text-muted-foreground uppercase shadow-lg">
-              <GripVertical className="h-3 w-3" /> {activeGroup.name}
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl glass-card border border-primary/30 text-[10px] font-semibold tracking-wider text-foreground uppercase shadow-2xl scale-[1.02]">
+              <GripVertical className="h-3 w-3 text-primary" /> {activeGroup.name}
             </div>
           )}
           {activeCol && (
-            <div className="flex items-center gap-1 px-3 py-1.5 rounded-lg glass-card text-xs shadow-lg">
-              <GripVertical className="h-3 w-3 text-muted-foreground" /> {activeCol.name}
+            <div className="flex items-center gap-1 px-3 py-1.5 rounded-xl glass-card border border-primary/30 text-xs text-foreground shadow-2xl scale-[1.02]">
+              <GripVertical className="h-3 w-3 text-primary" /> {activeCol.name}
             </div>
           )}
         </DragOverlay>

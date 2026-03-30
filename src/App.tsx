@@ -5,6 +5,7 @@ import AppLayout from './components/layout/app-layout'
 import WorkbenchView from './views/workbench-view'
 import { ConfirmDialog } from './components/ui/confirm-dialog'
 import { useThemeStore } from './stores/theme-store'
+import { initConsoleListener } from './stores/console-store'
 
 const EnvironmentsView = lazy(() => import('./views/environments-view'))
 const HistoryView = lazy(() => import('./views/history-view'))
@@ -21,7 +22,7 @@ function RouteFallback() {
 export default function App() {
   const resolved = useThemeStore((s) => s.resolved)
   const init = useThemeStore((s) => s.init)
-  useEffect(() => { init() }, [])
+  useEffect(() => { init(); initConsoleListener() }, [])
 
   return (
     <BrowserRouter>

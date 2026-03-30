@@ -31,6 +31,21 @@ pub fn initialize_database(app: &AppHandle) -> Result<(), Box<dyn std::error::Er
     }
 
     app.manage(DbState(Mutex::new(conn)));
+    // 确保 localhost/loopback 绕过代理（与浏览器行为一致）
+    // reqwest 默认读取系统代理，但不自动排除 localhost，需手动添加
+    let no_proxy = std::env::var("NO_PROXY")
+        .or_else(|_| std::env::var("no_proxy"))
+        .unwrap_or_default();
+    if !no_proxy.contains("localhost") {
+        let loopback = "localhost,127.0.0.1,::1,0.0.0.0";
+        let merged = if no_proxy.is_empty() {
+            loopback.to_string()
+        } else {
+            format!("{no_proxy},{loopback}")
+        };
+        std::env::set_var("NO_PROXY", merged);
+    }
+
     app.manage(HttpClient(
         reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))

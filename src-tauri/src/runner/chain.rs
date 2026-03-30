@@ -14,6 +14,7 @@ pub async fn run_chain(
     chain_item_name: String,
     cancel_token: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     progress_callback: impl Fn(ChainProgress) + Send + Sync + 'static,
+    on_result: Option<Box<dyn Fn(&ExecutionResult) + Send + Sync + 'static>>,
 ) -> ChainResult {
     let chain_id = uuid::Uuid::new_v4().to_string();
     let total_steps = steps.len() as u32;
@@ -84,6 +85,7 @@ pub async fn run_chain(
         // 断言评估
         let mut result = result;
         apply_assertions(&mut result, &assertions);
+        if let Some(ref cb) = on_result { cb(&result); }
 
         // 提取变量
         let extracted = if let Some(ref response) = result.response {

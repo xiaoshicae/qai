@@ -46,12 +46,13 @@ pub struct KeyValuePair {
     pub key: String,
     pub value: String,
     pub enabled: bool,
-    #[serde(default)]
+    #[serde(default, rename = "fieldType", alias = "field_type")]
     pub field_type: String, // "text" | "file"，默认空字符串视为 text
 }
 
 /// update_item 的请求载体，所有字段可选
 #[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateItemPayload {
     pub name: Option<String>,
     pub method: Option<String>,

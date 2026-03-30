@@ -105,7 +105,7 @@ export function useCollectionRunner({ collectionId, allRequests }: Options) {
       setRunning(false)
       loadStatuses()
     } else {
-      unlistenRef.current = await listen<TestProgress>('test-progress', (e) => {
+      const unlistenProgress = await listen<TestProgress>('test-progress', (e) => {
         if (abortRef.current) return
         setProgress((prev) => {
           const idx = prev.findIndex((x) => x.item_id === e.payload.item_id)
@@ -113,6 +113,12 @@ export function useCollectionRunner({ collectionId, allRequests }: Options) {
           return [...prev, e.payload]
         })
       })
+      // 实时接收每个请求完成的结果（不用等全部跑完）
+      const unlistenResult = await listen<ExecutionResult>('execution-result', (e) => {
+        if (abortRef.current) return
+        setSingleResults((prev) => ({ ...prev, [e.payload.item_id]: e.payload }))
+      })
+      unlistenRef.current = () => { unlistenProgress(); unlistenResult() }
       try {
         const excludeList = excludeIds?.size ? Array.from(excludeIds) : undefined
         const result = await invoke<BatchResult>('run_collection', { collectionId, concurrency, excludeIds: excludeList })
@@ -169,7 +175,7 @@ export function useCollectionRunner({ collectionId, allRequests }: Options) {
     setSingleResults((prev) => { const n = { ...prev }; for (const id of stepIds) delete n[id]; return n })
     setStatuses((prev) => { const n = { ...prev }; for (const id of stepIds) delete n[id]; return n })
 
-    const unlisten = await listen<ChainProgress>('chain-progress', (event) => {
+    const unlistenChain = await listen<ChainProgress>('chain-progress', (event) => {
       const p = event.payload
       const stepId = stepIds[p.step_index]
       if (!stepId) return
@@ -177,7 +183,17 @@ export function useCollectionRunner({ collectionId, allRequests }: Options) {
         setRunningIds((prev) => new Set(prev).add(stepId))
       } else {
         setRunningIds((prev) => { const n = new Set(prev); n.delete(stepId); return n })
+        setProgress((prev) => {
+          const idx = prev.findIndex((x) => x.item_id === stepId)
+          const entry: TestProgress = { batch_id: '', item_id: stepId, item_name: p.step_name, status: p.status, current: p.step_index + 1, total: p.total_steps }
+          if (idx >= 0) { const n = [...prev]; n[idx] = entry; return n }
+          return [...prev, entry]
+        })
       }
+    })
+    // 实时接收每步完成结果
+    const unlistenResult = await listen<ExecutionResult>('execution-result', (e) => {
+      setSingleResults((prev) => ({ ...prev, [e.payload.item_id]: e.payload }))
     })
 
     try {
@@ -190,7 +206,8 @@ export function useCollectionRunner({ collectionId, allRequests }: Options) {
       console.error('runChain failed:', e)
       toast.error(invokeErrorMessage(e))
     } finally {
-      unlisten()
+      unlistenChain()
+      unlistenResult()
       setRunningIds((prev) => { const n = new Set(prev); stepIds.forEach((id) => n.delete(id)); n.delete(chainItemId); return n })
     }
   }
@@ -199,6 +216,14 @@ export function useCollectionRunner({ collectionId, allRequests }: Options) {
   const resetResults = () => {
     setBatchResult(null)
     setSingleResults({})
+  }
+
+  /** 清除单个 item 的状态和结果（编辑保存后调用） */
+  const clearItemResult = (itemId: string) => {
+    setSingleResults((prev) => { const n = { ...prev }; delete n[itemId]; return n })
+    setBatchResult((prev) => prev ? { ...prev, results: prev.results.filter((r) => r.item_id !== itemId) } : null)
+    setStatuses((prev) => { const n = { ...prev }; delete n[itemId]; return n })
+    setProgress((prev) => prev.filter((p) => p.item_id !== itemId))
   }
 
   /** 清理 listener（组件卸载时调用） */
@@ -213,6 +238,6 @@ export function useCollectionRunner({ collectionId, allRequests }: Options) {
     total, passed, failed, passRate, progressPercent,
     // actions
     runAll, stopRun, runSingle, runChain,
-    getStatus, getResult, loadStatuses, resetResults, cleanup,
+    getStatus, getResult, loadStatuses, resetResults, clearItemResult, cleanup,
   }
 }

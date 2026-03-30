@@ -17,7 +17,6 @@ interface KeyValueTableProps {
 export default function KeyValueTable({ value, onChange, allowFiles, envVars }: KeyValueTableProps) {
   const { t } = useTranslation()
   const addRow = () => onChange([...value, { key: '', value: '', enabled: true }])
-  const addFileRow = () => onChange([...value, { key: '', value: '', enabled: true, fieldType: 'file' }])
   const removeRow = (index: number) => onChange(value.filter((_, i) => i !== index))
   const updateRow = (index: number, field: keyof KeyValuePair, val: string | boolean) => {
     const next = [...value]
@@ -58,13 +57,13 @@ export default function KeyValueTable({ value, onChange, allowFiles, envVars }: 
       {value.map((item, index) => {
         const isFile = item.fieldType === 'file'
         return (
-          <div key={index} className={`grid ${gridCols} gap-2 items-center group`}>
-            <input
-              type="checkbox"
-              checked={item.enabled}
-              onChange={(e) => updateRow(index, 'enabled', e.target.checked)}
-              className="h-3.5 w-3.5 rounded border-overlay/[0.06] accent-brand cursor-pointer"
-            />
+          <div key={index} className={`grid ${gridCols} gap-2 items-center group/row ${!item.enabled ? 'opacity-40' : ''} transition-opacity`}>
+            <button
+              onClick={() => updateRow(index, 'enabled', !item.enabled)}
+              className={`h-3 w-3 rounded-sm border transition-colors cursor-pointer ${item.enabled ? 'bg-primary border-primary' : 'border-overlay/[0.15] hover:border-overlay/[0.25]'}`}
+            >
+              {item.enabled && <svg viewBox="0 0 12 12" className="h-3 w-3 text-primary-foreground"><path d="M3.5 6L5.5 8L8.5 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none" /></svg>}
+            </button>
             {allowFiles && (
               <button
                 onClick={() => toggleFieldType(index)}
@@ -100,7 +99,7 @@ export default function KeyValueTable({ value, onChange, allowFiles, envVars }: 
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+              className="h-7 w-7 opacity-0 group-hover/row:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
               onClick={() => removeRow(index)}
             >
               <Trash2 className="h-3 w-3" />
@@ -108,16 +107,9 @@ export default function KeyValueTable({ value, onChange, allowFiles, envVars }: 
           </div>
         )
       })}
-      <div className="flex gap-2">
-        <Button variant="ghost" size="sm" className="flex-1 h-7 text-xs text-muted-foreground hover:text-foreground border border-dashed border-overlay/[0.06] hover:border-overlay/[0.1]" onClick={addRow}>
-          <Plus className="h-3 w-3 mr-1" /> 添加
-        </Button>
-        {allowFiles && (
-          <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-foreground border border-dashed border-overlay/[0.06] hover:border-overlay/[0.1]" onClick={addFileRow}>
-            <FileUp className="h-3 w-3 mr-1" /> 添加文件
-          </Button>
-        )}
-      </div>
+      <button onClick={addRow} className="w-full h-7 flex items-center justify-center gap-1 rounded-lg text-xs text-muted-foreground/60 hover:text-muted-foreground border border-dashed border-overlay/[0.06] hover:border-overlay/[0.1] transition-colors cursor-pointer">
+        <Plus className="h-3 w-3" />
+      </button>
     </div>
   )
 }

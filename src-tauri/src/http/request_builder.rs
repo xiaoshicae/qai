@@ -20,10 +20,13 @@ pub async fn build_request(
     // form-data / json / urlencoded 由 reqwest 自动设置 Content-Type（含 boundary 等），
     // 用户手动设置的 Content-Type 会导致冲突（如 multipart 缺 boundary），因此需要过滤掉
     let auto_ct = matches!(item.body_type.as_str(), "form-data" | "json" | "form" | "urlencoded");
+    let mut sent_headers = Vec::new();
     for kv in headers.iter().filter(|kv| kv.enabled) {
         if auto_ct && kv.key.eq_ignore_ascii_case("content-type") {
+            log::info!("[request] 跳过用户 Content-Type: {}", kv.value);
             continue;
         }
+        sent_headers.push(format!("{}: {}", kv.key, kv.value));
         builder = builder.header(&kv.key, &kv.value);
     }
 
@@ -33,6 +36,9 @@ pub async fn build_request(
         .map(|kv| (kv.key.as_str(), kv.value.as_str()))
         .collect();
     builder = builder.query(&enabled_params);
+
+    log::info!("[request] {} {} body_type={} headers=[{}]",
+        item.method, item.url, item.body_type, sent_headers.join(", "));
 
     builder = apply_body(builder, &item.body_type, &item.body_content).await?;
 

@@ -1,7 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { ChevronDown, ChevronRight, MoreHorizontal, Circle } from 'lucide-react'
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
 import { Input } from '@/components/ui/input'
 import type { Collection, Group } from '@/types'
 
@@ -46,17 +45,36 @@ export function countAll(node: GroupNode): number {
   return node.collections.length + node.children.reduce((s, c) => s + countAll(c), 0)
 }
 
-// ─── 可排序行 ──────────────────
-export function SortableGroupRow({ id, children }: { id: string; children: React.ReactNode }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, data: { type: 'group' } })
-  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }
-  return <div ref={setNodeRef} style={style} {...attributes} {...listeners}>{children}</div>
+// ─── 插入指示线 ──────────────────
+function DropIndicator() {
+  return (
+    <div className="relative h-0 z-10">
+      <div className="absolute left-3 right-3 top-0 h-[2px] bg-primary rounded-full" />
+      <div className="absolute left-2 -top-[3px] h-2 w-2 rounded-full bg-primary" />
+    </div>
+  )
 }
 
-export function SortableCollectionRow({ id, groupId, children }: { id: string; groupId: string; children: React.ReactNode }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, data: { type: 'collection', groupId } })
-  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }
-  return <div ref={setNodeRef} style={style} {...attributes} {...listeners}>{children}</div>
+// ─── 可排序行 ──────────────────
+// 拖拽时其他 items 不位移，只靠指示线标识插入位置，松手后才重排
+export function SortableGroupRow({ id, children }: { id: string; overId?: string | null; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useSortable({ id, data: { type: 'group' } })
+  return (
+    <div ref={setNodeRef} style={{ opacity: isDragging ? 0.15 : 1, transition: 'opacity 150ms' }} {...attributes} {...listeners}>
+      {children}
+    </div>
+  )
+}
+
+export function SortableCollectionRow({ id, groupId, overId, children }: { id: string; groupId: string; overId?: string | null; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useSortable({ id, data: { type: 'collection', groupId } })
+  const showLine = !isDragging && overId === id
+  return (
+    <div ref={setNodeRef} style={{ opacity: isDragging ? 0.15 : 1, transition: 'opacity 150ms' }} {...attributes} {...listeners}>
+      {showLine && <DropIndicator />}
+      {children}
+    </div>
+  )
 }
 
 // ─── 递归分组树节点 ─────────────
@@ -64,6 +82,7 @@ export interface GroupTreeNodeProps {
   node: GroupNode; level: number; expanded: Set<string>; selectedNodeId: string | null
   renamingId: string | null; renameValue: string
   inlineInput: { parentGroupId: string; type: 'group' | 'suite' } | null; inlineValue: string
+  overId?: string | null
   onToggle: (id: string) => void; onSelect: (col: Collection) => void
   onGroupMenu: (e: React.MouseEvent, groupId: string) => void; onColMenu: (e: React.MouseEvent, col: Collection) => void
   onRenameChange: (v: string) => void; onRenameCommit: () => void; onRenameCancel: () => void
@@ -72,7 +91,7 @@ export interface GroupTreeNodeProps {
 
 export function GroupTreeNode(props: GroupTreeNodeProps) {
   const { t } = useTranslation()
-  const { node, level, expanded, selectedNodeId, renamingId, renameValue, inlineInput, inlineValue, onToggle, onSelect, onGroupMenu, onColMenu, onRenameChange, onRenameCommit, onRenameCancel, onInlineChange, onInlineCommit, onInlineCancel } = props
+  const { node, level, expanded, selectedNodeId, renamingId, renameValue, inlineInput, inlineValue, overId, onToggle, onSelect, onGroupMenu, onColMenu, onRenameChange, onRenameCommit, onRenameCancel, onInlineChange, onInlineCommit, onInlineCancel } = props
   const isExpanded = expanded.has(node.group.id)
   const total = countAll(node)
   const isRenaming = renamingId === node.group.id
@@ -80,7 +99,7 @@ export function GroupTreeNode(props: GroupTreeNodeProps) {
 
   return (
     <div className="mb-0.5">
-      <div className="group/cat flex items-center gap-1.5 w-full px-2 py-1.5 hover:bg-overlay/[0.04] rounded-lg cursor-pointer transition-all duration-150" style={{ paddingLeft: `${level * 12 + 8}px` }} onClick={() => onToggle(node.group.id)}>
+      <div className={`group/cat flex items-center gap-1.5 w-full px-2 py-1.5 rounded-lg cursor-pointer transition-all duration-150 ${overId === node.group.id ? 'bg-primary/10 ring-1 ring-primary/30' : 'hover:bg-overlay/[0.04]'}`} style={{ paddingLeft: `${level * 12 + 8}px` }} onClick={() => onToggle(node.group.id)}>
         {isExpanded ? <ChevronDown className="h-3 w-3 text-muted-foreground/50 shrink-0" /> : <ChevronRight className="h-3 w-3 text-muted-foreground/50 shrink-0" />}
         {isRenaming ? (
           <Input value={renameValue} onChange={(e) => onRenameChange(e.target.value)} onBlur={onRenameCommit} onKeyDown={(e) => { if (e.key === 'Enter') onRenameCommit(); if (e.key === 'Escape') onRenameCancel() }} className="h-5 text-[10px] font-bold uppercase tracking-wider flex-1 py-0 px-1" autoFocus onClick={(e) => e.stopPropagation()} />
@@ -95,14 +114,27 @@ export function GroupTreeNode(props: GroupTreeNodeProps) {
 
       {isExpanded && (
         <>
-          {node.children.map((child) => <GroupTreeNode key={child.group.id} {...props} node={child} level={level + 1} />)}
+          <SortableContext items={node.children.map((c) => c.group.id)} strategy={verticalListSortingStrategy}>
+            {node.children.map((child) => (
+              <SortableGroupRow key={child.group.id} id={child.group.id} overId={overId}>
+                <GroupTreeNode {...props} node={child} level={level + 1} />
+              </SortableGroupRow>
+            ))}
+          </SortableContext>
+
+          {/* 新建子分组的 inline input — 放在子分组后面、测试集前面 */}
+          {inlineInput && inlineInput.parentGroupId === node.group.id && inlineInput.type === 'group' && (
+            <div style={{ paddingLeft: `${(level + 1) * 12 + 8}px` }} className="pr-2 py-1">
+              <Input value={inlineValue} onChange={(e) => onInlineChange(e.target.value)} onBlur={onInlineCommit} onKeyDown={(e) => { if (e.key === 'Enter') onInlineCommit(); if (e.key === 'Escape') onInlineCancel() }} placeholder={t('common.subgroup_name_placeholder')} className="h-5 text-xs py-0 px-1" autoFocus />
+            </div>
+          )}
 
           <SortableContext items={collectionIds} strategy={verticalListSortingStrategy}>
             {node.collections.map((col) => {
               const isSelected = selectedNodeId === col.id
               const isColRenaming = renamingId === col.id
               return (
-                <SortableCollectionRow key={col.id} id={col.id} groupId={node.group.id}>
+                <SortableCollectionRow key={col.id} id={col.id} groupId={node.group.id} overId={overId}>
                   <div className={`group/item flex items-center gap-1 py-1.5 pr-1 text-xs rounded-lg cursor-pointer transition-all duration-150 ${isSelected ? 'bg-overlay/[0.08] text-foreground glow-ring' : 'text-muted-foreground hover:bg-overlay/[0.04] hover:text-foreground'}`} style={{ paddingLeft: `${(level + 1) * 12 + 8}px` }} onClick={() => !isColRenaming && onSelect(col)}>
                     {isColRenaming ? (
                       <Input value={renameValue} onChange={(e) => onRenameChange(e.target.value)} onBlur={onRenameCommit} onKeyDown={(e) => { if (e.key === 'Enter') onRenameCommit(); if (e.key === 'Escape') onRenameCancel() }} className="h-5 text-xs flex-1 py-0 px-1" autoFocus onClick={(e) => e.stopPropagation()} />
@@ -121,9 +153,10 @@ export function GroupTreeNode(props: GroupTreeNodeProps) {
             })}
           </SortableContext>
 
-          {inlineInput && inlineInput.parentGroupId === node.group.id && (
+          {/* 新建测试集的 inline input — 放在测试集末尾 */}
+          {inlineInput && inlineInput.parentGroupId === node.group.id && inlineInput.type === 'suite' && (
             <div style={{ paddingLeft: `${(level + 1) * 12 + 8}px` }} className="pr-2 py-1">
-              <Input value={inlineValue} onChange={(e) => onInlineChange(e.target.value)} onBlur={onInlineCommit} onKeyDown={(e) => { if (e.key === 'Enter') onInlineCommit(); if (e.key === 'Escape') onInlineCancel() }} placeholder={inlineInput.type === 'suite' ? t('common.suite_name_placeholder') : t('common.subgroup_name_placeholder')} className="h-5 text-xs py-0 px-1" autoFocus />
+              <Input value={inlineValue} onChange={(e) => onInlineChange(e.target.value)} onBlur={onInlineCommit} onKeyDown={(e) => { if (e.key === 'Enter') onInlineCommit(); if (e.key === 'Escape') onInlineCancel() }} placeholder={t('common.suite_name_placeholder')} className="h-5 text-xs py-0 px-1" autoFocus />
             </div>
           )}
         </>

@@ -150,6 +150,55 @@ pub struct UpdateItemPayload {
 pub fn update_item(db: State<'_, DbState>, id: String, payload: UpdateItemPayload) {}
 ```
 
+## 前后端序列化规范（serde + Tauri invoke）
+
+本项目前后端统一使用 **snake_case** 传输字段。Rust 结构体默认 serde 输出就是 snake_case，前端 TypeScript 类型也定义为 snake_case。
+
+### Tauri 命令参数（Deserialize）
+
+- **顶层命令参数**：Tauri 2 自动将前端 camelCase 转为 snake_case，无需特殊处理
+- **嵌套 Payload 结构体**：Tauri **不会**自动转换。如果前端传 camelCase，必须加 `#[serde(rename_all = "camelCase")]`
+
+```rust
+// 错误：前端传 bodyContent，Rust 期望 body_content → 反序列化为 None
+#[derive(Deserialize)]
+pub struct UpdateItemPayload {
+    pub body_content: Option<String>,  // 永远是 None！
+}
+
+// 正确：显式声明 camelCase
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateItemPayload {
+    pub body_content: Option<String>,  // 正确匹配 bodyContent
+}
+```
+
+**规则**：所有作为 Tauri command 嵌套参数的 Deserialize 结构体，如果前端传 camelCase，**必须**加 `#[serde(rename_all = "camelCase")]`。
+
+### DB 中的 JSON 字符串（Serialize + Deserialize）
+
+`KeyValuePair` 等结构体被序列化为 JSON 存入 DB text 字段。前端 JS 写入时用 camelCase（如 `fieldType`），Rust 读取时需兼容：
+
+```rust
+// 正确：rename 统一序列化为 camelCase，alias 兼容旧数据
+#[serde(default, rename = "fieldType", alias = "field_type")]
+pub field_type: String,
+```
+
+**规则**：存入 DB 的 JSON 结构体，如果前端用 camelCase 写入，Rust 端必须用 `rename` + `alias` 双向兼容。
+
+### 返回值（Serialize）
+
+本项目前端 TypeScript 类型全部使用 snake_case（与 Rust 默认输出一致），**不要**在返回值结构体上加 `rename_all = "camelCase"`，否则会破坏前端。
+
+### 新增结构体检查清单
+
+- [ ] 是前端传入的 Payload？→ 检查是否需要 `#[serde(rename_all = "camelCase")]`
+- [ ] 是存入 DB 的 JSON？→ 检查字段名是否前后端一致，需要时用 `rename` + `alias`
+- [ ] 是返回前端的结构体？→ 保持默认 snake_case，不加 `rename_all`
+- [ ] 有多词字段？→ 必须验证前端使用 camelCase 还是 snake_case
+
 ## 并行执行计时
 
 - 并行任务的**总耗时**必须用 wall-clock 时间（`Instant::now().elapsed()`）

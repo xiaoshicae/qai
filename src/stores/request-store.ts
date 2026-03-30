@@ -81,9 +81,20 @@ export const useRequestStore = create<RequestState>((set, get) => ({
     })
 
     try {
+      console.log(`[QAI] → ${currentRequest.method} ${currentRequest.url}`, {
+        bodyType: currentRequest.body_type,
+        headers: currentRequest.headers,
+        body: currentRequest.body_content?.slice(0, 500),
+      })
       const result = await invoke<ExecutionResult>('send_request', { id: currentRequest.id })
+      console.log(`[QAI] ← ${result.response?.status ?? 'ERR'}`, {
+        time: result.response?.time_ms + 'ms',
+        size: result.response?.size_bytes + 'B',
+        error: result.error_message,
+      })
       set({ currentResponse: result })
     } catch (e: any) {
+      console.error(`[QAI] ✗ ${currentRequest.method} ${currentRequest.url}`, e)
       set({
         currentResponse: {
           execution_id: '',

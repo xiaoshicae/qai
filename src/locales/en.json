@@ -259,6 +259,13 @@
     "hours_ago": "{{n}}h ago",
     "days_ago": "{{n}}d ago"
   },
+  "console": {
+    "title": "Console",
+    "clear": "Clear",
+    "empty": "No request logs",
+    "empty_hint": "Logs will appear here after sending requests",
+    "error": "Error"
+  },
   "common": {
     "confirm_delete": "Delete \"{{name}}\"? This cannot be undone.",
     "confirm_delete_group": "Delete group \"{{name}}\" and all its test suites? This cannot be undone.",

@@ -45,11 +45,12 @@ export default function CollectionOverview({ collection, tree }: Props) {
     runMode, setRunMode, concurrency, setConcurrency, delayMs, setDelayMs,
     total, passed, failed, passRate, progressPercent,
     runAll, stopRun, runSingle, runChain,
-    getStatus, getResult, loadStatuses, resetResults, cleanup,
+    getStatus, getResult, loadStatuses, resetResults, clearItemResult, cleanup,
   } = runner
 
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
   const [detailData, setDetailData] = useState<Record<string, CollectionItem>>({})
+  const [itemVersion, setItemVersion] = useState<Record<string, number>>({})
   const [editReq, setEditReq] = useState<CollectionItem | null>(null)
   const editReqSnapshot = useRef<string>('')
   const [isNewReq, setIsNewReq] = useState(false)
@@ -247,31 +248,37 @@ export default function CollectionOverview({ collection, tree }: Props) {
           },
         })
       } else {
-        await invoke('update_item', {
-          id: editReq.id,
-          payload: {
-            name: editReq.name,
-            method: editReq.method,
-            url: editReq.url,
-            headers: editReq.headers,
-            queryParams: editReq.query_params,
-            bodyType: editReq.body_type,
-            bodyContent: editReq.body_content,
-            extractRules: editReq.extract_rules,
-            description: editReq.description,
-            expectStatus: editReq.expect_status,
-          },
-        })
+        const payload = {
+          name: editReq.name,
+          method: editReq.method,
+          url: editReq.url,
+          headers: editReq.headers,
+          queryParams: editReq.query_params,
+          bodyType: editReq.body_type,
+          bodyContent: editReq.body_content,
+          extractRules: editReq.extract_rules,
+          description: editReq.description,
+          expectStatus: editReq.expect_status,
+        }
+        console.log('[QAI] saveEdit payload:', payload)
+        await invoke('update_item', { id: editReq.id, payload })
       }
       await loadTree(collection.id)
-      if (editReq) setDetailData((prev) => { const n = { ...prev }; delete n[editReq.id]; return n })
+      if (editReq) {
+        setDetailData((prev) => { const n = { ...prev }; delete n[editReq.id]; return n })
+        if (!isNewReq) {
+          clearItemResult(editReq.id)
+          setItemVersion((prev) => ({ ...prev, [editReq.id]: (prev[editReq.id] ?? 0) + 1 }))
+        }
+      }
       if (isNewReq) { resetResults() }
+      toast.success(t('settings.saved'))
+      await new Promise((r) => setTimeout(r, 600))
+      setSaving(false)
       setEditReq(null)
-  
       setIsNewReq(false)
     } catch (e: unknown) {
       toast.error(invokeErrorMessage(e) || t('common.save_failed'))
-    } finally {
       setSaving(false)
     }
   }
@@ -483,12 +490,12 @@ export default function CollectionOverview({ collection, tree }: Props) {
                   </div>
                   {groupExpanded && item.steps.map((r, stepIdx) => {
                     const prevDone = stepIdx === 0 || !!getStatus(item.steps[stepIdx - 1].id)
-                    return <ScenarioRow key={r.id} r={r} stepLabel={`Step ${stepIdx + 1}`} indent envVars={envVars} getResult={getResult} getStatus={getStatus} statuses={statuses} progress={progress} runningIds={runningIds} expandedRows={expandedRows} detailData={detailData} loadDetail={loadDetail} toggleRow={toggleRow} runSingle={handleRunSingle} openEdit={openEdit} deleteRequest={deleteRequest} streamingContent={streamingContents[r.id]} canRun={prevDone} />
+                    return <ScenarioRow key={r.id} r={r} stepLabel={`Step ${stepIdx + 1}`} version={itemVersion[r.id]} indent envVars={envVars} getResult={getResult} getStatus={getStatus} statuses={statuses} progress={progress} runningIds={runningIds} expandedRows={expandedRows} detailData={detailData} loadDetail={loadDetail} toggleRow={toggleRow} runSingle={handleRunSingle} openEdit={openEdit} deleteRequest={deleteRequest} streamingContent={streamingContents[r.id]} canRun={prevDone} />
                   })}
                 </div>
               )
             }
-            return <ScenarioRow key={item.id} r={item} envVars={envVars} getResult={getResult} getStatus={getStatus} statuses={statuses} progress={progress} runningIds={runningIds} expandedRows={expandedRows} detailData={detailData} loadDetail={loadDetail} toggleRow={toggleRow} runSingle={handleRunSingle} openEdit={openEdit} deleteRequest={deleteRequest} streamingContent={streamingContents[item.id]} enabled={!disabledIds.has(item.id)} onToggleEnabled={(id) => setDisabledIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })} />
+            return <ScenarioRow key={item.id} r={item} version={itemVersion[item.id]} envVars={envVars} getResult={getResult} getStatus={getStatus} statuses={statuses} progress={progress} runningIds={runningIds} expandedRows={expandedRows} detailData={detailData} loadDetail={loadDetail} toggleRow={toggleRow} runSingle={handleRunSingle} openEdit={openEdit} deleteRequest={deleteRequest} streamingContent={streamingContents[item.id]} enabled={!disabledIds.has(item.id)} onToggleEnabled={(id) => setDisabledIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })} />
           })}
         </div>
       </div>

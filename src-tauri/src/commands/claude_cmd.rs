@@ -57,6 +57,8 @@ pub async fn claude_warmup(
     ];
     if let Some(ref config) = mcp_config_path {
         args.push(format!("--mcp-config={config}"));
+        args.push("--allowedTools".into());
+        args.push("mcp__qai__*".into());
         args.push("--append-system-prompt".into());
         args.push(
             "You are running inside QAI, an API testing tool. \
@@ -146,6 +148,9 @@ pub async fn claude_send(
 
     if let Some(ref config) = mcp_config_path {
         args.push(format!("--mcp-config={config}"));
+        // 预授权 QAI MCP 工具，避免非交互模式下的权限弹窗
+        args.push("--allowedTools".into());
+        args.push("mcp__qai__*".into());
         args.push("--append-system-prompt".into());
         args.push(
             "You are running inside QAI, an API testing tool. \
@@ -334,61 +339,21 @@ fn which_claude() -> Option<String> {
     None
 }
 
-/// 检测 Claude Code CLI 状态：not_installed / not_authenticated / ready
+/// 快速检测 Claude Code CLI 是否已安装（只检查二进制，不发请求）
 #[tauri::command]
-pub async fn claude_check_status() -> Result<serde_json::Value, String> {
-    // 1. 检查 CLI 是否安装
+pub fn claude_check_status() -> Result<serde_json::Value, String> {
     let claude_bin = match which_claude() {
         Some(p) => p,
         None => return Ok(serde_json::json!({
-            "status": "not_installed",
-            "message": "Claude Code CLI not found. Install it first.",
-            "install_url": "https://docs.anthropic.com/en/docs/claude-code/overview"
+            "status": "not_installed"
         })),
     };
 
-    // 2. 获取版本（验证可执行）
+    // 只获取版本验证可执行，不做认证测试（认证由 warmup 处理）
     let version = match std::process::Command::new(&claude_bin).arg("--version").output() {
         Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim().to_string(),
-        _ => return Ok(serde_json::json!({
-            "status": "not_installed",
-            "message": "Claude Code CLI found but not executable."
-        })),
+        _ => return Ok(serde_json::json!({ "status": "not_installed" })),
     };
-
-    // 3. 检查是否已认证（用 -p 发一个简单请求测试）
-    let output = tokio::process::Command::new(&claude_bin)
-        .args(["-p", "--output-format", "stream-json", "--verbose", "--max-turns", "1", "reply ok"])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .output()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let stdout_str = String::from_utf8_lossy(&output.stdout);
-    let stderr_str = String::from_utf8_lossy(&output.stderr);
-
-    // 认证失败的特征
-    if stderr_str.contains("not authenticated")
-        || stderr_str.contains("API key")
-        || stderr_str.contains("login")
-        || stderr_str.contains("auth")
-        || !output.status.success()
-    {
-        // 进一步区分：如果 stdout 有 result 说明认证成功
-        if stdout_str.contains("\"type\":\"result\"") && stdout_str.contains("\"subtype\":\"success\"") {
-            return Ok(serde_json::json!({
-                "status": "ready",
-                "version": version
-            }));
-        }
-        return Ok(serde_json::json!({
-            "status": "not_authenticated",
-            "message": "Claude Code CLI is installed but not authenticated. Run `claude login` in terminal.",
-            "version": version
-        }));
-    }
 
     Ok(serde_json::json!({
         "status": "ready",

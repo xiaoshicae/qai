@@ -171,6 +171,7 @@ npm run build                       # 仅构建前端
 | 依赖 | `/deps [cmd]` | 依赖安全审计与更新（npm + cargo） |
 | 工具 | `/dev` | 启动 Tauri 开发模式 |
 | 工具 | `/kill-port <port>` | Kill 端口占用进程 |
+| 发布 | `/publish [patch\|minor\|major]` | 一键发版（版本升级 → 校验 → 构建 → tag → CI） |
 
 ## 当前状态 (v0.1.0)
 

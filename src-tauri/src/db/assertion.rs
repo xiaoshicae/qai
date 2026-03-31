@@ -92,6 +92,34 @@ pub fn update(
     get(conn, id)
 }
 
+/// 同步 status_code 断言的 expected 值（当 expect_status 变更时调用）
+/// 如果存在 status_code 类型的断言，更新其 expected；如果不存在，创建一条。
+pub fn sync_status_code_assertion(conn: &Connection, item_id: &str, expect_status: u16) -> Result<(), rusqlite::Error> {
+    let expected = expect_status.to_string();
+    // 查找已有的 status_code 断言
+    let existing: Option<String> = conn
+        .query_row(
+            "SELECT id FROM assertions WHERE item_id = ?1 AND type = 'status_code' LIMIT 1",
+            params![item_id],
+            |row| row.get(0),
+        )
+        .ok();
+
+    if let Some(assertion_id) = existing {
+        conn.execute(
+            "UPDATE assertions SET expected = ?1 WHERE id = ?2",
+            params![expected, assertion_id],
+        )?;
+    } else {
+        let id = Uuid::new_v4().to_string();
+        conn.execute(
+            "INSERT INTO assertions (id, item_id, type, expression, operator, expected) VALUES (?1, ?2, 'status_code', '', 'eq', ?3)",
+            params![id, item_id, expected],
+        )?;
+    }
+    Ok(())
+}
+
 pub fn delete(conn: &Connection, id: &str) -> Result<(), rusqlite::Error> {
     conn.execute("DELETE FROM assertions WHERE id = ?1", params![id])?;
     Ok(())

@@ -2,9 +2,12 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { useTranslation } from 'react-i18next'
 import {
-  Play, Download, ChevronDown, ChevronRight, Loader2, Plus, Trash2, Link2, Square, Zap, ListOrdered,
+  Play, Download, ChevronDown, ChevronRight, Loader2, Plus, Trash2, Link2, Square, Zap, ListOrdered, GripVertical, Pencil, Copy,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
+import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Progress } from '@/components/ui/progress'
@@ -19,10 +22,25 @@ import type { Collection, CollectionTreeNode, CollectionItem } from '@/types'
 import {
   flattenTreeToTableItems,
   allRequestsFromTableItems,
-  type StepGroup,
+  type TableItem,
 } from './collection-overview-model'
 import { StatCard, InlineEdit, EditForm } from './collection-overview-edit-parts'
 import { ScenarioRow } from './collection-overview-scenario-row'
+
+function getTableItemId(item: TableItem): string {
+  return 'isChain' in item ? item.groupId : item.id
+}
+
+/** 可排序行包装器 —— 给子元素注入 drag handle 的 listeners */
+function SortableRow({ id, children }: { id: string; children: (dragHandleProps: Record<string, unknown>) => React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : undefined }
+  return (
+    <div ref={setNodeRef} style={style} {...attributes}>
+      {children(listeners ?? {})}
+    </div>
+  )
+}
 
 interface Props {
   collection: Collection
@@ -58,6 +76,38 @@ export default function CollectionOverview({ collection, tree }: Props) {
   const [disabledIds, setDisabledIds] = useState<Set<string>>(new Set())
   const [saving, setSaving] = useState(false)
   const [savingChain, setSavingChain] = useState(false)
+  const [editingChainId, setEditingChainId] = useState<string | null>(null)
+  const [editingChainName, setEditingChainName] = useState('')
+
+  // ── 拖拽排序 ──
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
+  const sortableIds = useMemo(() => tableItems.map(getTableItemId), [tableItems])
+
+  const handleDragEnd = useCallback(async (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIdx = sortableIds.indexOf(active.id as string)
+    const newIdx = sortableIds.indexOf(over.id as string)
+    if (oldIdx === -1 || newIdx === -1) return
+
+    // 计算新顺序
+    const reordered = [...tableItems]
+    const [moved] = reordered.splice(oldIdx, 1)
+    reordered.splice(newIdx, 0, moved)
+
+    // 构建 sort_order 更新列表
+    const orders = reordered.map((item, i) => ({
+      id: getTableItemId(item),
+      sort_order: i,
+    }))
+
+    try {
+      await invoke('reorder_items', { items: orders })
+      await loadTree(collection.id)
+    } catch (e) {
+      toast.error(invokeErrorMessage(e))
+    }
+  }, [tableItems, sortableIds, collection.id, loadTree])
 
   useEffect(() => { return () => { cleanup() } }, [])
   useEffect(() => { loadStatuses(); resetResults(); setDetailData({}) }, [collection.id])
@@ -117,6 +167,23 @@ export default function CollectionOverview({ collection, tree }: Props) {
   const [showChainDialog, setShowChainDialog] = useState(false)
   const [chainName, setChainName] = useState('')
   const [chainDesc, setChainDesc] = useState('')
+  const startEditChain = (chainId: string, currentName: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setEditingChainId(chainId)
+    setEditingChainName(currentName)
+  }
+  const commitChainRename = async () => {
+    if (!editingChainId) return
+    const trimmed = editingChainName.trim()
+    if (trimmed) {
+      try {
+        await invoke('update_item', { id: editingChainId, payload: { name: trimmed } })
+        await loadTree(collection.id)
+      } catch (e) { toast.error(invokeErrorMessage(e)) }
+    }
+    setEditingChainId(null)
+  }
+
   const addChain = () => { setChainName(''); setChainDesc(''); setShowChainDialog(true) }
   const saveChain = async () => {
     if (!chainName.trim() || savingChain) return
@@ -133,8 +200,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
   const addChainStep = async (chainId: string) => {
     setExpandedRows((prev) => {
       const n = new Set(prev)
-      const idx = tableItems.findIndex((t) => 'isChain' in t && (t as StepGroup).groupId === chainId)
-      if (idx >= 0) n.add(`group-${idx}`)
+      n.add(`group-${chainId}`)
       return n
     })
     setIsNewReq(true)
@@ -174,6 +240,14 @@ export default function CollectionOverview({ collection, tree }: Props) {
     if (selectedNodeId === id) selectNode(null)
     resetResults()
   }
+
+  const copyRequest = useCallback(async (id: string) => {
+    try {
+      await invoke('duplicate_item', { id })
+      await loadTree(collection.id)
+      resetResults()
+    } catch (e) { toast.error(invokeErrorMessage(e)) }
+  }, [collection.id, loadTree, resetResults])
 
   const deleteRequest = async (id: string, name: string, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -439,12 +513,15 @@ export default function CollectionOverview({ collection, tree }: Props) {
             {t('scenario.scenario')}
           </span><span>{t('scenario.status')}</span><span>{t('scenario.http')}</span><span>{t('scenario.total_time')}</span><span>{t('scenario.last_run')}</span><span />
         </div>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
         <div className="overflow-y-auto divide-y divide-overlay/[0.04]" style={{ maxHeight: 'calc(100vh - 380px)' }}>
           {tableItems.length === 0 ? (
             <EmptyState title={t('dashboard.no_cases')} className="py-12" />
-          ) : tableItems.map((item, itemIdx) => {
+          ) : tableItems.map((item) => {
             if ('isChain' in item) {
-              const groupExpanded = expandedRows.has(`group-${itemIdx}`)
+              const groupKey = `group-${item.groupId}`
+              const groupExpanded = expandedRows.has(groupKey)
               const isAnyStepRunning = runningIds.has(item.groupId) || item.steps.some((s) => runningIds.has(s.id) || progress.find((p) => p.item_id === s.id)?.status === 'running')
               const groupStatuses = item.steps.map((s) => getStatus(s.id)).filter(Boolean)
               const groupPass = groupStatuses.every((s) => s === 'success')
@@ -452,12 +529,17 @@ export default function CollectionOverview({ collection, tree }: Props) {
               const groupLabel = isAnyStepRunning ? 'Running' : groupStatuses.length === 0 ? '-' : groupPass ? 'PASS' : groupFail ? 'FAIL' : '-'
               const groupColor = isAnyStepRunning ? 'text-blue-500' : groupStatuses.length === 0 ? '' : groupPass ? 'text-emerald-500' : groupFail ? 'text-red-500' : ''
               return (
-                <div key={`group-${itemIdx}`}>
+                <SortableRow key={item.groupId} id={item.groupId}>
+                  {(dragHandleProps) => (
+                <div>
                   <div
                     className="grid grid-cols-[minmax(0,1fr)_80px_64px_64px_80px_72px] gap-2 px-4 py-2.5 text-sm bg-amber-500/5 hover:bg-amber-500/10 cursor-pointer transition-colors group"
-                    onClick={() => { const key = `group-${itemIdx}`; setExpandedRows((p) => { const n = new Set(p); n.has(key) ? n.delete(key) : n.add(key); return n }) }}
+                    onClick={() => setExpandedRows((p) => { const n = new Set(p); n.has(groupKey) ? n.delete(groupKey) : n.add(groupKey); return n })}
                   >
                     <span className="flex items-center gap-1.5 min-w-0">
+                      <span {...dragHandleProps} className="cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-40 hover:!opacity-100 transition-opacity shrink-0 touch-none" onClick={(e) => e.stopPropagation()}>
+                        <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />
+                      </span>
                       <input
                         type="checkbox"
                         checked={!disabledIds.has(item.groupId)}
@@ -467,8 +549,22 @@ export default function CollectionOverview({ collection, tree }: Props) {
                       />
                       {groupExpanded ? <ChevronDown className="h-3 w-3 shrink-0 text-amber-500" /> : <ChevronRight className="h-3 w-3 shrink-0 text-amber-500" />}
                       <Link2 className="h-3 w-3 shrink-0 text-amber-500" />
-                      <span className="font-medium truncate text-amber-500/90">{item.groupName}</span>
-                      <span className="text-[10px] text-amber-500/50 ml-1">{item.steps.length} {t('scenario.steps')}</span>
+                      {editingChainId === item.groupId ? (
+                        <Input
+                          value={editingChainName}
+                          onChange={(e) => setEditingChainName(e.target.value)}
+                          onBlur={commitChainRename}
+                          onKeyDown={(e) => { if (e.key === 'Enter') commitChainRename(); if (e.key === 'Escape') setEditingChainId(null) }}
+                          className="h-6 text-sm font-medium w-48"
+                          autoFocus
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      ) : (
+                        <>
+                          <span className="font-medium truncate text-amber-500/90" onDoubleClick={(e) => startEditChain(item.groupId, item.groupName, e)}>{item.groupName}</span>
+                          <span className="text-[10px] text-amber-500/50 ml-1">{item.steps.length} {t('scenario.steps')}</span>
+                        </>
+                      )}
                     </span>
                     <span className={`flex items-center gap-1 font-bold text-xs ${groupColor}`}>{groupLabel}</span>
                     <span className="font-mono text-xs self-center">-</span>
@@ -480,8 +576,14 @@ export default function CollectionOverview({ collection, tree }: Props) {
                           {isChainRunning ? <Loader2 className="h-3 w-3 animate-spin text-amber-500" /> : <Play className="h-3 w-3 text-amber-500" />}
                         </button>
                       ) })()}
+                      <button type="button" className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 hover:bg-overlay/[0.04] transition-all cursor-pointer" onClick={(e) => startEditChain(item.groupId, item.groupName, e)} title={t('tree.rename')}>
+                        <Pencil className="h-3 w-3 text-amber-500" />
+                      </button>
                       <button type="button" className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 hover:bg-overlay/[0.04] transition-all cursor-pointer" onClick={() => addChainStep(item.groupId)} title={t('chain.add_step')}>
                         <Plus className="h-3 w-3 text-amber-500" />
+                      </button>
+                      <button type="button" className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 hover:bg-overlay/[0.04] transition-all cursor-pointer" onClick={() => copyRequest(item.groupId)} title={t('common.copy')}>
+                        <Copy className="h-3 w-3 text-amber-500" />
                       </button>
                       <button type="button" className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 hover:bg-destructive/10 transition-all cursor-pointer" onClick={(e) => deleteChain(item.groupId, item.groupName, e)} title={t('common.delete')}>
                         <Trash2 className="h-3 w-3 text-destructive" />
@@ -490,14 +592,24 @@ export default function CollectionOverview({ collection, tree }: Props) {
                   </div>
                   {groupExpanded && item.steps.map((r, stepIdx) => {
                     const prevDone = stepIdx === 0 || !!getStatus(item.steps[stepIdx - 1].id)
-                    return <ScenarioRow key={r.id} r={r} stepLabel={`Step ${stepIdx + 1}`} version={itemVersion[r.id]} indent envVars={envVars} getResult={getResult} getStatus={getStatus} statuses={statuses} progress={progress} runningIds={runningIds} expandedRows={expandedRows} detailData={detailData} loadDetail={loadDetail} toggleRow={toggleRow} runSingle={handleRunSingle} openEdit={openEdit} deleteRequest={deleteRequest} streamingContent={streamingContents[r.id]} canRun={prevDone} />
+                    return <ScenarioRow key={r.id} r={r} stepLabel={`Step ${stepIdx + 1}`} version={itemVersion[r.id]} indent envVars={envVars} getResult={getResult} getStatus={getStatus} statuses={statuses} progress={progress} runningIds={runningIds} expandedRows={expandedRows} detailData={detailData} loadDetail={loadDetail} toggleRow={toggleRow} runSingle={handleRunSingle} openEdit={openEdit} copyRequest={copyRequest} deleteRequest={deleteRequest} streamingContent={streamingContents[r.id]} canRun={prevDone} />
                   })}
                 </div>
+                  )}
+                </SortableRow>
               )
             }
-            return <ScenarioRow key={item.id} r={item} version={itemVersion[item.id]} envVars={envVars} getResult={getResult} getStatus={getStatus} statuses={statuses} progress={progress} runningIds={runningIds} expandedRows={expandedRows} detailData={detailData} loadDetail={loadDetail} toggleRow={toggleRow} runSingle={handleRunSingle} openEdit={openEdit} deleteRequest={deleteRequest} streamingContent={streamingContents[item.id]} enabled={!disabledIds.has(item.id)} onToggleEnabled={(id) => setDisabledIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })} />
+            return (
+              <SortableRow key={item.id} id={item.id}>
+                {(dragHandleProps) => (
+                  <ScenarioRow r={item} version={itemVersion[item.id]} envVars={envVars} getResult={getResult} getStatus={getStatus} statuses={statuses} progress={progress} runningIds={runningIds} expandedRows={expandedRows} detailData={detailData} loadDetail={loadDetail} toggleRow={toggleRow} runSingle={handleRunSingle} openEdit={openEdit} copyRequest={copyRequest} deleteRequest={deleteRequest} streamingContent={streamingContents[item.id]} enabled={!disabledIds.has(item.id)} onToggleEnabled={(id) => setDisabledIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })} dragHandleProps={dragHandleProps} />
+                )}
+              </SortableRow>
+            )
           })}
         </div>
+        </SortableContext>
+        </DndContext>
       </div>
 
       <Dialog open={!!editReq} onOpenChange={async (open) => { if (!open) await closeEditDialog() }}>

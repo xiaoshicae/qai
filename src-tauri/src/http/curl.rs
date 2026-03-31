@@ -62,10 +62,12 @@ pub fn parse_curl(input: &str) -> Result<CurlParseResult, String> {
                     let val = &tokens[i];
                     if let Some((key, value)) = val.split_once('=') {
                         let is_file = value.starts_with('@');
-                        let actual_value = if is_file { &value[1..] } else { value };
+                        let raw = if is_file { &value[1..] } else { value };
+                        // 去掉 Postman 导出的包裹双引号，如 '"value"' → 'value'
+                        let actual_value = strip_surrounding_quotes(raw);
                         form_fields.push(KeyValuePair {
                             key: key.to_string(),
-                            value: actual_value.to_string(),
+                            value: actual_value,
                             enabled: true,
                             field_type: if is_file { "file".to_string() } else { String::new() },
                         });
@@ -90,9 +92,9 @@ pub fn parse_curl(input: &str) -> Result<CurlParseResult, String> {
         i += 1;
     }
 
-    // 推断 method
+    // 推断 method（--form 也隐含 POST）
     if method.is_empty() {
-        method = if data.is_some() { "POST".into() } else { "GET".into() };
+        method = if data.is_some() || !form_fields.is_empty() { "POST".into() } else { "GET".into() };
     }
 
     // 推断 body_type
@@ -173,6 +175,15 @@ pub fn to_curl(
     }
 
     parts.join(" \\\n")
+}
+
+/// 去掉包裹的双引号：`"value"` → `value`
+fn strip_surrounding_quotes(s: &str) -> String {
+    if s.len() >= 2 && s.starts_with('"') && s.ends_with('"') {
+        s[1..s.len() - 1].to_string()
+    } else {
+        s.to_string()
+    }
 }
 
 /// 简单的 shell tokenizer（处理引号）
@@ -263,6 +274,23 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_form_data_postman_quoted_values() {
+        // Postman 导出格式：单引号包裹双引号 --form 'key="value"'
+        let curl = r#"curl --location 'https://api.example.com/upload' \
+--header 'Authorization: Bearer token' \
+--form 'model="whisper-v3"' \
+--form 'language="en"' \
+--form 'file=@"/Users/test/audio.webm"'"#;
+        let result = parse_curl(curl).unwrap();
+        assert_eq!(result.method, "POST"); // --form 隐含 POST
+        let fields: Vec<KeyValuePair> = serde_json::from_str(&result.body_content).unwrap();
+        assert_eq!(fields[0].value, "whisper-v3"); // 无多余引号
+        assert_eq!(fields[1].value, "en");
+        assert_eq!(fields[2].value, "/Users/test/audio.webm"); // 文件路径也无引号
+        assert_eq!(fields[2].field_type, "file");
+    }
+
+    #[test]
     fn test_parse_form_data_fields() {
         let curl = r#"curl -X POST 'http://localhost:8000/api/v1/generate' -H 'Authorization: Bearer token' -F 'model=whisper_v3_turbo' -F 'language=en' -F 'file=@/Users/test/audio.wav'"#;
         let result = parse_curl(curl).unwrap();
@@ -274,6 +302,6 @@ mod tests {
         assert_eq!(fields[0]["value"], "whisper_v3_turbo");
         assert_eq!(fields[2]["key"], "file");
         assert_eq!(fields[2]["value"], "/Users/test/audio.wav");
-        assert_eq!(fields[2]["field_type"], "file");
+        assert_eq!(fields[2]["fieldType"], "file");
     }
 }

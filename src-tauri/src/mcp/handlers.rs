@@ -1,6 +1,77 @@
 use rusqlite::Connection;
 use serde_json::{json, Value};
 
+// ─── Search ────────────────────────────────────────────────────
+
+pub fn search(conn: &Connection, keyword: &str, scope: Option<&str>) -> Result<String, String> {
+    let kw = keyword.to_lowercase();
+    let scope = scope.unwrap_or("all");
+    let mut results = json!({});
+
+    if scope == "all" || scope == "groups" {
+        let groups = qai_lib::db::group::list_all(conn).map_err(|e| e.to_string())?;
+        let matched: Vec<_> = groups.into_iter()
+            .filter(|g| g.name.to_lowercase().contains(&kw))
+            .collect();
+        if !matched.is_empty() {
+            // 同时列出每个 group 下的 collections
+            let all_cols = qai_lib::db::collection::list_all(conn).map_err(|e| e.to_string())?;
+            let group_results: Vec<Value> = matched.iter().map(|g| {
+                let cols: Vec<_> = all_cols.iter()
+                    .filter(|c| c.group_id.as_deref() == Some(&g.id))
+                    .map(|c| json!({ "id": c.id, "name": c.name }))
+                    .collect();
+                json!({ "id": g.id, "name": g.name, "type": "group", "collections": cols })
+            }).collect();
+            results["groups"] = json!(group_results);
+        }
+    }
+
+    if scope == "all" || scope == "collections" {
+        let cols = qai_lib::db::collection::list_all(conn).map_err(|e| e.to_string())?;
+        let matched: Vec<Value> = cols.into_iter()
+            .filter(|c| c.name.to_lowercase().contains(&kw) || c.description.to_lowercase().contains(&kw))
+            .map(|c| json!({ "id": c.id, "name": c.name, "description": c.description, "group_id": c.group_id, "type": "collection" }))
+            .collect();
+        if !matched.is_empty() {
+            results["collections"] = json!(matched);
+        }
+    }
+
+    if scope == "all" || scope == "items" {
+        // 搜索所有集合的 items
+        let cols = qai_lib::db::collection::list_all(conn).map_err(|e| e.to_string())?;
+        let mut matched: Vec<Value> = Vec::new();
+        for col in &cols {
+            let items = qai_lib::db::item::list_by_collection(conn, &col.id).map_err(|e| e.to_string())?;
+            for item in items {
+                if item.name.to_lowercase().contains(&kw) || item.url.to_lowercase().contains(&kw) {
+                    matched.push(json!({
+                        "id": item.id,
+                        "name": item.name,
+                        "item_type": item.item_type,
+                        "method": item.method,
+                        "url": item.url,
+                        "collection_id": item.collection_id,
+                        "collection_name": col.name,
+                        "type": "item"
+                    }));
+                }
+            }
+            if matched.len() >= 50 { break; }
+        }
+        if !matched.is_empty() {
+            results["items"] = json!(matched);
+        }
+    }
+
+    if results.as_object().map_or(true, |m| m.is_empty()) {
+        return Ok(format!("No results found for '{keyword}'. Try `list_groups` or `list_collections` to see all available entities."));
+    }
+
+    ok_json(&results)
+}
+
 // ─── Collection ────────────────────────────────────────────────
 
 pub fn list_collections(conn: &Connection) -> Result<String, String> {

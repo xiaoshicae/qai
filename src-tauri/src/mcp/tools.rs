@@ -6,14 +6,29 @@ use super::handlers;
 pub fn list_tools() -> Vec<Value> {
     vec![
         // ─── Collection ────────────────────────────────────────
+        // ─── Search (name resolution) ────────────────────────────
+        json!({
+            "name": "search",
+            "description": "Search QAI data by keyword. Use this FIRST when the user mentions an entity by name (e.g. 'VIDEO', 'login', 'User API'). Searches across groups, collections, and items (test cases). Returns matching entities with their IDs so you can operate on them.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "keyword": { "type": "string", "description": "Search keyword (case-insensitive, partial match)" },
+                    "scope": { "type": "string", "enum": ["all", "groups", "collections", "items"], "description": "Limit search scope (default: all)" }
+                },
+                "required": ["keyword"]
+            }
+        }),
+
+        // ─── Collection ────────────────────────────────────────
         json!({
             "name": "list_collections",
-            "description": "List all test collections. Returns array of {id, name, description, group_id, sort_order, created_at}. Use get_collection to see items inside a collection.",
+            "description": "List all test collections (test suites). Each collection belongs to a sidebar group and contains test items. Use this when the user asks 'what tests exist', 'show all suites', or 'list collections'. Returns array of {id, name, description, group_id, sort_order, created_at}.",
             "inputSchema": { "type": "object", "properties": {} }
         }),
         json!({
             "name": "get_collection",
-            "description": "Get a collection with all its items (test cases, folders, chains). Items have parent_id for tree nesting. item.type is 'request'|'folder'|'chain'.",
+            "description": "Get a collection with all its items (test cases, folders, chains). Use this to see what's inside a specific test suite. Items have parent_id for tree nesting. item.type is 'request'|'folder'|'chain'.",
             "inputSchema": {
                 "type": "object",
                 "properties": { "collection_id": { "type": "string" } },
@@ -174,7 +189,7 @@ pub fn list_tools() -> Vec<Value> {
         // ─── Execution ─────────────────────────────────────────
         json!({
             "name": "send_request",
-            "description": "Execute a saved test case by ID. Applies active environment variables, runs the HTTP request, evaluates assertions, saves the result to history, and returns the full execution result including response status, headers, body, timing, and assertion outcomes.",
+            "description": "Execute a saved test case (request item) by its ID. Use this when the user says 'run this request', 'test this API', or 'send this'. Applies active environment variables, runs the HTTP request, evaluates assertions, saves to history. Returns full result: status, headers, body, timing, assertion outcomes.",
             "inputSchema": {
                 "type": "object",
                 "properties": { "id": { "type": "string", "description": "Item ID of the request to execute" } },
@@ -198,7 +213,7 @@ pub fn list_tools() -> Vec<Value> {
         }),
         json!({
             "name": "run_collection",
-            "description": "Execute all test cases in a collection (or under a specific folder/chain). Chains are executed sequentially with variable passing; other requests run in parallel. Results are saved to history. Returns summary: total, passed, failed, errors, time, and per-item results.",
+            "description": "Execute all test cases in a collection (or under a specific folder/chain). Use this when the user says 'run all tests', 'run VIDEO tests', 'execute this suite', etc. First use `search` or `list_collections` to find the collection_id. Chains execute sequentially with variable passing; other requests run in parallel. Results are saved to history. Returns summary: total, passed, failed, errors, time, and per-item results.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -276,7 +291,7 @@ pub fn list_tools() -> Vec<Value> {
         // ─── History ────────────────────────────────────────────
         json!({
             "name": "list_history",
-            "description": "List recent execution history. Returns item name, status (success/failed/error), URL, method, response status, timing, and assertion results. Supports filtering by status, method, and keyword.",
+            "description": "List recent execution history. Use when the user asks 'what failed', 'show results', 'recent runs', etc. Returns item name, status (success/failed/error), URL, method, response status, timing, and assertion results. Supports filtering by status, method, and keyword.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -289,7 +304,7 @@ pub fn list_tools() -> Vec<Value> {
         }),
         json!({
             "name": "get_history_stats",
-            "description": "Get overall execution statistics: total runs, success/failed/error counts, average response time.",
+            "description": "Get overall execution statistics. Use when the user asks 'how are tests doing', 'show stats', 'pass rate', etc. Returns: total runs, success/failed/error counts, average response time.",
             "inputSchema": { "type": "object", "properties": {} }
         }),
         json!({
@@ -308,7 +323,7 @@ pub fn list_tools() -> Vec<Value> {
         // ─── Group (sidebar organization) ───────────────────────
         json!({
             "name": "list_groups",
-            "description": "List all sidebar groups. Groups organize collections in the sidebar. They can be nested (parent_id).",
+            "description": "List all sidebar groups (also called modules or categories by users, e.g. TEXT, IMAGE, VIDEO). Groups organize collections in the sidebar. They can be nested (parent_id). Use this when the user mentions a module or category name.",
             "inputSchema": { "type": "object", "properties": {} }
         }),
         json!({
@@ -344,6 +359,9 @@ pub fn call_tool(
     args: &Value,
 ) -> Result<String, String> {
     match name {
+        // Search
+        "search" => handlers::search(conn, &get_str(args, "keyword")?, get_opt_str(args, "scope").as_deref()),
+
         // Collection
         "list_collections" => handlers::list_collections(conn),
         "get_collection" => handlers::get_collection(conn, &get_str(args, "collection_id")?),

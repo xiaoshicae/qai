@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
-import { Eye, EyeOff, Check, Loader2, Wifi, WifiOff, ExternalLink, Save, Bot, Sparkles } from 'lucide-react'
+import { Eye, EyeOff, Check, Loader2, Wifi, WifiOff, ExternalLink, Save, Bot } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from 'react-i18next'
@@ -105,7 +105,7 @@ function FeatureToggle({ label, hint, icon: Icon, enabled, onToggle }: {
 export default function AIConfigSection({ onLoaded }: Props) {
   const { t } = useTranslation()
   const [claudeCodeOn, setClaudeCodeOn] = useState(() => localStorage.getItem(FEATURE_KEYS.claudeCode) === 'true')
-  const [aiAssistantOn, setAiAssistantOn] = useState(() => localStorage.getItem(FEATURE_KEYS.aiAssistant) === 'true')
+  const [aiAssistantOn] = useState(() => localStorage.getItem(FEATURE_KEYS.aiAssistant) === 'true')
 
   const toggleFeature = (key: string, current: boolean, setter: (v: boolean) => void) => {
     const next = !current
@@ -231,13 +231,14 @@ export default function AIConfigSection({ onLoaded }: Props) {
           enabled={claudeCodeOn}
           onToggle={() => toggleFeature(FEATURE_KEYS.claudeCode, claudeCodeOn, setClaudeCodeOn)}
         />
-        <FeatureToggle
+        {/* AI 助手功能尚未完善，暂时隐藏 */}
+        {/* <FeatureToggle
           icon={Sparkles}
           label={t('settings.ai_assistant_label')}
           hint={t('settings.ai_assistant_hint')}
           enabled={aiAssistantOn}
           onToggle={() => toggleFeature(FEATURE_KEYS.aiAssistant, aiAssistantOn, setAiAssistantOn)}
-        />
+        /> */}
       </div>
 
       {aiAssistantOn && (

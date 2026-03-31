@@ -122,6 +122,53 @@ pub fn list_summary_by_collection(conn: &Connection, collection_id: &str) -> Res
     rows.collect()
 }
 
+/// 复制一个 item（含断言和子项），新 item 排在同级最后
+pub fn duplicate(conn: &Connection, id: &str) -> Result<CollectionItem, rusqlite::Error> {
+    let src = get(conn, id)?;
+    let new_id = Uuid::new_v4().to_string();
+    let new_name = format!("{}-copy", src.name);
+    let max_sort: i32 = conn
+        .query_row(
+            "SELECT COALESCE(MAX(sort_order), -1) FROM collection_items WHERE collection_id = ?1 AND parent_id IS ?2",
+            params![src.collection_id, src.parent_id],
+            |row| row.get(0),
+        )
+        .unwrap_or(-1);
+    duplicate_single(conn, &src, &new_id, &new_name, src.parent_id.as_deref(), max_sort + 1)?;
+    // 递归复制子项（chain/folder 下的 steps）
+    let children = list_by_parent(conn, id)?;
+    for child in &children {
+        let child_new_id = Uuid::new_v4().to_string();
+        duplicate_single(conn, child, &child_new_id, &child.name, Some(&new_id), child.sort_order)?;
+    }
+    get(conn, &new_id)
+}
+
+/// 复制单个 item 及其断言（不递归）
+fn duplicate_single(conn: &Connection, src: &CollectionItem, new_id: &str, new_name: &str, parent_id: Option<&str>, sort_order: i32) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        &format!(
+            "INSERT INTO collection_items ({}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17, datetime('now','localtime'), datetime('now','localtime'))",
+            ITEM_COLS
+        ),
+        params![
+            new_id, src.collection_id, parent_id, src.item_type, new_name,
+            sort_order, src.method, src.url, src.headers, src.query_params,
+            src.body_type, src.body_content, src.extract_rules, src.description,
+            src.expect_status, src.poll_config, src.protocol,
+        ],
+    )?;
+    let assertions = crate::db::assertion::list_by_item(conn, &src.id)?;
+    for a in &assertions {
+        let aid = Uuid::new_v4().to_string();
+        conn.execute(
+            "INSERT INTO assertions (id, item_id, type, expression, operator, expected, enabled, sort_order) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+            params![aid, new_id, a.assertion_type, a.expression, a.operator, a.expected, a.enabled, a.sort_order],
+        )?;
+    }
+    Ok(())
+}
+
 pub fn delete(conn: &Connection, id: &str) -> Result<(), rusqlite::Error> {
     conn.execute("DELETE FROM collection_items WHERE id = ?1", params![id])?;
     Ok(())

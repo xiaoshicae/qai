@@ -58,8 +58,38 @@ pub fn update_item(
     payload: crate::models::item::UpdateItemPayload,
 ) -> Result<CollectionItem, String> {
     let conn = db.conn()?;
+    // 同步 expect_status 到 status_code 断言
+    if let Some(es) = payload.expect_status {
+        crate::db::assertion::sync_status_code_assertion(&conn, &id, es)
+            .map_err(|e| e.to_string())?;
+    }
     crate::db::item::update(&conn, &id, &payload)
         .map_err(|e| e.to_string())
+}
+
+#[derive(serde::Deserialize)]
+pub struct ItemOrder {
+    pub id: String,
+    pub sort_order: i32,
+}
+
+#[tauri::command]
+pub fn reorder_items(db: State<'_, DbState>, items: Vec<ItemOrder>) -> Result<(), String> {
+    let conn = db.conn()?;
+    for item in &items {
+        conn.execute(
+            "UPDATE collection_items SET sort_order = ?1 WHERE id = ?2",
+            rusqlite::params![item.sort_order, item.id],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn duplicate_item(db: State<'_, DbState>, id: String) -> Result<CollectionItem, String> {
+    let conn = db.conn()?;
+    crate::db::item::duplicate(&conn, &id).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

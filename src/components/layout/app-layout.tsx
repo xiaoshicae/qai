@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { Outlet } from 'react-router-dom'
+import { invoke } from '@tauri-apps/api/core'
 import { Sparkles, ScrollText } from 'lucide-react'
 import Sidebar from './sidebar'
 import AIPanel from '@/components/ai/ai-panel'
@@ -71,6 +72,15 @@ export default function AppLayout() {
     }
     window.addEventListener('qai-settings-changed', handler)
     return () => window.removeEventListener('qai-settings-changed', handler)
+  }, [])
+
+  // 应用启动时后台预热 Claude Code（如果已开启）
+  useEffect(() => {
+    if (localStorage.getItem('qai.claude_code_enabled') !== 'true') return
+    // fire-and-forget：准备 MCP 配置 → 预热 session，失败静默忽略
+    invoke<string>('prepare_mcp_config')
+      .then((path) => invoke('claude_warmup', { mcpConfigPath: path }))
+      .catch(() => {})
   }, [])
 
   const openTerminal = () => { setPanelMode('terminal'); setOpen(true) }

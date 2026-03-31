@@ -28,7 +28,8 @@
     "new_subgroup": "New Subgroup",
     "run_all": "Run All",
     "rename": "Rename",
-    "delete": "Delete Group"
+    "delete": "Delete Group",
+    "promote_top": "Move to Top Level"
   },
   "collection_menu": {
     "add_case": "Add Test Case"
@@ -115,7 +116,10 @@
     "cost": "Cost stats",
     "slash_compact": "Compact context",
     "slash_cost": "View cost stats",
-    "slash_help": "Help"
+    "slash_help": "Help",
+    "warming_up": "Initializing...",
+    "warmed_up": "Ready",
+    "warming_hint": "Initializing in background, start typing..."
   },
   "settings": {
     "title": "Settings",
@@ -275,6 +279,7 @@
     "none": "None",
     "edit": "Edit",
     "delete": "Delete",
+    "copy": "Copy",
     "run": "Run",
     "new_step": "New Step",
     "new_test_case": "New Test Case",

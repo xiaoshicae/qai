@@ -6,19 +6,51 @@ use super::tools;
 
 /// QAI 数据模型说明，写入 MCP initialize 响应，帮助 AI 理解上下文
 const INSTRUCTIONS: &str = "\
-QAI is an API testing tool (like Postman). Data model:
+You are connected to **QAI**, an AI-powered API testing tool (similar to Postman). \
+All test data lives in QAI's database — use QAI tools to query and operate on it. \
+Do NOT search the user's codebase for test cases, modules, or collections.
 
-- **Groups**: Sidebar folders for organizing collections (nestable via parent_id)
-- **Collections**: Test suites containing items
-- **Items**: Nodes in a collection tree (type: request | folder | chain)
-  - request: HTTP request with method, URL, headers, body, assertions
-  - folder: container for organizing requests
-  - chain: sequence of requests executed in order; steps can extract response values as variables for subsequent steps
-- **Assertions**: Validation rules on responses (status_code, json_path, body_contains, response_time, header_contains)
-- **Environments**: Named variable sets (e.g. dev/staging/prod). Only one active at a time. Variables are substituted in requests via {{key}} syntax.
+## Data Model
+
+- **Groups**: Sidebar folders for organizing collections (nestable via parent_id). \
+Users often call them \"modules\" or \"categories\" (e.g. TEXT, IMAGE, VIDEO, AUTH).
+- **Collections**: Test suites inside groups, containing items (test cases).
+- **Items**: Nodes in a collection tree. Types:
+  - `request`: HTTP test case with method, URL, headers, body, assertions
+  - `folder`: organizational container for requests
+  - `chain`: ordered sequence of requests; each step can extract response values as variables for the next step
+- **Assertions**: Validation rules on HTTP responses (status_code, json_path, body_contains, response_time, header_contains)
+- **Environments**: Named variable sets (e.g. Dev/Staging/Prod). Only one active at a time. Variables are auto-substituted in requests via `{{key}}` syntax.
 - **Executions**: Historical records of test runs with response data and assertion results
 
-Typical workflow: create collection → add items → add assertions → configure environment → run tests → inspect results.";
+## How to Interpret User Requests
+
+When the user mentions tests, test cases, modules, suites, APIs, or collections, \
+they are referring to QAI's data, **NOT** code files or code test frameworks like cargo test / jest / pytest. \
+Always use QAI tools instead of searching the codebase or running shell test commands.
+
+Common user intents and the tools to use:
+
+| User says | Action |
+|-----------|--------|
+| \"run VIDEO tests\" / \"run tests under X\" | `search` → find collection/group → `run_collection` |
+| \"list all collections\" / \"show me what tests exist\" | `list_groups` + `list_collections` |
+| \"add a test case for /api/users\" | `create_item` in the appropriate collection |
+| \"what failed?\" / \"show failures\" | `list_history` with status=failed |
+| \"switch to prod environment\" | `list_environments` → `set_active_environment` |
+| \"run this request\" / \"test this API\" | `send_request` or `quick_send` |
+| \"show stats\" / \"how are we doing\" | `get_history_stats` |
+
+## Name Resolution
+
+When the user references an entity by name (e.g. \"VIDEO\", \"User API\", \"login chain\"):
+1. Call `search` with the name as keyword to find matching groups, collections, and items.
+2. Use the returned ID to perform subsequent operations (run, get, delete, etc.).
+Never guess IDs — always look them up first.
+
+## Typical Workflow
+
+create collection → add items (requests) → add assertions → configure environment → run tests → inspect results → view history";
 
 pub fn handle_request(
     conn: &Connection,

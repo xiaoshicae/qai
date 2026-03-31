@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { Plus, X, ArrowUp, Square, Wrench, Slash, RotateCcw, Cpu, Zap, Brain, PlusCircle } from 'lucide-react'
+import { Plus, X, ArrowUp, Square, Wrench, Slash, RotateCcw, Cpu, Zap, Brain, PlusCircle, ChevronRight, Terminal, FileText, FileEdit, Search, Globe } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -34,14 +34,41 @@ export default function TerminalPanel({ onClose }: Props) {
   const [thinkingWord, setThinkingWord] = useState('')
   const [showActions, setShowActions] = useState(false)
   const [showSlash, setShowSlash] = useState(false)
+  const [warmupStatus, setWarmupStatus] = useState<'idle' | 'warming' | 'ready'>('idle')
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const mountedRef = useRef(true)
 
+  // 面板打开时：检查 app 级预热状态，监听完成事件
   useEffect(() => {
     mountedRef.current = true
-    invoke<string>('prepare_mcp_config').then(setMcpConfigPath).catch(() => {})
-    return () => { mountedRef.current = false }
+    let unlisten: (() => void) | undefined
+
+    const init = async () => {
+      // 准备 MCP 配置
+      try {
+        const configPath = await invoke<string>('prepare_mcp_config')
+        if (mountedRef.current) setMcpConfigPath(configPath)
+      } catch {}
+
+      // 检查 app 启动时的预热是否已完成
+      try {
+        const ready = await invoke<boolean>('claude_session_ready')
+        if (ready) {
+          if (mountedRef.current) { setWarmupStatus('ready'); setFirstMessage(false) }
+          return
+        }
+      } catch {}
+
+      // 未就绪 — 等待 app 级预热完成
+      if (mountedRef.current) setWarmupStatus('warming')
+      listen('claude-warmup-done', () => {
+        if (mountedRef.current) { setWarmupStatus('ready'); setFirstMessage(false) }
+      }).then((fn) => { unlisten = fn })
+    }
+
+    init()
+    return () => { mountedRef.current = false; unlisten?.() }
   }, [])
 
   useEffect(() => {
@@ -93,7 +120,6 @@ export default function TerminalPanel({ onClose }: Props) {
     setSending(true)
     try {
       await invoke('claude_send', { message: text, mcpConfigPath })
-      // result 事件会触发 setSending(false)
     } catch (e: any) {
       setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: 'system', content: `${e}` }])
       setSending(false)
@@ -114,13 +140,21 @@ export default function TerminalPanel({ onClose }: Props) {
     }
   }
 
-  const handleNewSession = () => {
+  const handleNewSession = async () => {
     invoke('claude_stop').catch(() => {})
     invoke('claude_reset_session').catch(() => {})
     setMessages([])
     setSending(false)
     setFirstMessage(true)
+    setWarmupStatus('warming')
     inputRef.current?.focus()
+    // 重新预热（带 MCP）
+    try {
+      await invoke('claude_warmup', { mcpConfigPath })
+      if (mountedRef.current) { setWarmupStatus('ready'); setFirstMessage(false) }
+    } catch {
+      if (mountedRef.current) setWarmupStatus('idle')
+    }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -134,7 +168,9 @@ export default function TerminalPanel({ onClose }: Props) {
         <div className="flex items-center gap-2">
           <ClaudeLogo />
           <span className="text-xs font-medium">Claude Code</span>
-          {mcpConfigPath && <span className="text-[9px] text-emerald-500 font-medium">MCP</span>}
+          {warmupStatus === 'warming' && <span className="text-[9px] text-amber-500 dark:text-amber-400 animate-pulse">{t('claude.warming_up')}</span>}
+          {warmupStatus === 'ready' && mcpConfigPath && <span className="text-[9px] text-emerald-500 font-medium">MCP</span>}
+          {warmupStatus === 'ready' && !mcpConfigPath && <span className="text-[9px] text-emerald-500">{t('claude.warmed_up')}</span>}
         </div>
         <div className="flex items-center gap-1">
           <button onClick={handleNewSession} className="p-1 rounded hover:bg-overlay/[0.06] cursor-pointer transition-colors" title="新建会话">
@@ -147,36 +183,59 @@ export default function TerminalPanel({ onClose }: Props) {
       </div>
 
       {/* 消息区域 */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
         {messages.length === 0 && !sending && (
           <div className="flex flex-col items-center justify-center h-full text-center">
-            <ClaudeLogo size={28} />
+            <div className="h-12 w-12 rounded-2xl bg-overlay/[0.04] border border-overlay/[0.06] flex items-center justify-center">
+              <ClaudeLogo size={24} />
+            </div>
             <p className="text-sm font-medium mt-3">Claude Code</p>
             <p className="text-xs text-muted-foreground mt-1.5 max-w-[240px] leading-relaxed">
-              {firstMessage ? t('claude.first_msg') : t('claude.ready')}
+              {warmupStatus === 'warming' ? t('claude.warming_hint') : warmupStatus === 'ready' ? t('claude.ready') : firstMessage ? t('claude.first_msg') : t('claude.ready')}
             </p>
           </div>
         )}
 
         {messages.map((msg) => {
-          if (msg.role === 'user') return <div key={msg.id} className="rounded-xl bg-overlay/[0.06] px-3.5 py-2.5 text-sm">{msg.content}</div>
+          if (msg.role === 'user') return (
+            <div key={msg.id} className="rounded-xl border border-overlay/[0.08] bg-overlay/[0.04] px-3.5 py-2.5 text-sm">
+              {msg.content}
+            </div>
+          )
           if (msg.role === 'assistant') return (
             <div key={msg.id} className="flex gap-2.5">
-              <div className="shrink-0 mt-0.5 h-4 w-4 rounded-full bg-[#D4A574]/20 flex items-center justify-center"><div className="h-1.5 w-1.5 rounded-full bg-[#D4A574]" /></div>
-              <div className="text-sm leading-relaxed min-w-0 prose prose-sm prose-invert max-w-none [&_pre]:bg-overlay/[0.08] [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:text-xs [&_code]:text-xs [&_code]:bg-overlay/[0.08] [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0.5">
+              <div className="shrink-0 mt-1">
+                <ClaudeLogo size={14} />
+              </div>
+              <div className="text-sm leading-relaxed min-w-0 prose prose-sm dark:prose-invert max-w-none
+                [&_pre]:bg-overlay/[0.06] [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:text-xs [&_pre]:border [&_pre]:border-overlay/[0.06]
+                [&_code]:text-xs [&_code]:bg-overlay/[0.06] [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded-md [&_code]:font-mono
+                [&_p]:my-1.5 [&_ul]:my-1.5 [&_ol]:my-1.5 [&_li]:my-0.5
+                [&_table]:border-collapse [&_table]:w-full [&_table]:text-xs
+                [&_th]:border [&_th]:border-overlay/[0.08] [&_th]:bg-overlay/[0.04] [&_th]:px-3 [&_th]:py-1.5 [&_th]:text-left [&_th]:font-semibold
+                [&_td]:border [&_td]:border-overlay/[0.06] [&_td]:px-3 [&_td]:py-1.5
+                [&_tr:hover]:bg-overlay/[0.03]
+                [&_strong]:font-semibold
+                [&_h1]:text-base [&_h1]:font-semibold [&_h1]:mt-4 [&_h1]:mb-2
+                [&_h2]:text-sm [&_h2]:font-semibold [&_h2]:mt-3 [&_h2]:mb-1.5
+                [&_h3]:text-sm [&_h3]:font-medium [&_h3]:mt-2 [&_h3]:mb-1
+                [&_blockquote]:border-l-2 [&_blockquote]:border-primary/30 [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_blockquote]:italic
+                [&_hr]:border-overlay/[0.06] [&_hr]:my-3
+                [&_a]:text-primary [&_a]:no-underline [&_a]:hover:underline
+              ">
                 <Markdown remarkPlugins={[remarkGfm]}>{msg.content}</Markdown>
               </div>
             </div>
           )
-          if (msg.role === 'tool') return <div key={msg.id} className="flex items-center gap-1.5 text-xs text-muted-foreground/70 pl-6"><Wrench className="h-3 w-3" /><span>{msg.content}</span></div>
-          return <div key={msg.id} className="text-xs text-destructive/80 px-1">{msg.content}</div>
+          if (msg.role === 'tool') return <ToolCallCard key={msg.id} content={msg.content} />
+          return <div key={msg.id} className="text-xs text-destructive/80 ml-6 px-2 py-1 rounded-lg bg-destructive/5 border border-destructive/10">{msg.content}</div>
         })}
 
         {sending && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5 ml-0.5">
             <ClaudeLogo />
             <span className="text-sm text-[#D97757] animate-pulse">{thinkingWord}</span>
-            {firstMessage && <span className="text-[10px] text-muted-foreground/50">{t('claude.first_init')}</span>}
+            {firstMessage && warmupStatus !== 'ready' && <span className="text-[10px] text-muted-foreground/50">{t('claude.first_init')}</span>}
           </div>
         )}
       </div>
@@ -277,6 +336,44 @@ function ActionItem({ icon, label, badge, onClick }: { icon: React.ReactNode; la
       <span className="flex-1 text-left">{label}</span>
       {badge && <span className="text-[9px] text-emerald-500 font-medium">{badge}</span>}
     </button>
+  )
+}
+
+const TOOL_ICONS: Record<string, React.ReactNode> = {
+  Bash: <Terminal className="h-3 w-3" />,
+  Read: <FileText className="h-3 w-3" />,
+  Write: <FileEdit className="h-3 w-3" />,
+  Edit: <FileEdit className="h-3 w-3" />,
+  Glob: <Search className="h-3 w-3" />,
+  Grep: <Search className="h-3 w-3" />,
+  WebSearch: <Globe className="h-3 w-3" />,
+  WebFetch: <Globe className="h-3 w-3" />,
+}
+
+function ToolCallCard({ content }: { content: string }) {
+  const [expanded, setExpanded] = useState(false)
+  // content 格式: "ToolName: detail..."
+  const colonIdx = content.indexOf(': ')
+  const toolName = colonIdx > 0 ? content.slice(0, colonIdx) : content
+  const detail = colonIdx > 0 ? content.slice(colonIdx + 2) : ''
+  const icon = TOOL_ICONS[toolName] || <Wrench className="h-3 w-3" />
+
+  return (
+    <div className="ml-6 py-0.5">
+      <button
+        onClick={() => detail && setExpanded(!expanded)}
+        className={`flex items-center gap-1.5 text-xs text-muted-foreground/70 rounded-lg px-2 py-1 transition-colors ${detail ? 'hover:bg-overlay/[0.04] cursor-pointer' : ''}`}
+      >
+        {detail && <ChevronRight className={`h-2.5 w-2.5 transition-transform duration-150 ${expanded ? 'rotate-90' : ''}`} />}
+        <span className="text-primary/50">{icon}</span>
+        <span className="font-medium">{toolName}</span>
+      </button>
+      {expanded && detail && (
+        <div className="ml-6 mt-1 text-[11px] font-mono text-muted-foreground/60 bg-overlay/[0.03] border border-overlay/[0.04] rounded-lg px-2.5 py-1.5 break-all leading-relaxed">
+          {detail}
+        </div>
+      )}
+    </div>
   )
 }
 

@@ -18,11 +18,11 @@ import { Tooltip } from '@/components/ui/tooltip'
 import type { Collection } from '@/types'
 import { useTranslation } from 'react-i18next'
 import {
-  DndContext, pointerWithin, closestCenter, DragOverlay, PointerSensor, useSensor, useSensors,
+  DndContext, closestCenter, DragOverlay, PointerSensor, useSensor, useSensors,
   type DragStartEvent, type DragEndEvent, type DragOverEvent, type CollisionDetection,
 } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
-import { buildGroupTree, SortableGroupRow, GroupTreeNode, type GroupNode } from './sidebar-tree'
+import { buildGroupTree, DraggableGroup, GapDropZone, SortableCollectionRow, GroupTreeNode, type GroupNode } from './sidebar-tree'
 
 const NAV_ITEMS = [
   { path: '/history', labelKey: 'sidebar.history', icon: History },
@@ -52,12 +52,7 @@ export default function Sidebar() {
   // dnd-kit sensors: 需要拖动 5px 才触发，避免和点击冲突
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
-  // 碰撞检测：pointerWithin 优先（精准），fallback 到 closestCenter
-  const collisionDetection: CollisionDetection = useCallback((args) => {
-    const hits = pointerWithin(args)
-    if (hits.length > 0) return [hits[0]]
-    return closestCenter(args)
-  }, [])
+  const collisionDetection: CollisionDetection = useCallback((args) => closestCenter(args), [])
 
   useEffect(() => { loadCollections(); loadGroups() }, [])
 
@@ -118,85 +113,86 @@ export default function Sidebar() {
     const overData = over.data.current
     const store = useCollectionStore.getState()
 
-    // Group 拖拽
+    // 拖到顶级间隙 → 提升为顶级 / 顶级分组重排
+    if (overData?.type === 'gap' && activeData?.type === 'group') {
+      const activeGroup = store.groups.find((g) => g.id === active.id)
+      if (!activeGroup) return
+      const gapIdx = parseInt((over.id as string).split(':')[1], 10)
+      const previousGroups = [...store.groups]
+      const wasTopLevel = !activeGroup.parent_id
+
+      // 构建新的顶级列表（先移除 active，再插到 gap 位置）
+      const topGroups = store.groups.filter((g) => !g.parent_id && g.id !== active.id).sort((a, b) => a.sort_order - b.sort_order)
+      const insertIdx = Math.min(gapIdx, topGroups.length)
+      topGroups.splice(insertIdx, 0, { ...activeGroup, parent_id: null })
+
+      const updatedGroups = store.groups.map((g) => {
+        if (g.id === active.id) return { ...g, parent_id: null, sort_order: insertIdx }
+        const idx = topGroups.findIndex((r) => r.id === g.id)
+        return idx !== -1 ? { ...g, sort_order: idx } : g
+      })
+      useCollectionStore.setState({ groups: updatedGroups })
+
+      const groupOrders = topGroups.map((g, i) => ({ id: g.id, sort_order: i }))
+      const savePromise = wasTopLevel
+        ? invoke('reorder_sidebar', { groups: groupOrders, collections: [] })
+        : invoke('set_group_parent', { id: active.id as string, parentId: null }).then(() =>
+            invoke('reorder_sidebar', { groups: groupOrders, collections: [] })
+          )
+      savePromise.catch((e) => {
+        useCollectionStore.setState({ groups: previousGroups })
+        toast.error(invokeErrorMessage(e))
+      })
+      return
+    }
+
+    // Group 拖到 Group 上 → 统一嵌套（重排通过间隙 GapDropZone 完成）
     if (activeData?.type === 'group' && overData?.type === 'group') {
       const activeGroup = store.groups.find((g) => g.id === active.id)
-      const overGroup = store.groups.find((g) => g.id === over.id)
-      if (!activeGroup || !overGroup) return
+      if (!activeGroup) return
+      const newParentId = over.id as string
+      if (activeGroup.parent_id === newParentId) return // 已在该组内
 
-      // 防止拖到自己的子分组内（会造成循环）
-      const isDescendant = (parentId: string | null, targetId: string): boolean => {
-        if (!parentId) return false
-        if (parentId === targetId) return true
-        const parent = store.groups.find((g) => g.id === parentId)
-        return parent ? isDescendant(parent.parent_id, targetId) : false
+      // 防止拖到自己的子分组内（循环依赖）
+      const isChild = (groupId: string, targetId: string): boolean => {
+        const children = store.groups.filter((g) => g.parent_id === groupId)
+        return children.some((c) => c.id === targetId || isChild(c.id, targetId))
       }
-      if (isDescendant(over.id as string, active.id as string)) return
+      if (isChild(active.id as string, over.id as string)) return
 
-      const sameParent = activeGroup.parent_id === overGroup.parent_id
+      const previousGroups = [...store.groups]
+      const childCount = store.groups.filter((g) => g.parent_id === newParentId).length
+      const updatedGroups = store.groups.map((g) =>
+        g.id === active.id ? { ...g, parent_id: newParentId, sort_order: childCount } : g
+      )
+      useCollectionStore.setState({ groups: updatedGroups })
+      setExpanded((prev) => new Set(prev).add(newParentId))
 
-      if (sameParent) {
-        // 同级重排
-        const siblings = store.groups
-          .filter((g) => g.parent_id === activeGroup.parent_id)
-          .sort((a, b) => a.sort_order - b.sort_order)
-        const oldIdx = siblings.findIndex((g) => g.id === active.id)
-        const newIdx = siblings.findIndex((g) => g.id === over.id)
-        if (oldIdx === -1 || newIdx === -1) return
-        const reordered = [...siblings]
-        const [moved] = reordered.splice(oldIdx, 1)
-        reordered.splice(newIdx, 0, moved)
+      invoke('set_group_parent', { id: active.id as string, parentId: newParentId }).catch((e) => {
+        useCollectionStore.setState({ groups: previousGroups })
+        toast.error(invokeErrorMessage(e))
+      })
+      return
+    }
 
-        const previousGroups = [...store.groups]
-        const updatedGroups = store.groups.map((g) => {
-          const idx = reordered.findIndex((r) => r.id === g.id)
-          return idx !== -1 ? { ...g, sort_order: idx } : g
-        })
-        useCollectionStore.setState({ groups: updatedGroups })
+    // Group 拖到 Collection 上 → 移入该 collection 所属的分组
+    if (activeData?.type === 'group' && overData?.type === 'collection') {
+      const activeGroup = store.groups.find((g) => g.id === active.id)
+      if (!activeGroup) return
+      const targetGroupId = overData.groupId as string
+      if (activeGroup.parent_id === targetGroupId) return // 已在该组内
+      const previousGroups = [...store.groups]
+      const childCount = store.groups.filter((g) => g.parent_id === targetGroupId).length
+      const updatedGroups = store.groups.map((g) =>
+        g.id === active.id ? { ...g, parent_id: targetGroupId, sort_order: childCount } : g
+      )
+      useCollectionStore.setState({ groups: updatedGroups })
+      setExpanded((prev) => new Set(prev).add(targetGroupId))
 
-        const groupOrders = reordered.map((g, i) => ({ id: g.id, sort_order: i }))
-        invoke('reorder_sidebar', { groups: groupOrders, collections: [] }).catch((e) => {
-          useCollectionStore.setState({ groups: previousGroups })
-          toast.error(invokeErrorMessage(e))
-        })
-      } else if (activeGroup.parent_id && !overGroup.parent_id) {
-        // 子分组拖到顶级分组 → 提升为顶级（插到 over 位置前面）
-        const previousGroups = [...store.groups]
-        const topGroups = store.groups.filter((g) => !g.parent_id).sort((a, b) => a.sort_order - b.sort_order)
-        const overIdx = topGroups.findIndex((g) => g.id === over.id)
-        topGroups.splice(overIdx < 0 ? topGroups.length : overIdx, 0, { ...activeGroup, parent_id: null })
-
-        const updatedGroups = store.groups.map((g) => {
-          if (g.id === active.id) return { ...g, parent_id: null, sort_order: topGroups.findIndex((r) => r.id === g.id) }
-          const idx = topGroups.findIndex((r) => r.id === g.id)
-          return idx !== -1 ? { ...g, sort_order: idx } : g
-        })
-        useCollectionStore.setState({ groups: updatedGroups })
-
-        // 先更新 parent_id，再用 reorder_sidebar 同步所有顶级分组的 sort_order
-        const groupOrders = topGroups.map((g, i) => ({ id: g.id, sort_order: i }))
-        invoke('update_group', { id: active.id as string, parentId: null }).then(() =>
-          invoke('reorder_sidebar', { groups: groupOrders, collections: [] })
-        ).catch((e) => {
-          useCollectionStore.setState({ groups: previousGroups })
-          toast.error(invokeErrorMessage(e))
-        })
-      } else {
-        // 拖到其他分组上 → 成为子分组
-        const previousGroups = [...store.groups]
-        const newParentId = over.id as string
-        const childCount = store.groups.filter((g) => g.parent_id === newParentId).length
-        const updatedGroups = store.groups.map((g) =>
-          g.id === active.id ? { ...g, parent_id: newParentId, sort_order: childCount } : g
-        )
-        useCollectionStore.setState({ groups: updatedGroups })
-        setExpanded((prev) => new Set(prev).add(newParentId))
-
-        invoke('update_group', { id: active.id as string, parentId: newParentId, sortOrder: childCount }).catch((e) => {
-          useCollectionStore.setState({ groups: previousGroups })
-          toast.error(invokeErrorMessage(e))
-        })
-      }
+      invoke('set_group_parent', { id: active.id as string, parentId: targetGroupId }).catch((e) => {
+        useCollectionStore.setState({ groups: previousGroups })
+        toast.error(invokeErrorMessage(e))
+      })
       return
     }
 
@@ -286,6 +282,14 @@ export default function Sidebar() {
   }
 
   const handleGroupRename = () => { if (!menu?.groupId) return; const group = groups.find((g) => g.id === menu.groupId); if (!group) return; setRenamingId(menu.groupId); setRenameValue(group.name); setMenu(null) }
+  const handlePromoteToTop = async () => {
+    if (!menu?.groupId) return
+    const groupId = menu.groupId; setMenu(null)
+    try {
+      await invoke('set_group_parent', { id: groupId, parentId: null })
+      await loadGroups()
+    } catch (e) { toast.error(invokeErrorMessage(e)) }
+  }
   const handleGroupDelete = async () => {
     if (!menu?.groupId) return
     const groupId = menu.groupId; setMenu(null)
@@ -314,8 +318,6 @@ export default function Sidebar() {
   const activeGroup = activeId ? groups.find((g) => g.id === activeId) : null
   const activeCol = activeId ? collections.find((c) => c.id === activeId) : null
 
-  // 顶级 group IDs（用于 SortableContext）
-  const topGroupIds = filteredRoots.map((n) => n.group.id)
 
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
@@ -353,32 +355,38 @@ export default function Sidebar() {
       <DndContext sensors={sensors} collisionDetection={collisionDetection} onDragStart={handleDragStart} onDragOver={handleDragOver} onDragEnd={handleDragEnd}>
         <div className="flex-1 flex flex-col min-h-0">
         <div className="flex-1 min-h-0 overflow-y-auto px-2.5">
-          <SortableContext items={topGroupIds} strategy={verticalListSortingStrategy}>
-            {filteredRoots.map((node) => (
-              <SortableGroupRow key={node.group.id} id={node.group.id} overId={activeId ? overId : null}>
+          {filteredRoots.map((node, i) => (
+            <div key={node.group.id}>
+              <GapDropZone id={`gap:${i}`} isActive={!!activeId} />
+              <DraggableGroup id={node.group.id}>
                 <GroupTreeNode node={node} level={0} expanded={expanded} selectedNodeId={selectedNodeId} renamingId={renamingId} renameValue={renameValue} inlineInput={inlineInput} inlineValue={inlineValue} overId={activeId ? overId : null} onToggle={toggle} onSelect={handleSelect} onGroupMenu={openGroupMenu} onColMenu={openColMenu} onRenameChange={setRenameValue} onRenameCommit={commitRename} onRenameCancel={() => setRenamingId(null)} onInlineChange={setInlineValue} onInlineCommit={commitInline} onInlineCancel={() => setInlineInput(null)} />
-              </SortableGroupRow>
-            ))}
-          </SortableContext>
+              </DraggableGroup>
+            </div>
+          ))}
+          <GapDropZone id={`gap:${filteredRoots.length}`} isActive={!!activeId} />
 
-          {/* 未分组 */}
-          {filteredUngrouped.map((col) => {
-            const isSelected = selectedNodeId === col.id
-            const isRenaming = renamingId === col.id
-            return (
-              <div key={col.id} className={`group/item flex items-center gap-1 py-1.5 pr-1 text-xs rounded-lg cursor-pointer transition-all duration-150 ${isSelected ? 'bg-overlay/[0.08] text-foreground glow-ring' : 'text-muted-foreground hover:bg-overlay/[0.04] hover:text-foreground'}`} style={{ paddingLeft: '20px' }} onClick={() => !isRenaming && handleSelect(col)}>
-                {isRenaming ? (
-                  <Input value={renameValue} onChange={(e) => setRenameValue(e.target.value)} onBlur={commitRename} onKeyDown={(e) => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') setRenamingId(null) }} className="h-5 text-xs flex-1 py-0 px-1" autoFocus onClick={(e) => e.stopPropagation()} />
-                ) : (
-                  <>
-                    <span className="flex-1 text-left truncate">{col.name}</span>
-                    <button className="shrink-0 p-0.5 rounded opacity-0 group-hover/item:opacity-100 text-muted-foreground hover:text-foreground hover:bg-overlay/[0.06] cursor-pointer transition-opacity" onClick={(e) => openColMenu(e, col)}><MoreHorizontal className="h-3.5 w-3.5" /></button>
-                    <Circle className="h-2 w-2 shrink-0 fill-muted-foreground/20 text-muted-foreground/20" />
-                  </>
-                )}
-              </div>
-            )
-          })}
+          {/* 未分组集合（也可拖拽） */}
+          <SortableContext items={filteredUngrouped.map((c) => c.id)} strategy={verticalListSortingStrategy}>
+            {filteredUngrouped.map((col) => {
+              const isSelected = selectedNodeId === col.id
+              const isRenaming = renamingId === col.id
+              return (
+                <SortableCollectionRow key={col.id} id={col.id} groupId="" overId={activeId ? overId : null}>
+                  <div className={`group/item flex items-center gap-1 py-1.5 pr-1 text-xs rounded-lg cursor-pointer transition-all duration-150 ${isSelected ? 'bg-overlay/[0.08] text-foreground glow-ring' : 'text-muted-foreground hover:bg-overlay/[0.04] hover:text-foreground'}`} style={{ paddingLeft: '20px' }} onClick={() => !isRenaming && handleSelect(col)}>
+                    {isRenaming ? (
+                      <Input value={renameValue} onChange={(e) => setRenameValue(e.target.value)} onBlur={commitRename} onKeyDown={(e) => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') setRenamingId(null) }} className="h-5 text-xs flex-1 py-0 px-1" autoFocus onClick={(e) => e.stopPropagation()} />
+                    ) : (
+                      <>
+                        <span className="flex-1 text-left truncate">{col.name}</span>
+                        <button className="shrink-0 p-0.5 rounded opacity-0 group-hover/item:opacity-100 text-muted-foreground hover:text-foreground hover:bg-overlay/[0.06] cursor-pointer transition-opacity" onClick={(e) => openColMenu(e, col)}><MoreHorizontal className="h-3.5 w-3.5" /></button>
+                        <Circle className="h-2 w-2 shrink-0 fill-muted-foreground/20 text-muted-foreground/20" />
+                      </>
+                    )}
+                  </div>
+                </SortableCollectionRow>
+              )
+            })}
+          </SortableContext>
 
           {newTopGroup && (
             <div className="px-2 py-1">
@@ -421,6 +429,9 @@ export default function Sidebar() {
               <button className={menuItemClass} onClick={handleGroupRunAll}><Play className="h-3.5 w-3.5 text-muted-foreground" /> {t('group_menu.run_all')}</button>
               <div className={menuDividerClass} />
               <button className={menuItemClass} onClick={handleGroupRename}><Pencil className="h-3.5 w-3.5 text-muted-foreground" /> {t('group_menu.rename')}</button>
+              {menu.groupId && groups.find((g) => g.id === menu.groupId)?.parent_id && (
+                <button className={menuItemClass} onClick={handlePromoteToTop}><FolderPlus className="h-3.5 w-3.5 text-muted-foreground" /> {t('group_menu.promote_top')}</button>
+              )}
               <button className={menuDangerClass} onClick={handleGroupDelete}><Trash2 className="h-3.5 w-3.5" /> {t('group_menu.delete')}</button>
             </>
           )}

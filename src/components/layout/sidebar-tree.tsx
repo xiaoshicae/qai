@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { ChevronDown, ChevronRight, MoreHorizontal, Circle } from 'lucide-react'
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
+import { useDraggable, useDroppable } from '@dnd-kit/core'
 import { Input } from '@/components/ui/input'
 import type { Collection, Group } from '@/types'
 
@@ -55,10 +56,19 @@ function DropIndicator() {
   )
 }
 
-// ─── 可排序行 ──────────────────
-// 拖拽时其他 items 不位移，只靠指示线标识插入位置，松手后才重排
-export function SortableGroupRow({ id, children }: { id: string; overId?: string | null; children: React.ReactNode }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useSortable({ id, data: { type: 'group' } })
+/** 顶级分组之间的间隙放置区 — 拖入时显示指示线，松手后提升为顶级分组 */
+export function GapDropZone({ id, isActive }: { id: string; isActive: boolean }) {
+  const { setNodeRef, isOver } = useDroppable({ id, data: { type: 'gap' } })
+  return (
+    <div ref={setNodeRef} className="relative" style={{ height: isActive ? 8 : 0, transition: 'height 150ms' }}>
+      {isOver && <DropIndicator />}
+    </div>
+  )
+}
+
+// ─── 分组拖拽（只发起拖拽，drop 由 header 的 useDroppable 处理）──────
+export function DraggableGroup({ id, children }: { id: string; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id, data: { type: 'group' } })
   return (
     <div ref={setNodeRef} style={{ opacity: isDragging ? 0.15 : 1, transition: 'opacity 150ms' }} {...attributes} {...listeners}>
       {children}
@@ -97,14 +107,20 @@ export function GroupTreeNode(props: GroupTreeNodeProps) {
   const isRenaming = renamingId === node.group.id
   const collectionIds = node.collections.map((c) => c.id)
 
+  // 分组 header 作为精准 drop target
+  const { setNodeRef: headerDropRef, isOver: isHeaderOver } = useDroppable({
+    id: node.group.id,
+    data: { type: 'group' },
+  })
+
   return (
     <div className="mb-0.5">
-      <div className={`group/cat flex items-center gap-1.5 w-full px-2 py-1.5 rounded-lg cursor-pointer transition-all duration-150 ${overId === node.group.id ? 'bg-primary/10 ring-1 ring-primary/30' : 'hover:bg-overlay/[0.04]'}`} style={{ paddingLeft: `${level * 12 + 8}px` }} onClick={() => onToggle(node.group.id)}>
+      <div ref={headerDropRef} className={`group/cat flex items-center gap-1.5 w-full px-2 py-1.5 rounded-lg cursor-pointer transition-all duration-150 ${isHeaderOver ? 'bg-primary/10 ring-1 ring-primary/30' : 'hover:bg-overlay/[0.04]'}`} style={{ paddingLeft: `${level * 12 + 8}px` }} onClick={() => onToggle(node.group.id)}>
         {isExpanded ? <ChevronDown className="h-3 w-3 text-muted-foreground/50 shrink-0" /> : <ChevronRight className="h-3 w-3 text-muted-foreground/50 shrink-0" />}
         {isRenaming ? (
           <Input value={renameValue} onChange={(e) => onRenameChange(e.target.value)} onBlur={onRenameCommit} onKeyDown={(e) => { if (e.key === 'Enter') onRenameCommit(); if (e.key === 'Escape') onRenameCancel() }} className="h-5 text-[10px] font-bold uppercase tracking-wider flex-1 py-0 px-1" autoFocus onClick={(e) => e.stopPropagation()} />
         ) : (
-          <span className="text-[10px] font-semibold tracking-wider text-muted-foreground/50 uppercase flex-1">{node.group.name}</span>
+          <span className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase flex-1">{node.group.name}</span>
         )}
         <button className="shrink-0 p-0.5 rounded-md opacity-0 group-hover/cat:opacity-100 text-muted-foreground hover:text-foreground cursor-pointer transition-opacity" onClick={(e) => onGroupMenu(e, node.group.id)}>
           <MoreHorizontal className="h-3.5 w-3.5" />
@@ -114,13 +130,11 @@ export function GroupTreeNode(props: GroupTreeNodeProps) {
 
       {isExpanded && (
         <>
-          <SortableContext items={node.children.map((c) => c.group.id)} strategy={verticalListSortingStrategy}>
-            {node.children.map((child) => (
-              <SortableGroupRow key={child.group.id} id={child.group.id} overId={overId}>
-                <GroupTreeNode {...props} node={child} level={level + 1} />
-              </SortableGroupRow>
-            ))}
-          </SortableContext>
+          {node.children.map((child) => (
+            <DraggableGroup key={child.group.id} id={child.group.id}>
+              <GroupTreeNode {...props} node={child} level={level + 1} />
+            </DraggableGroup>
+          ))}
 
           {/* 新建子分组的 inline input — 放在子分组后面、测试集前面 */}
           {inlineInput && inlineInput.parentGroupId === node.group.id && inlineInput.type === 'group' && (

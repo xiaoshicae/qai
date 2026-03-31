@@ -28,7 +28,8 @@
     "new_subgroup": "新建子分组",
     "run_all": "运行全部",
     "rename": "重命名",
-    "delete": "删除分组"
+    "delete": "删除分组",
+    "promote_top": "提升为顶级分组"
   },
   "collection_menu": {
     "add_case": "添加测试用例"
@@ -115,7 +116,10 @@
     "cost": "花费统计",
     "slash_compact": "压缩上下文",
     "slash_cost": "查看花费统计",
-    "slash_help": "帮助"
+    "slash_help": "帮助",
+    "warming_up": "初始化中...",
+    "warmed_up": "已就绪",
+    "warming_hint": "正在后台初始化，你可以先打字..."
   },
   "settings": {
     "title": "设置",
@@ -275,6 +279,7 @@
     "none": "无",
     "edit": "编辑",
     "delete": "删除",
+    "copy": "复制",
     "run": "运行",
     "new_step": "新步骤",
     "new_test_case": "新测试用例",

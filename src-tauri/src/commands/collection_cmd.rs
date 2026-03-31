@@ -89,6 +89,18 @@ pub fn update_group(
         .map_err(|e| e.to_string())
 }
 
+/// 设置分组的 parent_id（支持 null → 提升为顶级）
+/// 独立命令，避免 Option<Option<String>> 的 serde null 反序列化问题
+#[tauri::command]
+pub fn set_group_parent(db: State<'_, DbState>, id: String, parent_id: Option<String>) -> Result<Group, String> {
+    let conn = db.conn()?;
+    conn.execute(
+        "UPDATE groups SET parent_id = ?2 WHERE id = ?1",
+        rusqlite::params![id, parent_id],
+    ).map_err(|e| e.to_string())?;
+    crate::db::group::get(&conn, &id).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn delete_group(db: State<'_, DbState>, id: String) -> Result<(), String> {
     let conn = db.conn()?;

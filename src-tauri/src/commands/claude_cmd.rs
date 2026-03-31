@@ -26,6 +26,84 @@ pub struct ClaudeEvent {
     pub raw: Option<serde_json::Value>,
 }
 
+/// 查询 session 是否已建立（面板用来判断预热状态）
+#[tauri::command]
+pub fn claude_session_ready(claude_state: State<'_, ClaudeState>) -> Result<bool, String> {
+    Ok(lock_claude(&claude_state.session_id)?.is_some())
+}
+
+/// 后台预热：建立 session，完成后 emit `claude-warmup-done`
+#[tauri::command]
+pub async fn claude_warmup(
+    app: AppHandle,
+    claude_state: State<'_, ClaudeState>,
+    mcp_config_path: Option<String>,
+) -> Result<(), String> {
+    // 已有 session，无需预热
+    if lock_claude(&claude_state.session_id)?.is_some() {
+        let _ = app.emit("claude-warmup-done", ());
+        return Ok(());
+    }
+    // 已有进程在跑（上次 warmup 或 send），跳过
+    if lock_claude(&claude_state.pid)?.is_some() {
+        return Ok(());
+    }
+
+    let claude_bin = which_claude().unwrap_or_else(|| "claude".to_string());
+    let mut args: Vec<String> = vec![
+        "-p".into(),
+        "--output-format".into(), "stream-json".into(),
+    ];
+    if let Some(ref config) = mcp_config_path {
+        args.push(format!("--mcp-config={config}"));
+    }
+    // 极简 prompt，只为建立 session
+    args.push("Reply with only: ok".into());
+
+    let mut cmd = Command::new(&claude_bin);
+    cmd.args(&args);
+    let path = std::env::var("PATH").unwrap_or_default();
+    cmd.env("PATH", format!("/opt/homebrew/bin:/usr/local/bin:{path}"));
+    if let Ok(home) = std::env::var("HOME") { cmd.env("HOME", &home); }
+    cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+
+    let mut child = cmd.spawn().map_err(|e| format!("Warmup failed: {e}"))?;
+    if let Some(pid) = child.id() {
+        *lock_claude(&claude_state.pid)? = Some(pid);
+    }
+
+    let stdout = child.stdout.take().ok_or("No stdout")?;
+    let reader = BufReader::new(stdout);
+    let mut lines = reader.lines();
+
+    while let Ok(Some(line)) = lines.next_line().await {
+        if line.trim().is_empty() { continue; }
+        let json: serde_json::Value = match serde_json::from_str(&line) {
+            Ok(v) => v, Err(_) => continue,
+        };
+        if json.get("type").and_then(|v| v.as_str()) == Some("result") {
+            if let Some(sid) = json.get("session_id").and_then(|s| s.as_str()) {
+                if let Ok(mut g) = claude_state.session_id.lock() {
+                    *g = Some(sid.to_string());
+                }
+            }
+        }
+    }
+
+    if let Some(stderr) = child.stderr.take() {
+        let mut r = BufReader::new(stderr);
+        let mut buf = String::new();
+        tokio::io::AsyncReadExt::read_to_string(&mut r, &mut buf).await.ok();
+        if !buf.trim().is_empty() { log::warn!("[claude warmup stderr] {}", buf.trim()); }
+    }
+
+    let _ = child.wait().await;
+    if let Ok(mut g) = claude_state.pid.lock() { *g = None; }
+    // 通知前端预热完成
+    let _ = app.emit("claude-warmup-done", ());
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn claude_send(
     app: AppHandle,
@@ -33,6 +111,17 @@ pub async fn claude_send(
     message: String,
     mcp_config_path: Option<String>,
 ) -> Result<serde_json::Value, String> {
+    // 如果有正在运行的进程（如 warmup），先杀掉
+    {
+        let old_pid = lock_claude(&claude_state.pid)?.take();
+        if let Some(pid) = old_pid {
+            // SAFETY: pid 来自本模块的子进程
+            unsafe { libc::kill(pid as i32, libc::SIGTERM); }
+        }
+    }
+    // 让被杀进程有时间退出
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
     let claude_bin = which_claude().unwrap_or_else(|| "claude".to_string());
     let existing_session = lock_claude(&claude_state.session_id)?.clone();
 
@@ -47,7 +136,7 @@ pub async fn claude_send(
         args.push(format!("--mcp-config={config}"));
     }
 
-    // 复用 session：第一次慢（~30s），后续快（~3s）
+    // 复用 session：预热成功后秒回
     if let Some(ref sid) = existing_session {
         args.push("--resume".into());
         args.push(sid.clone());
@@ -99,7 +188,8 @@ pub async fn claude_send(
                     for block in content {
                         if block.get("type").and_then(|t| t.as_str()) == Some("tool_use") {
                             let name = block.get("name").and_then(|n| n.as_str()).unwrap_or("");
-                            let _ = app.emit("claude-event", ClaudeEvent { event_type: "tool_use".into(), content: format!("调用工具: {name}"), raw: Some(block.clone()) });
+                            let detail = tool_use_summary(name, block.get("input"));
+                            let _ = app.emit("claude-event", ClaudeEvent { event_type: "tool_use".into(), content: format!("{name}: {detail}"), raw: Some(block.clone()) });
                         }
                     }
                 }
@@ -149,6 +239,62 @@ pub fn claude_stop(claude_state: State<'_, ClaudeState>) -> Result<(), String> {
 pub fn claude_reset_session(claude_state: State<'_, ClaudeState>) -> Result<(), String> {
     *lock_claude(&claude_state.session_id)? = None;
     Ok(())
+}
+
+/// 根据工具名和输入参数生成简短摘要
+fn tool_use_summary(name: &str, input: Option<&serde_json::Value>) -> String {
+    let input = match input {
+        Some(v) => v,
+        None => return String::new(),
+    };
+    match name {
+        "Bash" => {
+            let cmd = input.get("command").and_then(|v| v.as_str()).unwrap_or("");
+            truncate_str(cmd, 200)
+        }
+        "Read" => {
+            let path = input.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
+            truncate_str(path, 200)
+        }
+        "Write" => {
+            let path = input.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
+            truncate_str(path, 200)
+        }
+        "Edit" => {
+            let path = input.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
+            truncate_str(path, 200)
+        }
+        "Glob" => {
+            let pattern = input.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
+            truncate_str(pattern, 200)
+        }
+        "Grep" => {
+            let pattern = input.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
+            truncate_str(pattern, 200)
+        }
+        "WebSearch" | "WebFetch" => {
+            let q = input.get("query").or_else(|| input.get("url")).and_then(|v| v.as_str()).unwrap_or("");
+            truncate_str(q, 200)
+        }
+        _ => {
+            // 通用：取第一个字符串值
+            if let Some(obj) = input.as_object() {
+                for val in obj.values() {
+                    if let Some(s) = val.as_str() {
+                        if !s.is_empty() {
+                            return truncate_str(s, 120);
+                        }
+                    }
+                }
+            }
+            String::new()
+        }
+    }
+}
+
+fn truncate_str(s: &str, max: usize) -> String {
+    let s = s.lines().next().unwrap_or(s); // 只取第一行
+    if s.len() <= max { s.to_string() } else { format!("{}…", &s[..max]) }
 }
 
 fn which_claude() -> Option<String> {

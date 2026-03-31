@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { invoke } from '@tauri-apps/api/core'
 import {
-  Play, Trash2, Pencil, ChevronDown, ChevronRight, Loader2, CheckCircle2, XCircle, AlertCircle, Circle, XCircle as XCircleIcon,
+  Play, Trash2, Pencil, Copy, ChevronDown, ChevronRight, Loader2, CheckCircle2, XCircle, AlertCircle, Circle, XCircle as XCircleIcon, GripVertical,
 } from 'lucide-react'
 import { JsonHighlight } from '@/components/ui/json-highlight'
 import { VarHighlight } from '@/components/ui/var-highlight'
@@ -144,7 +144,7 @@ function FilePreviewThumb({ path }: { path: string }) {
   )
 }
 
-export function ScenarioRow({ r, stepLabel, indent, envVars = {}, getResult, getStatus: _getStatus, statuses, progress, runningIds, expandedRows, detailData, loadDetail, toggleRow, runSingle, openEdit, deleteRequest, streamingContent, canRun = true, version, enabled = true, onToggleEnabled }: {
+export function ScenarioRow({ r, stepLabel, indent, envVars = {}, getResult, getStatus: _getStatus, statuses, progress, runningIds, expandedRows, detailData, loadDetail, toggleRow, runSingle, openEdit, copyRequest, deleteRequest, streamingContent, canRun = true, version, enabled = true, onToggleEnabled, dragHandleProps }: {
   r: { id: string; name: string; method: string; folder?: string; expect_status?: number }
   stepLabel?: string
   indent?: boolean
@@ -154,6 +154,7 @@ export function ScenarioRow({ r, stepLabel, indent, envVars = {}, getResult, get
   version?: number
   enabled?: boolean
   onToggleEnabled?: (id: string) => void
+  dragHandleProps?: Record<string, unknown>
   getResult: (id: string) => ExecutionResult | undefined
   getStatus: (id: string) => string | undefined
   statuses: Record<string, ItemLastStatus>
@@ -165,6 +166,7 @@ export function ScenarioRow({ r, stepLabel, indent, envVars = {}, getResult, get
   toggleRow: (id: string) => void
   runSingle: (id: string) => void
   openEdit: (id: string) => void
+  copyRequest?: (id: string) => void
   deleteRequest: (id: string, name: string, e: React.MouseEvent) => void
 }) {
   const { t } = useTranslation()
@@ -266,6 +268,11 @@ export function ScenarioRow({ r, stepLabel, indent, envVars = {}, getResult, get
     <div>
       <div className={`grid grid-cols-[minmax(0,1fr)_80px_64px_64px_80px_72px] gap-2 px-4 py-3 text-sm hover:bg-overlay/[0.03] cursor-pointer transition-colors group ${indent ? 'pl-10 bg-overlay/[0.02]' : ''} ${!enabled ? 'opacity-40' : ''}`} onClick={() => toggleRow(r.id)}>
         <span className="flex items-center gap-1.5 min-w-0">
+          {dragHandleProps && !indent && (
+            <span {...dragHandleProps} className="cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-40 hover:!opacity-100 transition-opacity shrink-0 touch-none" onClick={(e) => e.stopPropagation()}>
+              <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />
+            </span>
+          )}
           {onToggleEnabled && !indent && (
             <input
               type="checkbox"
@@ -295,6 +302,11 @@ export function ScenarioRow({ r, stepLabel, indent, envVars = {}, getResult, get
           <button type="button" className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-40 hover:!opacity-100 hover:bg-overlay/[0.06] transition-all cursor-pointer" onClick={() => openEdit(r.id)} title={t('common.edit')}>
             <Pencil className="h-3 w-3 text-muted-foreground" />
           </button>
+          {copyRequest && (
+            <button type="button" className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-40 hover:!opacity-100 hover:bg-overlay/[0.06] transition-all cursor-pointer" onClick={() => copyRequest(r.id)} title={t('common.copy')}>
+              <Copy className="h-3 w-3 text-muted-foreground" />
+            </button>
+          )}
           <button type="button" className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-40 hover:!opacity-100 hover:bg-destructive/10 transition-all cursor-pointer" onClick={(e) => deleteRequest(r.id, r.name, e)} title={t('common.delete')}>
             <Trash2 className="h-3 w-3 text-destructive" />
           </button>

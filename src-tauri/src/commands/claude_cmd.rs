@@ -4,6 +4,26 @@ use tauri::{AppHandle, Emitter, State};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
+/// 跨平台终止子进程
+fn kill_process(pid: u32) {
+    #[cfg(unix)]
+    {
+        // SAFETY: pid 来自本模块的子进程，仅发送 SIGTERM 请求其退出
+        let rc = unsafe { libc::kill(pid as i32, libc::SIGTERM) };
+        if rc != 0 {
+            log::warn!("[kill_process] kill(pid={pid}) returned {rc}");
+        }
+    }
+    #[cfg(windows)]
+    {
+        // Windows 下通过 taskkill 终止进程树
+        let _ = std::process::Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .output()
+            .map_err(|e| log::warn!("[kill_process] taskkill failed: {e}"));
+    }
+}
+
 pub struct ClaudeState {
     pid: Mutex<Option<u32>>,
     session_id: Mutex<Option<String>>, // 复用 session 加速后续对话
@@ -129,8 +149,7 @@ pub async fn claude_send(
     {
         let old_pid = lock_claude(&claude_state.pid)?.take();
         if let Some(pid) = old_pid {
-            // SAFETY: pid 来自本模块的子进程
-            unsafe { libc::kill(pid as i32, libc::SIGTERM); }
+            kill_process(pid);
         }
     }
     // 让被杀进程有时间退出
@@ -254,11 +273,7 @@ pub async fn claude_send(
 #[tauri::command]
 pub fn claude_stop(claude_state: State<'_, ClaudeState>) -> Result<(), String> {
     if let Some(pid) = lock_claude(&claude_state.pid)?.take() {
-        // SAFETY: `pid` 来自 `claude_send` 中 `tokio::process::Command::spawn` 的子进程；仅发送 SIGTERM 请求其退出。
-        let rc = unsafe { libc::kill(pid as i32, libc::SIGTERM) };
-        if rc != 0 {
-            log::warn!("[claude_stop] kill(pid={pid}) returned {rc}");
-        }
+        kill_process(pid);
     }
     Ok(())
 }

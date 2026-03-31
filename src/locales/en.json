@@ -119,7 +119,12 @@
     "slash_help": "Help",
     "warming_up": "Initializing...",
     "warmed_up": "Ready",
-    "warming_hint": "Initializing in background, start typing..."
+    "warming_hint": "Initializing in background, start typing...",
+    "checking_cli": "Checking Claude Code CLI...",
+    "cli_not_installed": "Claude Code CLI is required. Install it by running:",
+    "cli_not_authenticated": "Claude Code CLI is installed but not logged in. Run:",
+    "install_guide": "Installation guide",
+    "retry_check": "Retry check"
   },
   "settings": {
     "title": "Settings",

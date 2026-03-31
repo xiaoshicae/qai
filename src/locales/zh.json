@@ -119,7 +119,12 @@
     "slash_help": "帮助",
     "warming_up": "初始化中...",
     "warmed_up": "已就绪",
-    "warming_hint": "正在后台初始化，你可以先打字..."
+    "warming_hint": "正在后台初始化，你可以先打字...",
+    "checking_cli": "正在检测 Claude Code CLI...",
+    "cli_not_installed": "需要安装 Claude Code CLI 才能使用此功能。请在终端中运行以下命令安装：",
+    "cli_not_authenticated": "Claude Code CLI 已安装但未登录。请在终端中运行以下命令登录：",
+    "install_guide": "查看安装文档",
+    "retry_check": "重新检测"
   },
   "settings": {
     "title": "设置",

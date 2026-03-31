@@ -53,9 +53,18 @@ pub async fn claude_warmup(
     let mut args: Vec<String> = vec![
         "-p".into(),
         "--output-format".into(), "stream-json".into(),
+        "--verbose".into(),
     ];
     if let Some(ref config) = mcp_config_path {
         args.push(format!("--mcp-config={config}"));
+        args.push("--append-system-prompt".into());
+        args.push(
+            "You are running inside QAI, an API testing tool. \
+             When the user mentions tests, modules, collections, suites, or requests, \
+             they mean QAI's data — use the QAI MCP tools (search, run_collection, send_request, list_collections, etc.). \
+             NEVER use 'cargo test', 'npm test', 'jest', 'pytest', or any shell test command. \
+             Always resolve entity names via the 'search' MCP tool first.".into()
+        );
     }
     // 极简 prompt，只为建立 session
     args.push("Reply with only: ok".into());
@@ -64,7 +73,10 @@ pub async fn claude_warmup(
     cmd.args(&args);
     let path = std::env::var("PATH").unwrap_or_default();
     cmd.env("PATH", format!("/opt/homebrew/bin:/usr/local/bin:{path}"));
-    if let Ok(home) = std::env::var("HOME") { cmd.env("HOME", &home); }
+    if let Ok(home) = std::env::var("HOME") {
+        cmd.env("HOME", &home);
+        cmd.current_dir(&home);
+    }
     cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
 
     let mut child = cmd.spawn().map_err(|e| format!("Warmup failed: {e}"))?;
@@ -134,6 +146,14 @@ pub async fn claude_send(
 
     if let Some(ref config) = mcp_config_path {
         args.push(format!("--mcp-config={config}"));
+        args.push("--append-system-prompt".into());
+        args.push(
+            "You are running inside QAI, an API testing tool. \
+             When the user mentions tests, modules, collections, suites, or requests, \
+             they mean QAI's data — use the QAI MCP tools (search, run_collection, send_request, list_collections, etc.). \
+             NEVER use 'cargo test', 'npm test', 'jest', 'pytest', or any shell test command. \
+             Always resolve entity names via the 'search' MCP tool first.".into()
+        );
     }
 
     // 复用 session：预热成功后秒回
@@ -149,7 +169,10 @@ pub async fn claude_send(
 
     let path = std::env::var("PATH").unwrap_or_default();
     cmd.env("PATH", format!("/opt/homebrew/bin:/usr/local/bin:{path}"));
-    if let Ok(home) = std::env::var("HOME") { cmd.env("HOME", &home); }
+    if let Ok(home) = std::env::var("HOME") {
+        cmd.env("HOME", &home);
+        cmd.current_dir(&home); // 避免继承 QAI 项目目录，防止 Claude Code 误读源码
+    }
 
     cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
 
@@ -301,5 +324,74 @@ fn which_claude() -> Option<String> {
     for p in &["/opt/homebrew/bin/claude", "/usr/local/bin/claude", "/usr/bin/claude"] {
         if std::path::Path::new(p).exists() { return Some(p.to_string()); }
     }
+    // 尝试 PATH 中的 claude
+    if let Ok(output) = std::process::Command::new("which").arg("claude").output() {
+        if output.status.success() {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path.is_empty() { return Some(path); }
+        }
+    }
     None
+}
+
+/// 检测 Claude Code CLI 状态：not_installed / not_authenticated / ready
+#[tauri::command]
+pub async fn claude_check_status() -> Result<serde_json::Value, String> {
+    // 1. 检查 CLI 是否安装
+    let claude_bin = match which_claude() {
+        Some(p) => p,
+        None => return Ok(serde_json::json!({
+            "status": "not_installed",
+            "message": "Claude Code CLI not found. Install it first.",
+            "install_url": "https://docs.anthropic.com/en/docs/claude-code/overview"
+        })),
+    };
+
+    // 2. 获取版本（验证可执行）
+    let version = match std::process::Command::new(&claude_bin).arg("--version").output() {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim().to_string(),
+        _ => return Ok(serde_json::json!({
+            "status": "not_installed",
+            "message": "Claude Code CLI found but not executable."
+        })),
+    };
+
+    // 3. 检查是否已认证（用 -p 发一个简单请求测试）
+    let output = tokio::process::Command::new(&claude_bin)
+        .args(["-p", "--output-format", "stream-json", "--verbose", "--max-turns", "1", "reply ok"])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let stdout_str = String::from_utf8_lossy(&output.stdout);
+    let stderr_str = String::from_utf8_lossy(&output.stderr);
+
+    // 认证失败的特征
+    if stderr_str.contains("not authenticated")
+        || stderr_str.contains("API key")
+        || stderr_str.contains("login")
+        || stderr_str.contains("auth")
+        || !output.status.success()
+    {
+        // 进一步区分：如果 stdout 有 result 说明认证成功
+        if stdout_str.contains("\"type\":\"result\"") && stdout_str.contains("\"subtype\":\"success\"") {
+            return Ok(serde_json::json!({
+                "status": "ready",
+                "version": version
+            }));
+        }
+        return Ok(serde_json::json!({
+            "status": "not_authenticated",
+            "message": "Claude Code CLI is installed but not authenticated. Run `claude login` in terminal.",
+            "version": version
+        }));
+    }
+
+    Ok(serde_json::json!({
+        "status": "ready",
+        "version": version
+    }))
 }

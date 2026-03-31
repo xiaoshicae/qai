@@ -103,6 +103,7 @@ pub fn run() {
             commands::claude_cmd::claude_send,
             commands::claude_cmd::claude_stop,
             commands::claude_cmd::claude_reset_session,
+            commands::claude_cmd::claude_check_status,
             commands::import_cmd::import_yaml_cases,
             commands::import_cmd::import_postman_collection,
         ])

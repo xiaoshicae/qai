@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { Outlet } from 'react-router-dom'
 import { invoke } from '@tauri-apps/api/core'
-import { Sparkles, ScrollText } from 'lucide-react'
+import { Sparkles, ScrollText, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import Sidebar from './sidebar'
 import AIPanel from '@/components/ai/ai-panel'
 import TerminalPanel from '@/components/terminal/terminal-panel'
@@ -83,6 +83,18 @@ export default function AppLayout() {
       .catch(() => {})
   }, [])
 
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const toggleSidebar = useCallback(() => setSidebarCollapsed((v) => !v), [])
+
+  // ⌘+B 快捷键切换侧边栏
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'b') { e.preventDefault(); toggleSidebar() }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [toggleSidebar])
+
   const openTerminal = () => { setPanelMode('terminal'); setOpen(true) }
   const openAI = () => { setPanelMode('ai'); setOpen(true) }
   const openConsole = () => { setPanelMode('console'); setOpen(true) }
@@ -90,14 +102,31 @@ export default function AppLayout() {
   return (
     <div className="flex h-screen bg-background">
       {/* 左侧边栏 */}
-      <aside className="flex-shrink-0 overflow-hidden" style={{ width: sidebar.width }}>
-        <Sidebar />
+      <aside
+        className="flex-shrink-0 overflow-hidden transition-[width] duration-200 ease-in-out"
+        style={{ width: sidebarCollapsed ? 0 : sidebar.width }}
+      >
+        <div style={{ width: sidebar.width }} className="h-full">
+          <Sidebar />
+        </div>
       </aside>
-      {/* 左拖拽条 */}
-      <div
-        className="relative w-px cursor-col-resize shrink-0 group/resize divider-glow hover:w-0.5 transition-all"
-        onMouseDown={sidebar.onMouseDown}
-      />
+      {/* 左拖拽条 + 折叠按钮 */}
+      <div className="relative shrink-0 flex items-center">
+        {!sidebarCollapsed && (
+          <div
+            className="w-px h-full cursor-col-resize group/resize divider-glow hover:w-0.5 transition-all"
+            onMouseDown={sidebar.onMouseDown}
+          />
+        )}
+        <button
+          onClick={toggleSidebar}
+          className="absolute -left-3 top-1/2 -translate-y-1/2 z-20 h-6 w-6 flex items-center justify-center rounded-full glass-card shadow-lg text-muted-foreground hover:text-foreground opacity-0 hover:opacity-100 focus:opacity-100 transition-all cursor-pointer"
+          style={{ left: sidebarCollapsed ? 4 : -12 }}
+          title="⌘B"
+        >
+          {sidebarCollapsed ? <PanelLeftOpen className="h-3 w-3" /> : <PanelLeftClose className="h-3 w-3" />}
+        </button>
+      </div>
 
       {/* 主内容区 */}
       <main className="flex-1 overflow-hidden bg-background relative min-w-[300px]">

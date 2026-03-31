@@ -35,23 +35,45 @@ export default function TerminalPanel({ onClose }: Props) {
   const [showActions, setShowActions] = useState(false)
   const [showSlash, setShowSlash] = useState(false)
   const [warmupStatus, setWarmupStatus] = useState<'idle' | 'warming' | 'ready'>('idle')
+  const [cliStatus, setCliStatus] = useState<'checking' | 'not_installed' | 'not_authenticated' | 'ready'>('checking')
+  const [, setCliMessage] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const mountedRef = useRef(true)
 
-  // 面板打开时：检查 app 级预热状态，监听完成事件
+  // 面板打开时：检查 CLI 状态 → 准备 MCP → 预热
   useEffect(() => {
     mountedRef.current = true
     let unlisten: (() => void) | undefined
 
     const init = async () => {
-      // 准备 MCP 配置
+      // 1. 检测 Claude Code CLI 是否可用
+      try {
+        const status = await invoke<{ status: string; message?: string; version?: string; install_url?: string }>('claude_check_status')
+        if (!mountedRef.current) return
+        if (status.status === 'not_installed') {
+          setCliStatus('not_installed')
+          setCliMessage(status.message || '')
+          return
+        }
+        if (status.status === 'not_authenticated') {
+          setCliStatus('not_authenticated')
+          setCliMessage(status.message || '')
+          return
+        }
+        setCliStatus('ready')
+      } catch {
+        if (mountedRef.current) { setCliStatus('not_installed'); setCliMessage('Failed to check Claude Code CLI status.') }
+        return
+      }
+
+      // 2. 准备 MCP 配置
       try {
         const configPath = await invoke<string>('prepare_mcp_config')
         if (mountedRef.current) setMcpConfigPath(configPath)
       } catch {}
 
-      // 检查 app 启动时的预热是否已完成
+      // 3. 检查 app 启动时的预热是否已完成
       try {
         const ready = await invoke<boolean>('claude_session_ready')
         if (ready) {
@@ -158,7 +180,7 @@ export default function TerminalPanel({ onClose }: Props) {
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); handleSend() }
   }
 
   return (
@@ -184,7 +206,59 @@ export default function TerminalPanel({ onClose }: Props) {
 
       {/* 消息区域 */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
-        {messages.length === 0 && !sending && (
+        {/* CLI 未安装/未认证引导 */}
+        {cliStatus !== 'ready' && cliStatus !== 'checking' && (
+          <div className="flex flex-col items-center justify-center h-full text-center px-4">
+            <div className="h-12 w-12 rounded-2xl bg-overlay/[0.04] border border-overlay/[0.06] flex items-center justify-center">
+              <ClaudeLogo size={24} />
+            </div>
+            <p className="text-sm font-medium mt-3">Claude Code</p>
+            {cliStatus === 'not_installed' ? (
+              <>
+                <p className="text-xs text-muted-foreground mt-2 max-w-[280px] leading-relaxed">
+                  {t('claude.cli_not_installed')}
+                </p>
+                <a
+                  href="https://docs.anthropic.com/en/docs/claude-code/overview"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-3 text-xs text-primary hover:underline"
+                >
+                  {t('claude.install_guide')} →
+                </a>
+                <code className="mt-2 text-[11px] bg-overlay/[0.06] border border-overlay/[0.06] rounded-lg px-3 py-1.5 font-mono text-muted-foreground">
+                  npm install -g @anthropic-ai/claude-code
+                </code>
+              </>
+            ) : (
+              <>
+                <p className="text-xs text-muted-foreground mt-2 max-w-[280px] leading-relaxed">
+                  {t('claude.cli_not_authenticated')}
+                </p>
+                <code className="mt-3 text-[11px] bg-overlay/[0.06] border border-overlay/[0.06] rounded-lg px-3 py-1.5 font-mono text-muted-foreground">
+                  claude login
+                </code>
+              </>
+            )}
+            <button
+              onClick={() => { setCliStatus('checking'); setTimeout(() => { invoke<{ status: string }>('claude_check_status').then((s) => { setCliStatus(s.status as any) }).catch(() => setCliStatus('not_installed')) }, 500) }}
+              className="mt-4 text-xs text-primary/70 hover:text-primary transition-colors cursor-pointer"
+            >
+              {t('claude.retry_check')}
+            </button>
+          </div>
+        )}
+
+        {cliStatus === 'checking' && (
+          <div className="flex flex-col items-center justify-center h-full text-center">
+            <div className="h-12 w-12 rounded-2xl bg-overlay/[0.04] border border-overlay/[0.06] flex items-center justify-center">
+              <ClaudeLogo size={24} />
+            </div>
+            <p className="text-xs text-muted-foreground mt-3 animate-pulse">{t('claude.checking_cli')}</p>
+          </div>
+        )}
+
+        {cliStatus === 'ready' && messages.length === 0 && !sending && (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <div className="h-12 w-12 rounded-2xl bg-overlay/[0.04] border border-overlay/[0.06] flex items-center justify-center">
               <ClaudeLogo size={24} />
@@ -298,7 +372,7 @@ export default function TerminalPanel({ onClose }: Props) {
             onKeyDown={handleKeyDown}
             placeholder={t('claude.placeholder')}
             rows={1}
-            disabled={sending}
+            disabled={sending || cliStatus !== 'ready'}
             className="w-full px-3 py-2 pr-12 bg-transparent text-sm resize-none outline-none placeholder:text-muted-foreground/40 max-h-32 overflow-y-auto disabled:opacity-50"
           />
           {/* 底部工具栏 */}

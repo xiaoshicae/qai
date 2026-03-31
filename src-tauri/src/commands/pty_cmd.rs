@@ -32,17 +32,8 @@ pub fn prepare_mcp_config(app: AppHandle) -> Result<String, String> {
     let app_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let db_path = app_dir.join("qai.db");
 
-    // MCP sidecar 在开发时用 cargo run --bin qai-mcp，生产时用 resource 目录
-    let mcp_binary = if cfg!(debug_assertions) {
-        // 开发模式：从 target/debug 目录找
-        let target_dir = std::env::current_exe()
-            .map_err(|e| e.to_string())?
-            .parent().unwrap().to_path_buf();
-        target_dir.join("qai-mcp")
-    } else {
-        app.path().resource_dir().map_err(|e| e.to_string())?
-            .join("binaries").join("qai-mcp")
-    };
+    // 查找 qai-mcp 二进制：开发模式从 target/debug，生产模式从 externalBin sidecar
+    let mcp_binary = find_mcp_binary(&app)?;
 
     let config = serde_json::json!({
         "mcpServers": {
@@ -58,4 +49,29 @@ pub fn prepare_mcp_config(app: AppHandle) -> Result<String, String> {
         .map_err(|e| e.to_string())?;
 
     Ok(config_path.to_string_lossy().to_string())
+}
+
+/// 查找 qai-mcp 二进制路径
+/// 依次检查：exe 同目录 → resource 目录 → 常见路径
+fn find_mcp_binary(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    let suffix = if cfg!(target_os = "windows") { ".exe" } else { "" };
+    let bin_name = format!("qai-mcp{suffix}");
+
+    // 1. exe 同目录（开发模式 target/debug，生产模式 app bundle 内）
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let path = dir.join(&bin_name);
+            if path.exists() { return Ok(path); }
+        }
+    }
+
+    // 2. Tauri resource 目录
+    if let Ok(dir) = app.path().resource_dir() {
+        for sub in &["", "binaries"] {
+            let path = dir.join(sub).join(&bin_name);
+            if path.exists() { return Ok(path); }
+        }
+    }
+
+    Err(format!("{bin_name} not found. Ensure qai-mcp is built: cargo build --bin qai-mcp"))
 }

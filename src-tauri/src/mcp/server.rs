@@ -52,33 +52,35 @@ Never guess IDs — always look them up first.
 
 create collection → add items (requests) → add assertions → configure environment → run tests → inspect results → view history";
 
+/// 处理 JSON-RPC 请求，返回 Some(response) 或 None（notification 不需要响应）
 pub fn handle_request(
     conn: &Connection,
     client: &reqwest::Client,
     rt: &tokio::runtime::Runtime,
     line: &str,
-) -> JsonRpcResponse {
+) -> Option<JsonRpcResponse> {
     let req: JsonRpcRequest = match serde_json::from_str(line) {
         Ok(r) => r,
-        Err(e) => return JsonRpcResponse::error(None, -32700, format!("Parse error: {e}")),
+        Err(e) => return Some(JsonRpcResponse::error(None, -32700, format!("Parse error: {e}"))),
     };
 
     let id = req.id.clone();
 
     match req.method.as_str() {
         "initialize" => {
-            JsonRpcResponse::success(id, json!({
+            Some(JsonRpcResponse::success(id, json!({
                 "protocolVersion": "2024-11-05",
                 "capabilities": { "tools": {} },
                 "serverInfo": { "name": "qai", "version": "0.2.0" },
                 "instructions": INSTRUCTIONS
-            }))
+            })))
         }
 
-        "notifications/initialized" => JsonRpcResponse::success(id, json!({})),
+        // JSON-RPC 2.0: notifications 不需要响应
+        m if m.starts_with("notifications/") => None,
 
         "tools/list" => {
-            JsonRpcResponse::success(id, json!({ "tools": tools::list_tools() }))
+            Some(JsonRpcResponse::success(id, json!({ "tools": tools::list_tools() })))
         }
 
         "tools/call" => {
@@ -87,16 +89,16 @@ pub fn handle_request(
             let args = params.get("arguments").cloned().unwrap_or(json!({}));
 
             match tools::call_tool(conn, client, rt, tool_name, &args) {
-                Ok(result) => JsonRpcResponse::success(id, json!({
+                Ok(result) => Some(JsonRpcResponse::success(id, json!({
                     "content": [{ "type": "text", "text": result }]
-                })),
-                Err(e) => JsonRpcResponse::success(id, json!({
+                }))),
+                Err(e) => Some(JsonRpcResponse::success(id, json!({
                     "content": [{ "type": "text", "text": format!("Error: {e}") }],
                     "isError": true
-                })),
+                }))),
             }
         }
 
-        _ => JsonRpcResponse::error(id, -32601, format!("Method not found: {}", req.method)),
+        _ => Some(JsonRpcResponse::error(id, -32601, format!("Method not found: {}", req.method))),
     }
 }

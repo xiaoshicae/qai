@@ -124,7 +124,8 @@
     "cli_not_installed": "Claude Code CLI is required. Install it by running:",
     "cli_not_authenticated": "Claude Code CLI is installed but not logged in. Run:",
     "install_guide": "Installation guide",
-    "retry_check": "Retry check"
+    "retry_check": "Retry check",
+    "new_chat": "New Chat"
   },
   "settings": {
     "title": "Settings",

@@ -494,6 +494,8 @@ export default function CollectionOverview({ collection, tree }: Props) {
       {error && <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-lg">{error}</div>}
 
       <div className="rounded-xl border border-overlay/[0.06] overflow-hidden">
+        <div className="overflow-x-auto">
+        <div className="min-w-[640px]">
         <div className="grid grid-cols-[minmax(0,1fr)_80px_64px_64px_80px_72px] gap-2 px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 border-b border-overlay/[0.04]">
           <span className="flex items-center gap-2.5">
             <input
@@ -610,6 +612,8 @@ export default function CollectionOverview({ collection, tree }: Props) {
         </div>
         </SortableContext>
         </DndContext>
+        </div>
+        </div>
       </div>
 
       <Dialog open={!!editReq} onOpenChange={async (open) => { if (!open) await closeEditDialog() }}>

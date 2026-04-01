@@ -14,7 +14,7 @@ The Postman alternative with a brain. QAI analyzes your code and docs to automat
 [![Rust](https://img.shields.io/badge/rust-1.77+-orange?style=flat-square&logo=rust)](https://www.rust-lang.org)
 [![Tauri](https://img.shields.io/badge/tauri-2.0-blue?style=flat-square&logo=tauri)](https://tauri.app)
 
-[Download](#download) · [Features](#features) · [Getting Started](#getting-started) · [Development](#development)
+[Download](#download) · [Features](#features) · [Getting Started](#getting-started) · [Development](#development) · [中文文档](README.zh-CN.md)
 
 </div>
 

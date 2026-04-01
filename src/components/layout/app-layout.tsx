@@ -9,7 +9,7 @@ import ConsolePanel from '@/components/console/console-panel'
 import { useAIStore } from '@/stores/ai-store'
 import { useGlobalShortcuts } from '@/hooks/use-global-shortcuts'
 
-function useResizable(initial: number, min: number, max: number, reverse = false, storageKey?: string) {
+function useResizable(initial: number, min: number, max: number, reverse = false, storageKey?: string, dynamicMax?: () => number) {
   const [width, setWidth] = useState(() => {
     if (storageKey) {
       try { const v = localStorage.getItem(storageKey); if (v) return Math.min(max, Math.max(min, Number(v))) } catch {}
@@ -20,6 +20,9 @@ function useResizable(initial: number, min: number, max: number, reverse = false
   const startX = useRef(0)
   const startW = useRef(0)
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  // 用 ref 存储 dynamicMax，确保 mouse move 中总能拿到最新值
+  const dynamicMaxRef = useRef(dynamicMax)
+  dynamicMaxRef.current = dynamicMax
 
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -29,10 +32,12 @@ function useResizable(initial: number, min: number, max: number, reverse = false
 
     const onMouseMove = (ev: MouseEvent) => {
       if (!dragging.current) return
+      // 取 staticMax 和 dynamicMax 中更小的那个
+      const effectiveMax = dynamicMaxRef.current ? Math.min(max, dynamicMaxRef.current()) : max
       const delta = reverse
         ? startX.current - ev.clientX
         : ev.clientX - startX.current
-      const next = Math.min(max, Math.max(min, startW.current + delta))
+      const next = Math.min(effectiveMax, Math.max(min, startW.current + delta))
       setWidth(next)
       if (storageKey) {
         clearTimeout(saveTimer.current)
@@ -55,12 +60,39 @@ function useResizable(initial: number, min: number, max: number, reverse = false
   return { width, onMouseDown }
 }
 
+/** 主面板最小宽度 — 低于此值拖拽停止 */
+const MAIN_MIN_WIDTH = 500
+/** 分隔条占用像素 */
+const DIVIDER_PX = 4
+
 export default function AppLayout() {
   useGlobalShortcuts()
   const { open, setOpen } = useAIStore()
   const [panelMode, setPanelMode] = useState<'ai' | 'terminal' | 'console'>('ai')
-  const sidebar = useResizable(280, 200, 450, false, 'qai.sidebar.width')
-  const aiPanel = useResizable(380, 280, 600, true, 'qai.aipanel.width')
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+
+  // 用 ref 在两个 resize hook 之间互相读取宽度和状态（避免声明顺序问题）
+  const sidebarWidthRef = useRef(280)
+  const aiPanelWidthRef = useRef(380)
+  const sidebarCollapsedRef = useRef(false)
+  const rightPanelOpenRef = useRef(open)
+  sidebarCollapsedRef.current = sidebarCollapsed
+  rightPanelOpenRef.current = open
+
+  const sidebar = useResizable(280, 200, 450, false, 'qai.sidebar.width', () => {
+    // 拖拽侧边栏时，最大值 = 窗口宽度 - 右面板宽度 - 主面板最小宽度
+    const rightW = rightPanelOpenRef.current ? aiPanelWidthRef.current : 0
+    return Math.max(200, window.innerWidth - rightW - MAIN_MIN_WIDTH - DIVIDER_PX)
+  })
+  const aiPanel = useResizable(380, 280, 600, true, 'qai.aipanel.width', () => {
+    // 拖拽右面板时，最大值 = 窗口宽度 - 侧边栏宽度 - 主面板最小宽度
+    const leftW = sidebarCollapsedRef.current ? 0 : sidebarWidthRef.current
+    return Math.max(280, window.innerWidth - leftW - MAIN_MIN_WIDTH - DIVIDER_PX)
+  })
+
+  // 保持 ref 和 state 同步
+  sidebarWidthRef.current = sidebar.width
+  aiPanelWidthRef.current = aiPanel.width
 
   const [showClaudeCode, setShowClaudeCode] = useState(() => localStorage.getItem('qai.claude_code_enabled') === 'true')
   const [showAI, setShowAI] = useState(() => localStorage.getItem('qai.ai_assistant_enabled') === 'true')
@@ -83,7 +115,6 @@ export default function AppLayout() {
       .catch(() => {})
   }, [])
 
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const toggleSidebar = useCallback(() => setSidebarCollapsed((v) => !v), [])
 
   // ⌘+B 快捷键切换侧边栏
@@ -129,7 +160,7 @@ export default function AppLayout() {
       </div>
 
       {/* 主内容区 */}
-      <main className="flex-1 overflow-hidden bg-background relative min-w-[300px]">
+      <main className="flex-1 overflow-hidden bg-background relative min-w-[500px]">
         {/* 顶部拖拽区域（macOS 标题栏） */}
         <div className="h-8 shrink-0" data-tauri-drag-region="" />
         <div className="h-[calc(100%-2rem)] overflow-hidden">

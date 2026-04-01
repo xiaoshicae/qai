@@ -26,12 +26,17 @@ fn kill_process(pid: u32) {
 
 pub struct ClaudeState {
     pid: Mutex<Option<u32>>,
-    session_id: Mutex<Option<String>>, // 复用 session 加速后续对话
+    session_id: Mutex<Option<String>>,
+    spare_session_id: Mutex<Option<String>>, // 预热的备用 session，新建 Tab 时秒用
 }
 
 impl ClaudeState {
     pub fn new() -> Self {
-        Self { pid: Mutex::new(None), session_id: Mutex::new(None) }
+        Self {
+            pid: Mutex::new(None),
+            session_id: Mutex::new(None),
+            spare_session_id: Mutex::new(None),
+        }
     }
 }
 
@@ -43,6 +48,7 @@ fn lock_claude<T>(m: &Mutex<T>) -> Result<MutexGuard<'_, T>, String> {
 pub struct ClaudeEvent {
     pub event_type: String,
     pub content: String,
+    pub session_id: Option<String>,
     pub raw: Option<serde_json::Value>,
 }
 
@@ -144,6 +150,7 @@ pub async fn claude_send(
     claude_state: State<'_, ClaudeState>,
     message: String,
     mcp_config_path: Option<String>,
+    session_id: Option<String>,
 ) -> Result<serde_json::Value, String> {
     // 如果有正在运行的进程（如 warmup），先杀掉
     {
@@ -156,7 +163,8 @@ pub async fn claude_send(
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     let claude_bin = which_claude().unwrap_or_else(|| "claude".to_string());
-    let existing_session = lock_claude(&claude_state.session_id)?.clone();
+    // 优先使用前端传入的 session_id（多 Tab 场景），其次用全局缓存的
+    let resume_sid = session_id.or_else(|| lock_claude(&claude_state.session_id).ok().and_then(|g| g.clone()));
 
     let mut args: Vec<String> = vec![
         "-p".into(),
@@ -167,7 +175,6 @@ pub async fn claude_send(
 
     if let Some(ref config) = mcp_config_path {
         args.push(format!("--mcp-config={config}"));
-        // 预授权 QAI MCP 工具，避免非交互模式下的权限弹窗
         args.push("--allowedTools".into());
         args.push("mcp__qai__*".into());
         args.push("--append-system-prompt".into());
@@ -181,7 +188,7 @@ pub async fn claude_send(
     }
 
     // 复用 session：预热成功后秒回
-    if let Some(ref sid) = existing_session {
+    if let Some(ref sid) = resume_sid {
         args.push("--resume".into());
         args.push(sid.clone());
     }
@@ -209,6 +216,7 @@ pub async fn claude_send(
     let reader = BufReader::new(stdout);
     let mut lines = reader.lines();
     let mut final_result = serde_json::Value::Null;
+    let mut current_sid = resume_sid.clone();
 
     while let Ok(Some(line)) = lines.next_line().await {
         if line.trim().is_empty() { continue; }
@@ -224,7 +232,7 @@ pub async fn claude_send(
                     if sub == "content_block_delta" {
                         if let Some(text) = event.get("delta").and_then(|d| d.get("text")).and_then(|t| t.as_str()) {
                             if !text.is_empty() {
-                                let _ = app.emit("claude-event", ClaudeEvent { event_type: "delta".into(), content: text.into(), raw: None });
+                                let _ = app.emit("claude-event", ClaudeEvent { event_type: "delta".into(), content: text.into(), session_id: current_sid.clone(), raw: None });
                             }
                         }
                     }
@@ -236,7 +244,7 @@ pub async fn claude_send(
                         if block.get("type").and_then(|t| t.as_str()) == Some("tool_use") {
                             let name = block.get("name").and_then(|n| n.as_str()).unwrap_or("");
                             let detail = tool_use_summary(name, block.get("input"));
-                            let _ = app.emit("claude-event", ClaudeEvent { event_type: "tool_use".into(), content: format!("{name}: {detail}"), raw: Some(block.clone()) });
+                            let _ = app.emit("claude-event", ClaudeEvent { event_type: "tool_use".into(), content: format!("{name}: {detail}"), session_id: current_sid.clone(), raw: Some(block.clone()) });
                         }
                     }
                 }
@@ -244,11 +252,16 @@ pub async fn claude_send(
             "result" => {
                 // 保存 session_id 用于下次 --resume
                 if let Some(sid) = json.get("session_id").and_then(|s| s.as_str()) {
+                    current_sid = Some(sid.to_string());
                     if let Ok(mut g) = claude_state.session_id.lock() {
                         *g = Some(sid.to_string());
                     }
                 }
-                let _ = app.emit("claude-event", ClaudeEvent { event_type: "result".into(), content: String::new(), raw: Some(json.clone()) });
+                let result_text = json.get("result")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let _ = app.emit("claude-event", ClaudeEvent { event_type: "result".into(), content: result_text, session_id: current_sid.clone(), raw: Some(json.clone()) });
                 final_result = json;
             }
             _ => {}
@@ -281,6 +294,81 @@ pub fn claude_stop(claude_state: State<'_, ClaudeState>) -> Result<(), String> {
 #[tauri::command]
 pub fn claude_reset_session(claude_state: State<'_, ClaudeState>) -> Result<(), String> {
     *lock_claude(&claude_state.session_id)? = None;
+    Ok(())
+}
+
+/// 取走预热的备用 session（原子操作：取走后清空）
+#[tauri::command]
+pub fn claude_take_spare(claude_state: State<'_, ClaudeState>) -> Result<Option<String>, String> {
+    Ok(lock_claude(&claude_state.spare_session_id)?.take())
+}
+
+/// 后台预热备用 session（不影响主 session，不占 pid）
+#[tauri::command]
+pub async fn claude_warmup_spare(
+    app: AppHandle,
+    claude_state: State<'_, ClaudeState>,
+    mcp_config_path: Option<String>,
+) -> Result<(), String> {
+    // 已有备用 session，跳过
+    if lock_claude(&claude_state.spare_session_id)?.is_some() {
+        return Ok(());
+    }
+
+    let claude_bin = which_claude().unwrap_or_else(|| "claude".to_string());
+    let mut args: Vec<String> = vec![
+        "-p".into(),
+        "--output-format".into(), "stream-json".into(),
+        "--verbose".into(),
+    ];
+    if let Some(ref config) = mcp_config_path {
+        args.push(format!("--mcp-config={config}"));
+        args.push("--allowedTools".into());
+        args.push("mcp__qai__*".into());
+        args.push("--append-system-prompt".into());
+        args.push(
+            "You are running inside QAI, an API testing tool. \
+             When the user mentions tests, modules, collections, suites, or requests, \
+             they mean QAI's data — use the QAI MCP tools (search, run_collection, send_request, list_collections, etc.). \
+             NEVER use 'cargo test', 'npm test', 'jest', 'pytest', or any shell test command. \
+             Always resolve entity names via the 'search' MCP tool first.".into()
+        );
+    }
+    args.push("Reply with only: ok".into());
+
+    let mut cmd = Command::new(&claude_bin);
+    cmd.args(&args);
+    let path = std::env::var("PATH").unwrap_or_default();
+    cmd.env("PATH", format!("/opt/homebrew/bin:/usr/local/bin:{path}"));
+    if let Ok(home) = std::env::var("HOME") {
+        cmd.env("HOME", &home);
+        cmd.current_dir(&home);
+    }
+    cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+
+    let mut child = cmd.spawn().map_err(|e| format!("Spare warmup failed: {e}"))?;
+    let stdout = child.stdout.take().ok_or("No stdout")?;
+    let mut lines = BufReader::new(stdout).lines();
+
+    while let Ok(Some(line)) = lines.next_line().await {
+        if line.trim().is_empty() { continue; }
+        let json: serde_json::Value = match serde_json::from_str(&line) {
+            Ok(v) => v, Err(_) => continue,
+        };
+        if json.get("type").and_then(|v| v.as_str()) == Some("result") {
+            if let Some(sid) = json.get("session_id").and_then(|s| s.as_str()) {
+                *lock_claude(&claude_state.spare_session_id)? = Some(sid.to_string());
+            }
+        }
+    }
+
+    if let Some(stderr) = child.stderr.take() {
+        let mut r = BufReader::new(stderr);
+        let mut buf = String::new();
+        tokio::io::AsyncReadExt::read_to_string(&mut r, &mut buf).await.ok();
+    }
+    let _ = child.wait().await;
+    let _ = app.emit("claude-spare-ready", ());
     Ok(())
 }
 

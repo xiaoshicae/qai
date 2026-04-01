@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { ContextMenu, menuItemClass, menuDangerClass, menuDividerClass } from '@/components/ui/context-menu'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { invoke } from '@tauri-apps/api/core'
+import { getVersion } from '@tauri-apps/api/app'
 import { useConfirmStore } from '@/components/ui/confirm-dialog'
 import {
   Search, Plus, History, Globe, Settings, Circle,
@@ -36,6 +37,7 @@ export default function Sidebar() {
   const location = useLocation()
   const confirm = useConfirmStore((s) => s.confirm)
   const { collections, groups, selectedNodeId, contextCollectionId, trees, loadCollections, loadGroups, createCollection, deleteCollection, renameCollection, createGroup, updateGroup, deleteGroup, selectNode, loadTree } = useCollectionStore()
+  const [appVersion, setAppVersion] = useState('')
   const [search, setSearch] = useState('')
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [menu, setMenu] = useState<{ x: number; y: number; target: 'group' | 'col'; groupId?: string; col?: Collection } | null>(null)
@@ -54,6 +56,7 @@ export default function Sidebar() {
 
   const collisionDetection: CollisionDetection = useCallback((args) => closestCenter(args), [])
 
+  useEffect(() => { getVersion().then((v) => setAppVersion(import.meta.env.DEV ? `${v}-dev` : v)) }, [])
   useEffect(() => { loadCollections(); loadGroups() }, [])
 
   useEffect(() => {
@@ -329,7 +332,7 @@ export default function Sidebar() {
             <path d="M13 2L4.094 12.688c-.15.187-.225.281-.226.36a.25.25 0 00.098.205c.063.047.178.047.407.047H12l-1 8.7 8.906-10.688c.15-.187.226-.281.226-.36a.25.25 0 00-.097-.205c-.064-.047-.179-.047-.408-.047H12l1-8.7z" fill="url(#logo-grad)" fillOpacity="0.9" />
           </svg>
           <span className="text-sm font-semibold text-gradient tracking-tight">QAI</span>
-          <span className="text-[9px] text-muted-foreground/40 font-medium ml-0.5">v0.1</span>
+          {appVersion && <span className="text-[9px] text-muted-foreground/40 font-medium ml-0.5">v{appVersion}</span>}
           <div className="flex-1" />
           <EnvSelector />
         </div>

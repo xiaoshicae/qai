@@ -124,7 +124,8 @@
     "cli_not_installed": "需要安装 Claude Code CLI 才能使用此功能。请在终端中运行以下命令安装：",
     "cli_not_authenticated": "Claude Code CLI 已安装但未登录。请在终端中运行以下命令登录：",
     "install_guide": "查看安装文档",
-    "retry_check": "重新检测"
+    "retry_check": "重新检测",
+    "new_chat": "新建会话"
   },
   "settings": {
     "title": "设置",

@@ -131,6 +131,12 @@ pub async fn run_collection(
         (normal, chains, chain_names, var_map)
     };
 
+    log::info!("[run_collection] chain_groups={}, normal_items={}", chain_groups.len(), normal_items.len());
+    for (cid, steps) in &chain_groups {
+        let name = chain_names.get(cid).cloned().unwrap_or_default();
+        log::info!("[run_collection] chain '{}' ({}) has {} steps", name, cid, steps.len());
+    }
+
     if normal_items.is_empty() && chain_groups.is_empty() {
         return Err("没有可执行的请求".to_string());
     }

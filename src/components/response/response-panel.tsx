@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowDownToLine, Clock, HardDrive, Plug, Download, Music, Image, Film, FileDown } from 'lucide-react'
+import { ArrowDownToLine, Clock, HardDrive, Plug, Download, Music, Image, Film, FileDown, CheckCircle2, XCircle } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
@@ -78,6 +78,61 @@ function MediaPreview({ body, sizeBytes }: { body: string; sizeBytes: number }) 
   )
 }
 
+interface WsStepData {
+  step: number
+  sent: unknown
+  received: unknown[]
+  binary_bytes: number
+  status: string
+  error: string | null
+  time_ms: number
+}
+
+function WsStepResults({ steps }: { steps: WsStepData[] }) {
+  const { t } = useTranslation()
+  return (
+    <div className="space-y-3">
+      {steps.map((step) => (
+        <div key={step.step} className="rounded-xl border border-overlay/[0.06] overflow-hidden">
+          <div className="flex items-center gap-2 px-3 py-2 bg-overlay/[0.02]">
+            <span className="text-xs font-medium">{t('ws.step_n', { n: step.step })}</span>
+            {step.status === 'success' ? (
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+            ) : (
+              <XCircle className="h-3.5 w-3.5 text-destructive" />
+            )}
+            <span className="text-[10px] text-muted-foreground">{formatDuration(step.time_ms)}</span>
+            {step.binary_bytes > 0 && (
+              <span className="text-[10px] text-muted-foreground">{formatSize(step.binary_bytes)}</span>
+            )}
+          </div>
+          <div className="divide-y divide-overlay/[0.04]">
+            <div className="px-3 py-2">
+              <div className="text-[10px] text-muted-foreground mb-1">{t('ws.sent')}</div>
+              <pre className="font-mono text-xs text-foreground/80 whitespace-pre-wrap break-all">
+                {typeof step.sent === 'string' ? step.sent : JSON.stringify(step.sent, null, 2)}
+              </pre>
+            </div>
+            {step.received.length > 0 && (
+              <div className="px-3 py-2">
+                <div className="text-[10px] text-muted-foreground mb-1">{t('ws.received')}</div>
+                <pre className="font-mono text-xs text-foreground/80 whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto">
+                  {JSON.stringify(step.received.length === 1 ? step.received[0] : step.received, null, 2)}
+                </pre>
+              </div>
+            )}
+            {step.error && (
+              <div className="px-3 py-2">
+                <span className="text-xs text-destructive">{step.error}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function ResponsePanel() {
   const { t } = useTranslation()
   const { currentRequest, currentResponse, streaming, streamContent, streamChunks } = useRequestStore()
@@ -88,6 +143,18 @@ export default function ResponsePanel() {
   const assertionResults = currentResponse?.assertion_results ?? []
   const passedCount = assertionResults.filter((r) => r.passed).length
   const failedCount = assertionResults.filter((r) => !r.passed).length
+
+  // WebSocket 多步结果检测
+  const wsStepsData = useMemo<WsStepData[] | null>(() => {
+    if (!isWebSocket || !response?.body) return null
+    try {
+      const data = JSON.parse(response.body)
+      if (data._ws_steps && Array.isArray(data.steps)) {
+        return data.steps as WsStepData[]
+      }
+    } catch { /* not ws steps */ }
+    return null
+  }, [isWebSocket, response?.body])
 
   const isMediaResponse = response?.body?.startsWith('data:audio/')
     || response?.body?.startsWith('data:image/')
@@ -199,7 +266,9 @@ export default function ResponsePanel() {
           )}
         </TabsList>
         <TabsContent value="body">
-          {isMediaResponse ? (
+          {wsStepsData ? (
+            <WsStepResults steps={wsStepsData} />
+          ) : isMediaResponse ? (
             <MediaPreview body={response.body} sizeBytes={response.size_bytes} />
           ) : (
             <div>

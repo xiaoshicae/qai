@@ -8,14 +8,15 @@ import type {
   ItemLastStatus, BatchResult, TestProgress,
   ExecutionResult, ChainResult, ChainProgress, StreamChunk,
 } from '@/types'
-import type { FlatReq } from '@/components/collection/collection-overview-model'
+import type { FlatReq, TableItem } from '@/components/collection/collection-overview-model'
 
 interface Options {
   collectionId: string
   allRequests: FlatReq[]
+  tableItems: TableItem[]
 }
 
-export function useCollectionRunner({ collectionId, allRequests }: Options) {
+export function useCollectionRunner({ collectionId, allRequests, tableItems }: Options) {
   const [statuses, setStatuses] = useState<Record<string, ItemLastStatus>>({})
   const [running, setRunning] = useState(false)
   const [runningIds, setRunningIds] = useState<Set<string>>(new Set())
@@ -64,9 +65,16 @@ export function useCollectionRunner({ collectionId, allRequests }: Options) {
   const runAll = async (excludeIds?: Set<string>) => {
     abortRef.current = false
     setRunning(true); setProgress([]); setBatchResult(null); setSingleResults({}); setError(null); setStatuses({})
-    const requests = excludeIds?.size ? allRequests.filter((r) => !excludeIds.has(r.id)) : allRequests
 
     if (runMode === 'sequential') {
+      // 构建顺序执行队列：尊重 chain 分组，chain 内部走 runChain（变量传递 + 失败中断）
+      const items = excludeIds?.size
+        ? tableItems.filter((t) => {
+            if ('isChain' in t) return !excludeIds.has(t.groupId)
+            return !excludeIds.has(t.id)
+          })
+        : tableItems
+
       const contents: Record<string, string> = {}
       const unlisten = await listen<StreamChunk>('stream-chunk', (event) => {
         const { chunk, done, item_id } = event.payload
@@ -75,27 +83,66 @@ export function useCollectionRunner({ collectionId, allRequests }: Options) {
         contents[item_id] = (contents[item_id] ?? '') + (delta ?? chunk + '\n')
         setStreamingContents({ ...contents })
       })
-      for (const item of requests) {
+
+      for (const tableItem of items) {
         if (abortRef.current) break
-        contents[item.id] = ''
-        setRunningIds((prev) => new Set(prev).add(item.id))
-        setStreamingContents({ ...contents })
-        try {
-          const result = await invoke<ExecutionResult>('send_request_stream', { id: item.id })
-          setSingleResults((prev) => ({ ...prev, [item.id]: result }))
-        } catch (e: unknown) {
-          setSingleResults((prev) => ({
-            ...prev,
-            [item.id]: {
-              execution_id: '', item_id: item.id, item_name: item.name,
-              status: 'error', response: null, assertion_results: [],
-              error_message: invokeErrorMessage(e),
-            },
-          }))
+
+        if ('isChain' in tableItem) {
+          // 链式请求：通过 run_chain 命令执行（自动处理变量传递和失败中断）
+          const stepIds = tableItem.steps.map((s) => s.id)
+          setRunningIds((prev) => new Set(prev).add(tableItem.groupId))
+          const unlistenChain = await listen<ChainProgress>('chain-progress', (event) => {
+            const p = event.payload
+            const stepId = stepIds[p.step_index]
+            if (!stepId) return
+            if (p.status === 'running') {
+              setRunningIds((prev) => new Set(prev).add(stepId))
+            } else {
+              setRunningIds((prev) => { const n = new Set(prev); n.delete(stepId); return n })
+            }
+          })
+          const unlistenResult = await listen<ExecutionResult>('execution-result', (e) => {
+            setSingleResults((prev) => ({ ...prev, [e.payload.item_id]: e.payload }))
+          })
+          try {
+            const result = await invoke<ChainResult>('run_chain', { itemId: tableItem.groupId })
+            for (const step of result.steps) {
+              setSingleResults((prev) => ({ ...prev, [step.execution_result.item_id]: step.execution_result }))
+            }
+            // 链式执行失败时中断整体运行
+            if (result.status !== 'success') {
+              abortRef.current = true
+            }
+          } catch (e: unknown) {
+            toast.error(invokeErrorMessage(e))
+          } finally {
+            unlistenChain()
+            unlistenResult()
+            setRunningIds((prev) => { const n = new Set(prev); stepIds.forEach((id) => n.delete(id)); n.delete(tableItem.groupId); return n })
+          }
+        } else {
+          // 普通请求：逐个发送
+          contents[tableItem.id] = ''
+          setRunningIds((prev) => new Set(prev).add(tableItem.id))
+          setStreamingContents({ ...contents })
+          try {
+            const result = await invoke<ExecutionResult>('send_request_stream', { id: tableItem.id })
+            setSingleResults((prev) => ({ ...prev, [tableItem.id]: result }))
+          } catch (e: unknown) {
+            setSingleResults((prev) => ({
+              ...prev,
+              [tableItem.id]: {
+                execution_id: '', item_id: tableItem.id, item_name: tableItem.name,
+                status: 'error', response: null, assertion_results: [],
+                error_message: invokeErrorMessage(e),
+              },
+            }))
+          }
+          delete contents[tableItem.id]
+          setStreamingContents({ ...contents })
+          setRunningIds((prev) => { const n = new Set(prev); n.delete(tableItem.id); return n })
         }
-        delete contents[item.id]
-        setStreamingContents({ ...contents })
-        setRunningIds((prev) => { const n = new Set(prev); n.delete(item.id); return n })
+
         if (delayMs > 0 && !abortRef.current) {
           await new Promise((r) => setTimeout(r, delayMs))
         }

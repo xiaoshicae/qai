@@ -92,9 +92,12 @@ pub async fn run_chain(
             let rules: Vec<ExtractRule> = serde_json::from_str(&raw_item.extract_rules).unwrap_or_default();
             if !rules.is_empty() {
                 let new_vars = crate::http::vars::extract_variables(&rules, response);
+                log::info!("[chain] step {} '{}' extracted {} vars: {:?}",
+                    step_index, raw_item.name, new_vars.len(), new_vars.keys().collect::<Vec<_>>());
                 accumulated_vars.extend(new_vars.clone());
                 new_vars
             } else {
+                log::info!("[chain] step {} '{}' has no extract_rules", step_index, raw_item.name);
                 HashMap::new()
             }
         } else {
@@ -102,6 +105,7 @@ pub async fn run_chain(
         };
 
         let step_status = result.status.clone();
+        log::info!("[chain] step {} '{}' status={}, url={}", step_index, item.name, step_status, item.url);
 
         progress_callback(ChainProgress {
             chain_id: chain_id.clone(), item_id: chain_item_id.clone(),
@@ -111,6 +115,7 @@ pub async fn run_chain(
         step_results.push(ChainStepResult { step_index, execution_result: result, extracted_variables: extracted });
 
         if step_status != crate::models::Status::Success.as_str() {
+            log::info!("[chain] step {} failed with '{}', breaking chain", step_index, step_status);
             overall_status = step_status;
             break;
         }

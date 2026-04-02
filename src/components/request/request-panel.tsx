@@ -9,6 +9,7 @@ import { useRequestStore } from '@/stores/request-store'
 import { useEnvVars } from '@/hooks/use-env-vars'
 import KeyValueTable from './key-value-table'
 import { BodyTypeSelector } from './body-type-selector'
+import { WsStepsEditor } from './ws-steps-editor'
 import AssertionEditor from '@/components/assertion/assertion-editor'
 import ExtractRulesEditor from './extract-rules-editor'
 import RunsTab from './runs-tab'
@@ -238,31 +239,12 @@ export default function RequestPanel() {
         </TabsContent>
         <TabsContent value="body">
           {isWebSocket ? (
-            <>
-              <div className="mb-3 flex items-center gap-1">
-                <span className="px-2.5 py-1 rounded-lg text-xs font-medium bg-overlay/[0.06] text-foreground">JSON</span>
-                {bodyContent && (
-                  <div className="ml-auto flex items-center gap-0.5">
-                    <button onClick={formatJson} className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-overlay/[0.04] cursor-pointer transition-colors" title={t('request.format_json')}>
-                      <Braces className="h-3 w-3" /> Format
-                    </button>
-                    <button onClick={compactJson} className="px-2 py-1 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-overlay/[0.04] cursor-pointer transition-colors" title={t('request.compact_json')}>Compact</button>
-                    <button onClick={copyBody} className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-overlay/[0.04] cursor-pointer transition-colors" title={t('request.copy')}>
-                      {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
-                    </button>
-                  </div>
-                )}
-              </div>
-              <CodeEditor
-                value={bodyContent}
-                onChange={setBodyContent}
-                onBlur={() => updateRequest({ bodyContent })}
-                language="json"
-                placeholder='{ "text": "Hello", "voice": "Linda" }'
-                className="h-[280px]"
-                onSubmitChord={() => { void handleSend() }}
-              />
-            </>
+            <WsStepsEditor
+              value={bodyContent}
+              onChange={setBodyContent}
+              onBlur={() => updateRequest({ bodyContent })}
+              onSubmit={() => { void handleSend() }}
+            />
           ) : (
             <>
               <div className="mb-3 flex items-center gap-1">

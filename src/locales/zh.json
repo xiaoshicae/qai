@@ -276,6 +276,13 @@
     "empty_hint": "发送请求后日志将自动显示在此",
     "error": "错误"
   },
+  "ws": {
+    "step_n": "步骤 {{n}}",
+    "add_message": "添加消息",
+    "multi_step_hint": "多步模式：消息将按顺序逐条发送，需手动包含认证信息",
+    "sent": "发送",
+    "received": "接收"
+  },
   "common": {
     "confirm_delete": "确定删除「{{name}}」？此操作不可撤销。",
     "confirm_delete_group": "确定删除分组「{{name}}」及其下所有测试集？此操作不可撤销。",

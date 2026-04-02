@@ -12,6 +12,7 @@ import KeyValueTable from '@/components/request/key-value-table'
 import { VarInput } from '@/components/ui/var-input'
 import type { CollectionItem, ExecutionResult } from '@/types'
 import { BodyTypeSelector } from '@/components/request/body-type-selector'
+import { WsStepsEditor } from '@/components/request/ws-steps-editor'
 import { MiniResponseViewer } from '@/components/request/mini-response-viewer'
 import { invokeErrorMessage } from '@/lib/invoke-error'
 
@@ -401,38 +402,49 @@ export function EditForm({ req, onChange, onSave, onCancel, envVars, saving }: {
       <div className="flex-1 min-h-0 overflow-y-auto">
         {activeTab === 'body' && (
           <div className="flex flex-col h-full">
-            <div className="mb-2 shrink-0">
-              <BodyTypeSelector value={req.body_type} onChange={(v) => set('body_type', v)}>
-                {req.body_type === 'json' && req.body_content && (
-                  <button
-                    type="button"
-                    className="ml-auto flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-overlay/[0.04] cursor-pointer transition-colors"
-                    onClick={() => { try { set('body_content', JSON.stringify(JSON.parse(req.body_content), null, 2)) } catch { /* ignore */ } }}
-                  >
-                    <Braces className="h-3 w-3" /> Format
-                  </button>
-                )}
-              </BodyTypeSelector>
-            </div>
-            {req.body_type === 'none' ? (
-              <div className="flex-1 min-h-[120px] rounded-xl border border-overlay/[0.06] bg-overlay/[0.02] flex items-center justify-center">
-                <span className="text-xs text-muted-foreground/40">{t('scenario.no_body')}</span>
-              </div>
-            ) : (req.body_type === 'form-data' || req.body_type === 'urlencoded' || req.body_type === 'form') ? (
-              <KeyValueTable
-                value={(() => { try { const p = JSON.parse(req.body_content || '[]'); return Array.isArray(p) ? p : [] } catch { return [] } })()}
-                onChange={(v) => set('body_content', JSON.stringify(v))}
-                allowFiles={req.body_type === 'form-data'}
-                envVars={envVars}
-              />
-            ) : (
-              <CodeEditor
+            {req.protocol === 'websocket' ? (
+              <WsStepsEditor
                 value={req.body_content}
                 onChange={(v) => set('body_content', v)}
-                language={req.body_type === 'json' ? 'json' : 'plaintext'}
-                className="w-full flex-1 min-h-[160px]"
-                placeholder='{ "key": "value" }'
+                onBlur={() => {}}
+                onSubmit={() => {}}
               />
+            ) : (
+              <>
+                <div className="mb-2 shrink-0">
+                  <BodyTypeSelector value={req.body_type} onChange={(v) => set('body_type', v)}>
+                    {req.body_type === 'json' && req.body_content && (
+                      <button
+                        type="button"
+                        className="ml-auto flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-overlay/[0.04] cursor-pointer transition-colors"
+                        onClick={() => { try { set('body_content', JSON.stringify(JSON.parse(req.body_content), null, 2)) } catch { /* ignore */ } }}
+                      >
+                        <Braces className="h-3 w-3" /> Format
+                      </button>
+                    )}
+                  </BodyTypeSelector>
+                </div>
+                {req.body_type === 'none' ? (
+                  <div className="flex-1 min-h-[120px] rounded-xl border border-overlay/[0.06] bg-overlay/[0.02] flex items-center justify-center">
+                    <span className="text-xs text-muted-foreground/40">{t('scenario.no_body')}</span>
+                  </div>
+                ) : (req.body_type === 'form-data' || req.body_type === 'urlencoded' || req.body_type === 'form') ? (
+                  <KeyValueTable
+                    value={(() => { try { const p = JSON.parse(req.body_content || '[]'); return Array.isArray(p) ? p : [] } catch { return [] } })()}
+                    onChange={(v) => set('body_content', JSON.stringify(v))}
+                    allowFiles={req.body_type === 'form-data'}
+                    envVars={envVars}
+                  />
+                ) : (
+                  <CodeEditor
+                    value={req.body_content}
+                    onChange={(v) => set('body_content', v)}
+                    language={req.body_type === 'json' ? 'json' : 'plaintext'}
+                    className="w-full flex-1 min-h-[160px]"
+                    placeholder='{ "key": "value" }'
+                  />
+                )}
+              </>
             )}
           </div>
         )}

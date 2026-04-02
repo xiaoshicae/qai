@@ -66,6 +66,35 @@ function ResponseBody({ resp }: { resp: HttpResponse | null | undefined }) {
   try { parsed = JSON.parse(resp.body) } catch { /* not JSON */ }
 
   if (parsed) {
+    // WebSocket 多步结果分步展示
+    const wsData = parsed as Record<string, unknown>
+    if (wsData._ws_steps && Array.isArray(wsData.steps)) {
+      const steps = wsData.steps as Array<{
+        step: number; sent: unknown; received: unknown[]; binary_bytes: number;
+        status: string; error: string | null; time_ms: number;
+      }>
+      return (
+        <div className="px-3 py-2.5 max-h-64 overflow-y-auto space-y-2">
+          {steps.map((step) => (
+            <div key={step.step} className="rounded-lg border border-overlay/[0.04] overflow-hidden">
+              <div className="flex items-center gap-1.5 px-2 py-1 bg-overlay/[0.02]">
+                <span className="text-[10px] font-medium">{t('ws.step_n', { n: step.step })}</span>
+                {step.status === 'success'
+                  ? <CheckCircle2 className="h-2.5 w-2.5 text-emerald-500" />
+                  : <XCircle className="h-2.5 w-2.5 text-red-500" />}
+                <span className="text-[9px] text-muted-foreground">{formatDuration(step.time_ms)}</span>
+                {step.binary_bytes > 0 && <span className="text-[9px] text-muted-foreground">{formatSize(step.binary_bytes)}</span>}
+              </div>
+              {step.received.length > 0 && (
+                <JsonHighlight code={JSON.stringify(step.received.length === 1 ? step.received[0] : step.received, null, 2)} className="px-2 py-1.5" />
+              )}
+              {step.error && <div className="px-2 py-1 text-[10px] text-red-500">{step.error}</div>}
+            </div>
+          ))}
+        </div>
+      )
+    }
+
     const mediaFields = extractBase64Media(parsed)
     if (mediaFields.length > 0) {
       const redacted = redactBase64Fields(parsed, mediaFields)

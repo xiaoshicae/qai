@@ -276,6 +276,13 @@
     "empty_hint": "Logs will appear here after sending requests",
     "error": "Error"
   },
+  "ws": {
+    "step_n": "Step {{n}}",
+    "add_message": "Add Message",
+    "multi_step_hint": "Multi-step: messages are sent sequentially. Include auth info manually.",
+    "sent": "Sent",
+    "received": "Received"
+  },
   "common": {
     "confirm_delete": "Delete \"{{name}}\"? This cannot be undone.",
     "confirm_delete_group": "Delete group \"{{name}}\" and all its test suites? This cannot be undone.",

@@ -56,7 +56,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
   const tableItems = useMemo(() => flattenTreeToTableItems(tree), [tree])
   const allRequests = useMemo(() => allRequestsFromTableItems(tableItems), [tableItems])
 
-  const runner = useCollectionRunner({ collectionId: collection.id, allRequests })
+  const runner = useCollectionRunner({ collectionId: collection.id, allRequests, tableItems })
   const {
     statuses, running, runningIds, progress, singleResults, batchResult,
     error, streamingContents,

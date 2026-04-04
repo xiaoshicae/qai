@@ -48,6 +48,25 @@ pub fn list_by_items(conn: &Connection, item_ids: &[String]) -> Result<std::coll
     Ok(map)
 }
 
+/// 按集合批量获取每个 item 的断言数量
+pub fn count_by_collection(conn: &Connection, collection_id: &str) -> Result<std::collections::HashMap<String, i32>, rusqlite::Error> {
+    let mut stmt = conn.prepare(
+        "SELECT a.item_id, COUNT(*) FROM assertions a \
+         JOIN collection_items ci ON ci.id = a.item_id \
+         WHERE ci.collection_id = ?1 \
+         GROUP BY a.item_id"
+    )?;
+    let rows = stmt.query_map(params![collection_id], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, i32>(1)?))
+    })?;
+    let mut map = std::collections::HashMap::new();
+    for row in rows {
+        let (item_id, count) = row?;
+        map.insert(item_id, count);
+    }
+    Ok(map)
+}
+
 pub fn create(
     conn: &Connection,
     item_id: &str,

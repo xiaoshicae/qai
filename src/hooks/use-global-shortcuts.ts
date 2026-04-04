@@ -1,12 +1,14 @@
 import { useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { isShortcutTarget } from '@/lib/utils'
+import { useShortcutHelpStore } from '@/components/ui/shortcut-help'
 
 const ROUTES = ['/', '/history', '/environments', '/settings']
 
 export function useGlobalShortcuts() {
   const navigate = useNavigate()
   const location = useLocation()
+  const toggleHelp = useShortcutHelpStore((s) => s.toggleHelp)
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -30,6 +32,15 @@ export function useGlobalShortcuts() {
         return
       }
 
+      // ? — toggle help panel (when not in input)
+      if (e.key === '?' && !mod) {
+        if (!isShortcutTarget(e.target)) {
+          e.preventDefault()
+          toggleHelp()
+        }
+        return
+      }
+
       // Don't intercept when focused on inputs (except ⌘+K and ⌘+number)
       if (isShortcutTarget(e.target)) return
 
@@ -43,5 +54,5 @@ export function useGlobalShortcuts() {
 
     document.addEventListener('keydown', handler, true)
     return () => document.removeEventListener('keydown', handler, true)
-  }, [navigate, location.pathname])
+  }, [navigate, location.pathname, toggleHelp])
 }

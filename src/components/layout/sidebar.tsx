@@ -7,13 +7,14 @@ import { useConfirmStore } from '@/components/ui/confirm-dialog'
 import {
   Search, Plus, History, Globe, Settings, Circle,
   MoreHorizontal,
-  FilePlus, FolderPlus, Play, Pencil, Trash2, GripVertical, Zap,
+  FilePlus, FolderPlus, Play, Pencil, Trash2, GripVertical, Zap, Settings2, ListOrdered,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import QuickTestDialog from '@/components/quick-test-dialog'
 import EnvSelector from '@/components/layout/env-selector'
 import { invokeErrorMessage } from '@/lib/invoke-error'
 import { useCollectionStore } from '@/stores/collection-store'
+import { useRunQueueStore, useRunConfigStore } from '@/stores/run-queue-store'
 import { Input } from '@/components/ui/input'
 import { Tooltip } from '@/components/ui/tooltip'
 import type { Collection } from '@/types'
@@ -30,6 +31,74 @@ const NAV_ITEMS = [
   { path: '/environments', labelKey: 'sidebar.environments', icon: Globe },
   { path: '/settings', labelKey: 'sidebar.settings', icon: Settings },
 ]
+
+function RunConfigButton() {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const [pos, setPos] = useState({ top: 0, left: 0 })
+  const { runMode, concurrency, delayMs, dryRun, setRunMode, setConcurrency, setDelayMs, setDryRun } = useRunConfigStore()
+  const label = runMode === 'concurrent' ? `×${concurrency}` : delayMs ? `${delayMs / 1000}s` : ''
+
+  const handleOpen = () => {
+    if (btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect()
+      setPos({ top: r.bottom + 4, left: r.left })
+    }
+    setOpen(!open)
+  }
+
+  return (
+    <div className="relative">
+      <Tooltip content={t('dashboard.run_settings')}>
+        <button ref={btnRef} onClick={handleOpen} className={`h-7 w-7 flex items-center justify-center rounded-lg cursor-pointer transition-colors ${open ? 'bg-overlay/[0.08]' : 'hover:bg-overlay/[0.06]'}`}>
+          <Settings2 className="h-3.5 w-3.5 text-muted-foreground" />
+          {dryRun && <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-warning" />}
+        </button>
+      </Tooltip>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="fixed z-50 w-52 rounded-xl glass-card p-1.5 shadow-2xl space-y-0.5" style={{ top: pos.top, left: pos.left }}>
+            <div className="px-2.5 py-1.5 text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider">{t('dashboard.run_settings')}</div>
+            <button type="button" onClick={() => setRunMode('concurrent')} className={`flex items-center gap-2 w-full px-2.5 py-2 rounded-lg text-xs cursor-pointer transition-colors ${runMode === 'concurrent' ? 'bg-overlay/[0.08] text-foreground' : 'text-muted-foreground hover:bg-overlay/[0.04]'}`}>
+              <Zap className="h-3.5 w-3.5" /> {t('dashboard.concurrent')}
+              {runMode === 'concurrent' && <span className="ml-auto text-[10px] text-primary tabular-nums">{label}</span>}
+            </button>
+            {runMode === 'concurrent' && (
+              <div className="px-2.5 py-1.5"><div className="flex gap-1">
+                {[1, 3, 5, 10, 20].map((n) => (
+                  <button key={n} type="button" onClick={() => setConcurrency(n)} className={`px-2.5 py-1 rounded-md text-[10px] cursor-pointer transition-colors ${concurrency === n ? 'bg-primary/15 text-primary font-medium' : 'text-muted-foreground hover:bg-overlay/[0.04]'}`}>{n}</button>
+                ))}
+              </div></div>
+            )}
+            <div className="h-px bg-overlay/[0.06]" />
+            <button type="button" onClick={() => setRunMode('sequential')} className={`flex items-center gap-2 w-full px-2.5 py-2 rounded-lg text-xs cursor-pointer transition-colors ${runMode === 'sequential' ? 'bg-overlay/[0.08] text-foreground' : 'text-muted-foreground hover:bg-overlay/[0.04]'}`}>
+              <ListOrdered className="h-3.5 w-3.5" /> {t('dashboard.sequential')}
+              {runMode === 'sequential' && <span className="ml-auto text-[10px] text-primary tabular-nums">{label}</span>}
+            </button>
+            {runMode === 'sequential' && (
+              <div className="px-2.5 py-1.5"><div className="flex gap-1 flex-wrap">
+                {[0, 1000, 2000, 3000, 5000, 10000].map((ms) => (
+                  <button key={ms} type="button" onClick={() => setDelayMs(ms)} className={`px-2.5 py-1 rounded-md text-[10px] cursor-pointer transition-colors ${delayMs === ms ? 'bg-primary/15 text-primary font-medium' : 'text-muted-foreground hover:bg-overlay/[0.04]'}`}>
+                    {ms === 0 ? t('common.none') : `${ms / 1000}s`}
+                  </button>
+                ))}
+              </div></div>
+            )}
+            <div className="h-px bg-overlay/[0.06]" />
+            <button type="button" onClick={() => setDryRun(!dryRun)} className={`flex items-center gap-2 w-full px-2.5 py-2 rounded-lg text-xs cursor-pointer transition-colors ${dryRun ? 'bg-overlay/[0.08] text-foreground' : 'text-muted-foreground hover:bg-overlay/[0.04]'}`}>
+              <span className={`h-3 w-3 rounded border transition-colors flex items-center justify-center ${dryRun ? 'bg-warning border-warning' : 'border-overlay/[0.15]'}`}>
+                {dryRun && <span className="text-[8px] text-white font-bold">✓</span>}
+              </span>
+              {t('dashboard.dry_run')}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
 
 export default function Sidebar() {
   const { t } = useTranslation()
@@ -90,7 +159,14 @@ export default function Sidebar() {
     return ungrouped.filter((c) => c.name.toLowerCase().includes(search.toLowerCase()))
   }, [ungrouped, search])
 
-  const toggle = (id: string) => setExpanded((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const toggle = (id: string) => {
+    setExpanded((prev) => {
+      const n = new Set(prev)
+      if (n.has(id)) n.delete(id)
+      else n.add(id)
+      return n
+    })
+  }
   const handleSelect = (col: Collection) => {
     void loadTree(col.id)
     selectNode(col.id)
@@ -276,12 +352,25 @@ export default function Sidebar() {
     }
   }
 
-  const handleGroupRunAll = async () => {
+  const handleGroupRunAll = () => {
     if (!menu?.groupId) return
     const groupId = menu.groupId; setMenu(null)
-    const cols = collections.filter((c) => c.group_id === groupId)
-    for (const col of cols) { try { await invoke('run_collection', { collectionId: col.id, concurrency: 5 }) } catch (e) { console.error(`运行集合 ${col.name} 失败:`, e) } }
-    if (cols.length > 0) handleSelect(cols[0])
+    // 递归收集当前分组及所有子分组的 ID
+    const groupIds = new Set<string>([groupId])
+    const collect = (parentId: string) => {
+      for (const g of groups) {
+        if (g.parent_id === parentId && !groupIds.has(g.id)) {
+          groupIds.add(g.id)
+          collect(g.id)
+        }
+      }
+    }
+    collect(groupId)
+    const cols = collections.filter((c) => c.group_id && groupIds.has(c.group_id))
+    if (cols.length === 0) return
+    // 入队，由 CollectionOverview 的 hook 逐个接管执行（尊重全局配置）
+    useRunQueueStore.getState().enqueue(cols.map((c) => c.id))
+    handleSelect(cols[0])
   }
 
   const handleGroupRename = () => { if (!menu?.groupId) return; const group = groups.find((g) => g.id === menu.groupId); if (!group) return; setRenamingId(menu.groupId); setRenameValue(group.name); setMenu(null) }
@@ -302,6 +391,12 @@ export default function Sidebar() {
     if (!ok) return
     for (const col of cols) { await deleteCollection(col.id) }
     await deleteGroup(groupId)
+  }
+
+  const handleColRunAll = (col: Collection) => {
+    setMenu(null)
+    useRunQueueStore.getState().enqueue([col.id])
+    handleSelect(col)
   }
 
   const handleColAddCase = async () => { if (!menu?.col) return; const col = menu.col; setMenu(null); await invoke('create_item', { collectionId: col.id, parentId: null, itemType: 'request', name: t('common.new_test_case'), method: 'POST' }); await loadTree(col.id); handleSelect(col) }
@@ -348,6 +443,7 @@ export default function Sidebar() {
             <Zap className="h-3.5 w-3.5 text-muted-foreground" />
           </button>
         </Tooltip>
+        <RunConfigButton />
         <Tooltip content={t('sidebar.new_group')}>
           <button onClick={handleNewTopGroup} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-overlay/[0.06] cursor-pointer transition-colors">
           <Plus className="h-3.5 w-3.5 text-muted-foreground" />
@@ -441,7 +537,7 @@ export default function Sidebar() {
           {menu.target === 'col' && (
             <>
               <button className={menuItemClass} onClick={handleColAddCase}><FilePlus className="h-3.5 w-3.5 text-muted-foreground" /> {t('collection_menu.add_case')}</button>
-              <button className={menuItemClass} onClick={() => { if (menu.col) { handleSelect(menu.col); setMenu(null) } }}><Play className="h-3.5 w-3.5 text-muted-foreground" /> {t('group_menu.run_all')}</button>
+              <button className={menuItemClass} onClick={() => { if (menu.col) { handleColRunAll(menu.col) } }}><Play className="h-3.5 w-3.5 text-muted-foreground" /> {t('group_menu.run_all')}</button>
               <div className={menuDividerClass} />
               <button className={menuItemClass} onClick={handleColRename}><Pencil className="h-3.5 w-3.5 text-muted-foreground" /> {t('group_menu.rename')}</button>
               <button className={menuDangerClass} onClick={handleColDelete}><Trash2 className="h-3.5 w-3.5" /> {t('common.delete')}</button>

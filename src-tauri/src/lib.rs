@@ -12,6 +12,25 @@ mod import;
 use db::init::initialize_database;
 use tauri::Manager;
 
+// ============================================================================
+// 常量定义
+// ============================================================================
+
+/// 默认并发数（批量执行时的并发请求数）
+pub const DEFAULT_CONCURRENCY: usize = 5;
+
+/// 默认历史记录查询数量
+pub const DEFAULT_HISTORY_LIMIT: u32 = 50;
+
+/// 默认单个请求的执行记录查询数量
+pub const DEFAULT_ITEM_RUNS_LIMIT: u32 = 20;
+
+/// HTTP 客户端默认超时时间（秒）
+pub const HTTP_TIMEOUT_SECS: u64 = 30;
+
+/// AI 连接测试超时时间（秒）
+pub const AI_TEST_TIMEOUT_SECS: u64 = 15;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -66,6 +85,7 @@ pub fn run() {
             commands::item_cmd::export_curl,
             commands::item_cmd::read_file_preview,
             commands::assertion_cmd::list_assertions,
+            commands::assertion_cmd::get_assertion_counts,
             commands::assertion_cmd::create_assertion,
             commands::assertion_cmd::update_assertion,
             commands::assertion_cmd::delete_assertion,

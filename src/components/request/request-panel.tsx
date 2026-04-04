@@ -14,6 +14,7 @@ import AssertionEditor from '@/components/assertion/assertion-editor'
 import ExtractRulesEditor from './extract-rules-editor'
 import RunsTab from './runs-tab'
 import type { KeyValuePair } from '@/types'
+import { safeJsonParse } from '@/lib/utils'
 
 const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD'] as const
 const METHOD_OPTIONS = METHODS.map((m) => ({ value: m, label: m }))
@@ -52,8 +53,8 @@ export default function RequestPanel() {
       setName(currentRequest.name)
       setMethod(currentRequest.method)
       setUrl(currentRequest.url)
-      setHeaders(JSON.parse(currentRequest.headers || '[]'))
-      setQueryParams(JSON.parse(currentRequest.query_params || '[]'))
+      setHeaders(safeJsonParse(currentRequest.headers, []))
+      setQueryParams(safeJsonParse(currentRequest.query_params, []))
       setBodyType(currentRequest.body_type)
       setProtocol(currentRequest.protocol || 'http')
       // JSON 类型加载时自动格式化
@@ -165,6 +166,9 @@ export default function RequestPanel() {
     return uniq.filter((k) => envVars[k] === undefined)
   }, [url, envVars])
 
+  // 表单 body 的解析值（用于 form/form-data/urlencoded 类型）
+  const formBody = useMemo(() => safeJsonParse(bodyContent, []), [bodyContent])
+
   return (
     <div className="space-y-4">
       {/* 请求名称 */}
@@ -179,7 +183,7 @@ export default function RequestPanel() {
           />
           {activeEnvName && (
             <span className="text-[10px] text-muted-foreground shrink-0">
-              {t('request.active_env')}: <span className="text-emerald-600/90 dark:text-emerald-400/90 font-medium">{activeEnvName}</span>
+              {t('request.active_env')}: <span className="text-success/90 font-medium">{activeEnvName}</span>
             </span>
           )}
         </div>
@@ -213,7 +217,7 @@ export default function RequestPanel() {
       <div className="flex flex-wrap items-center gap-2 text-[10px]">
         <span className="text-muted-foreground/70">{t('request.shortcut_send')}</span>
         {unresolvedUrlVars.length > 0 && (
-          <span className="text-amber-600/90 dark:text-amber-400/90">
+          <span className="text-warning/90">
             {t('request.unresolved_vars')}: {unresolvedUrlVars.join(', ')}
           </span>
         )}
@@ -256,7 +260,7 @@ export default function RequestPanel() {
                     </button>
                     <button onClick={compactJson} className="px-2 py-1 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-overlay/[0.04] cursor-pointer transition-colors" title={t('request.compact_json')}>Compact</button>
                     <button onClick={copyBody} className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-overlay/[0.04] cursor-pointer transition-colors" title={t('request.copy')}>
-                      {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+                      {copied ? <Check className="h-3 w-3 text-success" /> : <Copy className="h-3 w-3" />}
                     </button>
                   </div>
                 )}
@@ -275,14 +279,7 @@ export default function RequestPanel() {
               )}
               {(bodyType === 'form' || bodyType === 'form-data' || bodyType === 'urlencoded') && (
                 <KeyValueTable
-                  value={(() => {
-                    try {
-                      const parsed = JSON.parse(bodyContent || '[]')
-                      return Array.isArray(parsed) ? parsed : []
-                    } catch {
-                      return []
-                    }
-                  })()}
+                  value={formBody}
                   onChange={(v) => setBodyContent(JSON.stringify(v))}
                   allowFiles={bodyType === 'form-data'}
                   envVars={envVars}

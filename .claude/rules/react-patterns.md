@@ -2,136 +2,67 @@
 
 ## 组件设计
 
-- 使用函数组件 + TypeScript
-- UI 基础组件放 `components/ui/`，基于 Tailwind CSS + CVA
+- 函数组件 + TypeScript，UI 基础组件放 `components/ui/`（CVA + Tailwind）
 - 组件内代码顺序：imports → props → store/hooks → state → computed → effects → handlers → render
-
-```tsx
-// 1. imports
-import { useState, useEffect, useMemo } from 'react'
-import { invoke } from '@tauri-apps/api/core'
-
-// 2. props
-interface Props { requestId: string }
-
-export default function MyComponent({ requestId }: Props) {
-  // 3. store / hooks
-  const store = useRequestStore()
-
-  // 4. local state
-  const [loading, setLoading] = useState(false)
-
-  // 5. derived / computed
-  const isValid = useMemo(() => ..., [deps])
-
-  // 6. effects
-  useEffect(() => { ... }, [requestId])
-
-  // 7. handlers
-  async function handleSubmit() { ... }
-
-  // 8. render
-  return <div>...</div>
-}
-```
+- 命名：组件文件 `kebab-case.tsx`，Store `kebab-case.ts`，类型 `PascalCase`，事件处理 `handle` 前缀
 
 ## 状态管理
 
-- 服务端数据通过 Zustand Store + `invoke()` 管理
-- Store 负责调用 Tauri 命令和缓存数据
-- 组件不直接调用 `invoke()`，统一走 Store（设置页等简单场景除外）
-- 表单临时状态用 `useState()` 在组件内管理
-- 不要直接修改 state 对象引用，始终创建新对象
-
-## 前后端通信
-
-```typescript
-// Store 中封装 invoke 调用
-loadRequest: async (id: string) => {
-  const req = await invoke<ApiRequest>('get_request', { id })
-  set({ currentRequest: req })
-}
-
-// 注意：Tauri invoke 参数名必须是 camelCase，Rust 端自动转 snake_case
-await invoke('create_request', {
-  collectionId: '...',    // Rust 端接收为 collection_id
-  folderId: null,
-})
-```
+- 服务端数据通过 Zustand Store + `invoke()` 管理，组件不直接调用 `invoke()`（设置页除外）
+- 表单临时状态用 `useState()`，不直接修改 state 引用
+- Tauri invoke 参数名用 camelCase，Rust 端自动转 snake_case
 
 ## Tauri Event 监听
 
-```typescript
-import { listen } from '@tauri-apps/api/event'
-
-// 组件内监听，cleanup 时取消
-useEffect(() => {
-  let unlisten: (() => void) | undefined
-  listen<ProgressPayload>('test-progress', (event) => {
-    // 处理进度
-  }).then((fn) => { unlisten = fn })
-  return () => { unlisten?.() }
-}, [])
-```
-
-## 命名约定
-
-| 类型 | 规则 | 示例 |
-|------|------|------|
-| 组件文件 | kebab-case.tsx | `request-panel.tsx` |
-| Store 文件 | kebab-case.ts | `collection-store.ts` |
-| 类型/接口 | PascalCase | `ApiRequest` |
-| 事件处理 | handle 前缀 | `handleSubmit` |
+组件内 `listen()` 必须在 cleanup 时 `unlisten()`。详见 `tauri-events.md`。
 
 ## 工具函数复用
 
-- 通用格式化函数（时间、文件大小等）放 `src/lib/formatters.ts`，组件不重复定义
-- 相同逻辑的 hook（如方向不同的拖拽）通过参数合并，不写两个 hook
-- 通过 prop 传递的纯工具函数，如果无闭包依赖，应改为子组件直接 import
+- 通用格式化函数放 `src/lib/formatters.ts`，组件不重复定义
+- 相同逻辑的 hook 通过参数合并
+- 常用工具：`safeJsonParse`/`getStatusColor`/`cn` from `@/lib/utils`
 
-```typescript
-// 错误：在每个组件内重复定义
-const formatTime = (ms: number) => ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(2)}s`
+## 三面板一致性
 
-// 正确：从 lib/formatters.ts 导入
-import { formatDuration, formatSize } from '@/lib/formatters'
-```
+修改请求编辑相关代码时，**必须检查三处是否同步**：
 
-## 三面板一致性（请求编辑体验）
+| 面板 | 文件 |
+|------|------|
+| 工作台 | `request-panel.tsx` + `request-store.ts` |
+| 编辑弹窗 | `collection-overview-edit-parts.tsx` |
+| 快速调试 | `quick-test-dialog.tsx` |
 
-项目中有三个场景涉及 HTTP 请求的编辑和发送，**修改其中任何一处时必须检查另外两处是否需要同步**：
+必须一致：METHOD_COLORS、VarInput、5 种 Body 类型、单按钮发送（禁止暴露普通/流式选项）、MiniResponseViewer/ResponsePanel、`toast.error(invokeErrorMessage(e))`、⌘+Enter、i18n。
 
-| 面板 | 文件 | 场景 |
-|------|------|------|
-| 工作台请求面板 | `components/request/request-panel.tsx` + `stores/request-store.ts` | 选中请求后编辑和发送 |
-| 新建/编辑弹窗 | `components/collection/collection-overview-edit-parts.tsx` | 集合概览中编辑测试用例 |
-| 快速调试弹窗 | `components/quick-test-dialog.tsx` | 侧边栏快速调试 |
+## 性能
 
-### 必须保持一致的功能
+- JSX 中避免 IIFE，用 `useMemo` 缓存计算
+- `useEffect` 正确声明依赖项，ref 模式添加注释
+- 渲染中不创建新对象/数组（提取为常量或 `useMemo`）
+- 频繁更新部分隔离为子组件
+- 列表用稳定 key（禁止 index），大列表考虑虚拟滚动
+- 搜索/筛选加 debounce（300ms），避免重复 invoke 调用
+- 路由页面用 `lazy()` + `Suspense` 懒加载
 
-- **HTTP 方法颜色**：所有 Method Select 都应用 `METHOD_COLORS`
-- **URL 输入**：统一使用 `VarInput` 组件（支持变量高亮）
-- **Body 类型**：None / Form Data / URL Encoded / JSON / Raw 五种
-- **发送按钮**：只有一个"发送"按钮，**禁止**暴露"普通/流式"选择给用户
-- **流式响应**：后端自动检测 SSE（`text/event-stream`），前端通过 `listen('stream-chunk')` 自动展示
-- **响应展示**：统一使用 `MiniResponseViewer` 组件（弹窗场景）或 `ResponsePanel`（工作台场景）
-- **错误处理**：统一 `toast.error(invokeErrorMessage(e))`
-- **⌘+Enter 快捷键**：所有面板都支持
-- **i18n**：按钮/标签全部走 `t()` 调用
+## i18n
 
-### 检查清单（改动请求面板相关代码时）
+- 使用 `react-i18next`，翻译文件 `src/locales/{zh,en}.json`
+- 所有用户可见文本走 `t('namespace.key')`，禁止硬编码中文
+- key 命名：`<页面>.<用途>`（如 `dashboard.run_all`），插值用 `{{variable}}`
+- 禁止在模块顶层常量中调用 `t()`（只能在组件/hook 内），纯函数中 `t` 通过参数传入
+- `zh.json` 和 `en.json` 的 key 必须同步
 
-- [ ] 三个面板的 Body 类型选项是否一致？
-- [ ] 新增的 UI 交互是否在三个面板都需要？
-- [ ] Method Select 是否都有颜色？
-- [ ] 流式监听是否都正确设置和清理？
-- [ ] 响应展示格式是否统一？
+## 安全
+
+- 禁止 `console.log` 记录敏感数据，开发日志用 `import.meta.env.DEV` 守卫
+- 禁止 `catch (e: any)`，用 `unknown` + `invokeErrorMessage(e)`
+
+## 资源管理
+
+- `setTimeout`/`setInterval` 必须在组件卸载时清理（`useRef` + cleanup effect）
 
 ## 禁止事项
 
-- 生产代码中留 `console.log`
-- 组件中直接调用 `fetch`（所有网络请求走 Rust 端）
-- 直接修改 state 引用（`a.type = x` 后 `setX([...arr])`）
-- 在 JSX 中写复杂逻辑（提取为 useMemo 或函数）
-- 在多个组件中重复定义相同的工具函数（提取到 `lib/`）
-- 向用户暴露"普通/流式"发送选项（后端自动检测，前端只需一个"发送"按钮）
+- `console.log` / `fetch` / 直接修改 state 引用 / JSX 中复杂逻辑
+- 重复定义工具函数（提取到 `lib/`）
+- 暴露"普通/流式"发送选项

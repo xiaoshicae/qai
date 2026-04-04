@@ -1,7 +1,9 @@
 {
   "app": {
     "select_collection": "Select a collection to start testing",
-    "select_collection_hint": "Choose from the sidebar, or import YAML test cases"
+    "select_collection_hint": "Choose from the sidebar, or import YAML test cases",
+    "quick_start": "Quick Start",
+    "create_first_suite": "Create your first test suite"
   },
   "response": {
     "binary_file": "Binary File",
@@ -43,6 +45,8 @@
     "no_cases": "No test cases yet. Click \"Add Case\" to create one.",
     "concurrent": "Concurrent",
     "sequential": "Sequential",
+    "run_settings": "Run Settings",
+    "dry_run": "Dry Run",
     "delay": "Delay"
   },
   "scenario": {
@@ -77,6 +81,8 @@
     "url_placeholder": "Request URL",
     "expect_status": "Expected Status",
     "body": "Body",
+    "assertions_tab": "Assertions",
+    "save_first_for_assertions": "Save first, then add assertions",
     "extract_tab": "Extract",
     "poll_config": "Polling",
     "add_extract": "Add Extract Rule",
@@ -225,8 +231,10 @@
   },
   "assertion": {
     "status_code": "Status Code",
+    "json_path": "JSON Path",
     "body_contains": "Body Contains",
     "response_time": "Response Time",
+    "header_contains": "Header",
     "eq": "Equals",
     "neq": "Not Equals",
     "gt": "Greater Than",
@@ -236,7 +244,16 @@
     "exists": "Exists",
     "matches": "Regex Match",
     "enabled": "Enabled",
-    "disabled": "Disabled"
+    "disabled": "Disabled",
+    "type_label": "Type",
+    "expr_label": "Expr",
+    "op_label": "Op",
+    "expected_label": "Expected",
+    "expected_placeholder": "Expected value",
+    "empty_hint": "No assertions yet. Click below to add one.",
+    "add": "Add Assertion",
+    "actual_value": "Actual",
+    "no_results": "No assertion results"
   },
   "history": {
     "title": "History",
@@ -284,6 +301,8 @@
     "received": "Received"
   },
   "common": {
+    "confirm": "Confirm",
+    "cancel": "Cancel",
     "confirm_delete": "Delete \"{{name}}\"? This cannot be undone.",
     "confirm_delete_group": "Delete group \"{{name}}\" and all its test suites? This cannot be undone.",
     "confirm_discard": "You have unsaved changes. Discard?",
@@ -305,5 +324,20 @@
     "show_more": "Show more ({{size}})",
     "show_less": "Show less",
     "clear": "Clear"
+  },
+  "shortcuts": {
+    "title": "Keyboard Shortcuts",
+    "hint": "Press ? anytime to open this help panel",
+    "category_navigation": "Navigation",
+    "category_actions": "Actions",
+    "category_editor": "Editor",
+    "switch_view": "Switch view",
+    "focus_search": "Focus search",
+    "toggle_sidebar": "Toggle sidebar",
+    "new_request": "New request",
+    "send_request": "Send request",
+    "show_help": "Show help",
+    "save": "Save",
+    "close_dialog": "Close dialog"
   }
 }

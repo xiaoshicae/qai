@@ -15,6 +15,7 @@ pub async fn run_chain(
     cancel_token: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     progress_callback: impl Fn(ChainProgress) + Send + Sync + 'static,
     on_result: Option<Box<dyn Fn(&ExecutionResult) + Send + Sync + 'static>>,
+    dry_run: bool,
 ) -> ChainResult {
     let chain_id = uuid::Uuid::new_v4().to_string();
     let total_steps = steps.len() as u32;
@@ -48,11 +49,13 @@ pub async fn run_chain(
             None
         };
 
-        // 执行请求（协议感知 + 轮询）
-        let result = if item.protocol == "websocket" {
+        // 执行请求（dry-run / 协议感知 + 轮询）
+        let result = if dry_run {
+            Ok(crate::http::client::mock_execute(&item).await)
+        } else if item.protocol == "websocket" {
             crate::websocket::client::execute(&item).await
         } else if let Some(ref poll) = poll_config {
-            execute_with_poll(client, &item, poll).await
+            execute_with_poll(client, &item, poll, cancel_token.as_ref()).await
         } else {
             crate::http::client::execute(client, &item).await
         };
@@ -131,22 +134,33 @@ pub async fn run_chain(
     }
 }
 
-/// 带轮询的请求执行
+/// 带轮询的请求执行（支持取消）
 async fn execute_with_poll(
     client: &reqwest::Client,
     item: &CollectionItem,
     poll: &PollConfig,
+    cancel_token: Option<&std::sync::Arc<std::sync::atomic::AtomicBool>>,
 ) -> Result<ExecutionResult, anyhow::Error> {
     let start = std::time::Instant::now();
     let max_duration = std::time::Duration::from_secs(poll.max_seconds);
     let interval = std::time::Duration::from_secs(poll.interval_seconds);
 
     loop {
+        if cancel_token.as_ref().is_some_and(|ct| ct.load(std::sync::atomic::Ordering::Relaxed)) {
+            return Ok(ExecutionResult {
+                execution_id: uuid::Uuid::new_v4().to_string(),
+                item_id: item.id.clone(), item_name: item.name.clone(),
+                request_url: item.url.clone(), request_method: item.method.clone(),
+                status: crate::models::Status::Error.as_str().to_string(),
+                response: None, assertion_results: vec![],
+                error_message: Some("轮询已取消".to_string()),
+            });
+        }
+
         let result = crate::http::client::execute(client, item).await?;
 
         if let Some(ref response) = result.response {
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(&response.body) {
-                // 支持 JSON Path 格式（$.status）和直接 key（status）
                 let extracted = crate::runner::assertion::json_path::extract_json_path(&json, &poll.field);
                 if let Some(val) = extracted {
                     let val_str = crate::runner::assertion::json_path::value_to_string(&val);

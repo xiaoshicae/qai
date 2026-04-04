@@ -47,11 +47,11 @@ export default function RunsTab({ requestId }: { requestId: string }) {
               {open ? <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0" /> : <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />}
               <span className="text-xs text-muted-foreground w-6 shrink-0">#{runs.length - i}</span>
               {isSuccess ? (
-                <CheckCircle className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                <CheckCircle className="h-3.5 w-3.5 text-success shrink-0" />
               ) : isError ? (
-                <AlertCircle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                <AlertCircle className="h-3.5 w-3.5 text-warning shrink-0" />
               ) : (
-                <XCircle className="h-3.5 w-3.5 text-red-500 shrink-0" />
+                <XCircle className="h-3.5 w-3.5 text-error shrink-0" />
               )}
               {run.response_status != null && (
                 <Badge variant={run.response_status < 400 ? 'success' : 'destructive'} className="text-[10px]">
@@ -60,7 +60,7 @@ export default function RunsTab({ requestId }: { requestId: string }) {
               )}
               <span className="text-xs text-muted-foreground tabular-nums">{run.response_time_ms}ms</span>
               {assertions.length > 0 && (
-                <span className={`text-xs ${passedCount === assertions.length ? 'text-emerald-500' : 'text-red-500'}`}>
+                <span className={`text-xs ${passedCount === assertions.length ? 'text-success' : 'text-error'}`}>
                   {passedCount}/{assertions.length}
                 </span>
               )}
@@ -96,10 +96,10 @@ export default function RunsTab({ requestId }: { requestId: string }) {
                       {assertions.map((a) => (
                         <div key={a.assertion_id} className="flex items-center gap-1.5">
                           {a.passed
-                            ? <CheckCircle className="h-3 w-3 text-emerald-500 shrink-0" />
-                            : <XCircle className="h-3 w-3 text-red-500 shrink-0" />
+                            ? <CheckCircle className="h-3 w-3 text-success shrink-0" />
+                            : <XCircle className="h-3 w-3 text-error shrink-0" />
                           }
-                          <span className={a.passed ? '' : 'text-red-500'}>{a.message}</span>
+                          <span className={a.passed ? '' : 'text-error'}>{a.message}</span>
                         </div>
                       ))}
                     </div>
@@ -108,7 +108,7 @@ export default function RunsTab({ requestId }: { requestId: string }) {
 
                 {/* 错误 */}
                 {run.error_message && (
-                  <div className="text-red-500">{run.error_message}</div>
+                  <div className="text-error">{run.error_message}</div>
                 )}
               </div>
             )}

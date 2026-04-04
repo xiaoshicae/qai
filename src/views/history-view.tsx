@@ -234,7 +234,7 @@ export default function HistoryView() {
 
         {stats && stats.total > 0 && (
           <div className="flex items-center gap-3 ml-auto text-xs text-muted-foreground">
-            <span className={successRate >= 80 ? 'text-emerald-600 dark:text-emerald-400' : successRate >= 50 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'}>
+            <span className={successRate >= 80 ? 'text-success' : successRate >= 50 ? 'text-warning' : 'text-error'}>
               {t('history.stats_success_rate', { rate: successRate })}
             </span>
             <span className="h-3 w-px bg-overlay/[0.1]" />

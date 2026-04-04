@@ -1,13 +1,15 @@
 import { useEffect } from 'react'
-import { Zap } from 'lucide-react'
+import { Zap, Plus } from 'lucide-react'
 import { EmptyState } from '@/components/ui/empty-state'
+import { Button } from '@/components/ui/button'
 import { useCollectionStore } from '@/stores/collection-store'
+import { useRunQueueStore } from '@/stores/run-queue-store'
 import CollectionOverview from '@/components/collection/collection-overview'
 import { useTranslation } from 'react-i18next'
 
 export default function WorkbenchView() {
   const { t } = useTranslation()
-  const { selectedNodeId, collections, trees, loadTree, contextCollectionId } = useCollectionStore()
+  const { selectedNodeId, collections, trees, loadTree, contextCollectionId, selectNode, createGroup } = useCollectionStore()
 
   const overviewCollection =
     collections.find((c) => c.id === selectedNodeId)
@@ -25,6 +27,22 @@ export default function WorkbenchView() {
     }
   }, [contextCollectionId, trees, loadTree])
 
+  // 队列编排：当前集合运行完毕后，自动切换到队列中下一个集合
+  const nextInQueue = useRunQueueStore((s) =>
+    s.currentRunningId === null ? s.pendingQueue[0] : null
+  )
+  useEffect(() => {
+    if (nextInQueue && nextInQueue !== overviewCollection?.id) {
+      selectNode(nextInQueue)
+      void loadTree(nextInQueue)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nextInQueue])
+
+  const handleCreateFirstSuite = async () => {
+    await createGroup(t('app.quick_start'))
+  }
+
   return (
     <div className="relative h-full min-h-0 w-full bg-background">
       <div className="h-full min-h-0 w-full overflow-y-auto">
@@ -35,7 +53,19 @@ export default function WorkbenchView() {
           />
         ) : (
           <div className="flex h-full items-center justify-center">
-            <EmptyState icon={Zap} title={t('app.select_collection')} description={t('app.select_collection_hint')} />
+            <EmptyState
+              icon={Zap}
+              title={t('app.select_collection')}
+              description={t('app.select_collection_hint')}
+              action={
+                collections.length === 0 && (
+                  <Button size="sm" onClick={handleCreateFirstSuite} className="gap-1.5">
+                    <Plus className="h-3.5 w-3.5" />
+                    {t('app.create_first_suite')}
+                  </Button>
+                )
+              }
+            />
           </div>
         )}
       </div>

@@ -80,15 +80,15 @@ function ResponseBody({ resp }: { resp: HttpResponse | null | undefined }) {
               <div className="flex items-center gap-1.5 px-2 py-1 bg-overlay/[0.02]">
                 <span className="text-[10px] font-medium">{t('ws.step_n', { n: step.step })}</span>
                 {step.status === 'success'
-                  ? <CheckCircle2 className="h-2.5 w-2.5 text-emerald-500" />
-                  : <XCircle className="h-2.5 w-2.5 text-red-500" />}
+                  ? <CheckCircle2 className="h-2.5 w-2.5 text-success" />
+                  : <XCircle className="h-2.5 w-2.5 text-error" />}
                 <span className="text-[9px] text-muted-foreground">{formatDuration(step.time_ms)}</span>
                 {step.binary_bytes > 0 && <span className="text-[9px] text-muted-foreground">{formatSize(step.binary_bytes)}</span>}
               </div>
               {step.received.length > 0 && (
                 <JsonHighlight code={JSON.stringify(step.received.length === 1 ? step.received[0] : step.received, null, 2)} className="px-2 py-1.5" />
               )}
-              {step.error && <div className="px-2 py-1 text-[10px] text-red-500">{step.error}</div>}
+              {step.error && <div className="px-2 py-1 text-[10px] text-error">{step.error}</div>}
             </div>
           ))}
         </div>
@@ -173,11 +173,12 @@ function FilePreviewThumb({ path }: { path: string }) {
   )
 }
 
-export function ScenarioRow({ r, stepLabel, indent, envVars = {}, getResult, getStatus: _getStatus, statuses, progress, runningIds, expandedRows, detailData, loadDetail, toggleRow, runSingle, openEdit, copyRequest, deleteRequest, streamingContent, canRun = true, version, enabled = true, onToggleEnabled, dragHandleProps }: {
+export function ScenarioRow({ r, stepLabel, indent, envVars = {}, assertionCount = 0, getResult, getStatus: _getStatus, statuses, progress, runningIds, expandedRows, detailData, loadDetail, toggleRow, runSingle, openEdit, copyRequest, deleteRequest, streamingContent, canRun = true, version, enabled = true, onToggleEnabled, dragHandleProps }: {
   r: { id: string; name: string; method: string; folder?: string; expect_status?: number }
   stepLabel?: string
   indent?: boolean
   envVars?: Record<string, string>
+  assertionCount?: number
   streamingContent?: string
   canRun?: boolean
   version?: number
@@ -279,10 +280,10 @@ export function ScenarioRow({ r, stepLabel, indent, envVars = {}, getResult, get
   }, [streamingContent])
 
   const sd = !status ? { icon: <Circle className="h-3.5 w-3.5 text-muted-foreground/30" />, label: '-', color: '' }
-    : status === 'running' ? { icon: <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500" />, label: 'Running', color: 'text-blue-500' }
-    : status === 'success' ? { icon: <CheckCircle2 className="h-3.5 w-3.5" />, label: 'PASS', color: 'text-emerald-500' }
-    : status === 'failed' ? { icon: <XCircle className="h-3.5 w-3.5" />, label: 'FAIL', color: 'text-red-500' }
-    : { icon: <AlertCircle className="h-3.5 w-3.5" />, label: 'ERR', color: 'text-amber-500' }
+    : status === 'running' ? { icon: <Loader2 className="h-3.5 w-3.5 animate-spin text-info" />, label: 'Running', color: 'text-info' }
+    : status === 'success' ? { icon: <CheckCircle2 className="h-3.5 w-3.5" />, label: 'PASS', color: 'text-success' }
+    : status === 'failed' ? { icon: <XCircle className="h-3.5 w-3.5" />, label: 'FAIL', color: 'text-error' }
+    : { icon: <AlertCircle className="h-3.5 w-3.5" />, label: 'ERR', color: 'text-warning' }
 
   const enabledHeaderCount = detail
     ? (() => {
@@ -312,21 +313,22 @@ export function ScenarioRow({ r, stepLabel, indent, envVars = {}, getResult, get
             />
           )}
           {expanded ? <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" /> : <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" />}
-          {stepLabel && <span className="text-[10px] text-amber-500/70 font-mono shrink-0">{stepLabel}</span>}
-          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0 ${r.method === 'GET' ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10' : r.method === 'POST' ? 'text-amber-600 dark:text-amber-400 bg-amber-500/10' : r.method === 'PUT' ? 'text-sky-600 dark:text-sky-400 bg-sky-500/10' : r.method === 'DELETE' ? 'text-red-600 dark:text-red-400 bg-red-500/10' : 'text-purple-600 dark:text-purple-400 bg-purple-500/10'}`}>{r.method}</span>
+          {stepLabel && <span className="text-[10px] text-warning/70 font-mono shrink-0">{stepLabel}</span>}
+          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0 ${r.method === 'GET' ? 'text-method-get' : r.method === 'POST' ? 'text-method-post' : r.method === 'PUT' ? 'text-method-put' : r.method === 'DELETE' ? 'text-method-delete' : 'text-method-patch'}`}>{r.method}</span>
           <span className="font-medium truncate">{r.name}</span>
+          {assertionCount > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary/70 font-bold shrink-0" title={`${assertionCount} assertions`}>{assertionCount} A</span>}
         </span>
         <span className={`flex items-center gap-1 font-bold text-xs ${sd.color}`}>{sd.icon}{sd.label}</span>
         <span className="font-mono text-xs self-center tabular-nums">
           {resp
-            ? <span className={resp.status < 300 ? 'text-emerald-500' : resp.status < 400 ? 'text-amber-500' : 'text-red-500'}>{resp.status}</span>
+            ? <span className={resp.status < 300 ? 'text-success' : resp.status < 400 ? 'text-warning' : 'text-error'}>{resp.status}</span>
             : <span className="text-muted-foreground">{r.expect_status || 200}</span>}
         </span>
         <span className="text-xs text-muted-foreground self-center tabular-nums">{resp ? formatDuration(resp.time_ms) : old ? formatDuration(old.response_time_ms) : '-'}</span>
-        <span className="text-[10px] text-muted-foreground/60 self-center tabular-nums">{old?.executed_at ? formatRelativeTime(old.executed_at, t) : '-'}</span>
+        <span className="text-[10px] text-muted-foreground/60 self-center tabular-nums">{result ? t('scenario.just_now') : old?.executed_at ? formatRelativeTime(old.executed_at, t) : '-'}</span>
         <span className="flex items-center justify-end gap-0.5" onClick={(e) => e.stopPropagation()}>
           <button type="button" className={`h-6 w-6 flex items-center justify-center rounded-md transition-all cursor-pointer ${!canRun ? 'opacity-20 cursor-not-allowed' : 'opacity-0 group-hover:opacity-40 hover:!opacity-100 hover:bg-overlay/[0.06]'}`} onClick={() => canRun && runSingle(r.id)} disabled={isRunning || !canRun} title={!canRun ? t('chain.prev_step_required') : t('common.run')}>
-            {isRunning ? <Loader2 className="h-3 w-3 animate-spin text-blue-500" /> : <Play className="h-3 w-3 text-muted-foreground" />}
+            {isRunning ? <Loader2 className="h-3 w-3 animate-spin text-info" /> : <Play className="h-3 w-3 text-muted-foreground" />}
           </button>
           <button type="button" className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-40 hover:!opacity-100 hover:bg-overlay/[0.06] transition-all cursor-pointer" onClick={() => openEdit(r.id)} title={t('common.edit')}>
             <Pencil className="h-3 w-3 text-muted-foreground" />
@@ -425,7 +427,7 @@ export function ScenarioRow({ r, stepLabel, indent, envVars = {}, getResult, get
                 </div>
                 {resp && (
                   <div className="flex items-center gap-2 text-[9px]">
-                    <span className={resp.status < 300 ? 'text-emerald-500 font-bold' : resp.status < 400 ? 'text-amber-500 font-bold' : 'text-red-500 font-bold'}>{resp.status} {resp.status_text}</span>
+                    <span className={resp.status < 300 ? 'text-success font-bold' : resp.status < 400 ? 'text-warning font-bold' : 'text-error font-bold'}>{resp.status} {resp.status_text}</span>
                     <span className="text-muted-foreground">{formatDuration(resp.time_ms)}</span>
                     <span className="text-muted-foreground">{resp.size_bytes > 1024 ? `${(resp.size_bytes / 1024).toFixed(1)}KB` : `${resp.size_bytes}B`}</span>
                   </div>
@@ -472,21 +474,42 @@ export function ScenarioRow({ r, stepLabel, indent, envVars = {}, getResult, get
                   )}
                 </div>
               )}
-              {displayAssertions.length > 0 && (
-                <div className="border-t border-overlay/[0.04] px-3 py-1.5 flex items-center gap-3 flex-wrap">
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground/50">Assertions {displayAssertions.filter((a) => a.passed).length}/{displayAssertions.length}</span>
-                  {displayAssertions.map((a, i) => (
-                    <span key={i} className="flex items-center gap-1 text-[11px]">
-                      {a.passed ? <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" /> : <XCircle className="h-3 w-3 text-red-500 shrink-0" />}
-                      <span className={a.passed ? 'text-muted-foreground' : 'text-red-400'}>{a.message}</span>
-                      {!a.passed && a.actual && <span className="text-muted-foreground/60">(actual: {a.actual})</span>}
-                    </span>
-                  ))}
-                </div>
-              )}
+              {displayAssertions.length > 0 && (() => {
+                const passedCount = displayAssertions.filter((a) => a.passed).length
+                const allPassed = passedCount === displayAssertions.length
+                return (
+                  <div className="border-t border-overlay/[0.04] px-3 py-2">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      {allPassed
+                        ? <CheckCircle2 className="h-3.5 w-3.5 text-success shrink-0" />
+                        : <XCircle className="h-3.5 w-3.5 text-error shrink-0" />}
+                      <span className={`text-[10px] font-bold uppercase tracking-wider ${allPassed ? 'text-success/70' : 'text-error/70'}`}>
+                        Assertions {passedCount}/{displayAssertions.length}
+                      </span>
+                    </div>
+                    <div className="space-y-0.5 pl-6">
+                      {displayAssertions.map((a, i) => (
+                        <div key={i} className="flex items-center gap-1.5 text-[11px]">
+                          {a.passed
+                            ? <CheckCircle2 className="h-2.5 w-2.5 text-success/60 shrink-0" />
+                            : <XCircle className="h-2.5 w-2.5 text-error/60 shrink-0" />}
+                          <span className={`font-mono truncate ${a.passed ? 'text-muted-foreground/60' : 'text-error/80'}`}>
+                            {a.message}
+                          </span>
+                          {!a.passed && a.actual && (
+                            <span className="text-muted-foreground/40 truncate max-w-[200px]" title={a.actual}>
+                              (actual: {a.actual.length > 60 ? a.actual.slice(0, 60) + '…' : a.actual})
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
           </div>
-          {displayError && <div className="flex items-start gap-1.5 text-xs text-red-500"><AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />{displayError}</div>}
+          {displayError && <div className="flex items-start gap-1.5 text-xs text-error"><AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />{displayError}</div>}
           <div className="flex items-center gap-4 text-[10px] text-muted-foreground/80 pt-1">
             {detail?.created_at && <span>{t('scenario.created')}: {detail.created_at}</span>}
             {detail?.updated_at && <span>{t('scenario.updated')}: {detail.updated_at}</span>}

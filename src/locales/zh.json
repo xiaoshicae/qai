@@ -1,7 +1,9 @@
 {
   "app": {
     "select_collection": "选择一个集合开始测试",
-    "select_collection_hint": "从左侧选择集合，或导入 YAML 测试用例"
+    "select_collection_hint": "从左侧选择集合，或导入 YAML 测试用例",
+    "quick_start": "快速开始",
+    "create_first_suite": "创建第一个测试集"
   },
   "response": {
     "binary_file": "二进制文件",
@@ -43,6 +45,8 @@
     "no_cases": "暂无测试用例，点击「添加用例」创建",
     "concurrent": "并发执行",
     "sequential": "顺序执行",
+    "run_settings": "运行配置",
+    "dry_run": "模拟运行",
     "delay": "延迟"
   },
   "scenario": {
@@ -77,6 +81,8 @@
     "url_placeholder": "请求 URL",
     "expect_status": "期望状态码",
     "body": "请求体",
+    "assertions_tab": "断言",
+    "save_first_for_assertions": "请先保存后再添加断言",
     "extract_tab": "变量提取",
     "poll_config": "轮询等待",
     "add_extract": "添加提取规则",
@@ -225,8 +231,10 @@
   },
   "assertion": {
     "status_code": "状态码",
+    "json_path": "JSON Path",
     "body_contains": "响应体包含",
     "response_time": "响应时间",
+    "header_contains": "Header",
     "eq": "等于",
     "neq": "不等于",
     "gt": "大于",
@@ -236,7 +244,16 @@
     "exists": "存在",
     "matches": "正则匹配",
     "enabled": "已启用",
-    "disabled": "未启用"
+    "disabled": "未启用",
+    "type_label": "类型",
+    "expr_label": "表达式",
+    "op_label": "条件",
+    "expected_label": "期望值",
+    "expected_placeholder": "期望值",
+    "empty_hint": "暂无断言，点击下方按钮添加",
+    "add": "添加断言",
+    "actual_value": "实际值",
+    "no_results": "暂无断言结果"
   },
   "history": {
     "title": "历史记录",
@@ -284,6 +301,8 @@
     "received": "接收"
   },
   "common": {
+    "confirm": "确定",
+    "cancel": "取消",
     "confirm_delete": "确定删除「{{name}}」？此操作不可撤销。",
     "confirm_delete_group": "确定删除分组「{{name}}」及其下所有测试集？此操作不可撤销。",
     "confirm_discard": "有未保存的修改，确定放弃？",
@@ -305,5 +324,20 @@
     "show_more": "展开全部 ({{size}})",
     "show_less": "收起",
     "clear": "清空"
+  },
+  "shortcuts": {
+    "title": "键盘快捷键",
+    "hint": "按 ? 随时打开此帮助面板",
+    "category_navigation": "导航",
+    "category_actions": "操作",
+    "category_editor": "编辑器",
+    "switch_view": "切换视图",
+    "focus_search": "聚焦搜索",
+    "toggle_sidebar": "切换侧边栏",
+    "new_request": "新建请求",
+    "send_request": "发送请求",
+    "show_help": "显示帮助",
+    "save": "保存",
+    "close_dialog": "关闭对话框"
   }
 }

@@ -10,6 +10,15 @@ pub fn list_assertions(db: State<'_, DbState>, item_id: String) -> Result<Vec<As
 }
 
 #[tauri::command]
+pub fn get_assertion_counts(
+    db: State<'_, DbState>,
+    collection_id: String,
+) -> Result<std::collections::HashMap<String, i32>, String> {
+    let conn = db.conn()?;
+    crate::db::assertion::count_by_collection(&conn, &collection_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn create_assertion(
     db: State<'_, DbState>,
     item_id: String,
@@ -34,7 +43,7 @@ pub fn update_assertion(
     enabled: Option<bool>,
 ) -> Result<Assertion, String> {
     let conn = db.conn()?;
-    crate::db::assertion::update(
+    let updated = crate::db::assertion::update(
         &conn,
         &id,
         assertion_type.as_deref(),
@@ -43,7 +52,19 @@ pub fn update_assertion(
         expected.as_deref(),
         enabled,
     )
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+
+    // 反向同步：status_code 断言的 expected 变更时，同步更新 item 的 expect_status
+    if updated.assertion_type == "status_code" {
+        if let Ok(new_status) = updated.expected.parse::<u16>() {
+            let _ = conn.execute(
+                "UPDATE collection_items SET expect_status = ?1 WHERE id = ?2",
+                rusqlite::params![new_status, updated.item_id],
+            );
+        }
+    }
+
+    Ok(updated)
 }
 
 #[tauri::command]

@@ -84,6 +84,9 @@ pub struct QuickTestPayload {
     pub body_content: String,
     #[serde(default = "default_protocol")]
     pub protocol: String,
+    /// 前端传入的临时请求 ID，用于 stream-chunk 事件过滤
+    #[serde(default)]
+    pub request_id: String,
 }
 
 fn default_body_type() -> String {
@@ -96,8 +99,13 @@ fn default_protocol() -> String {
 impl QuickTestPayload {
     /// 转换为临时 CollectionItem（不入库）
     pub fn to_temp_item(&self) -> CollectionItem {
+        let id = if self.request_id.is_empty() {
+            uuid::Uuid::new_v4().to_string()
+        } else {
+            self.request_id.clone()
+        };
         CollectionItem {
-            id: String::new(),
+            id,
             collection_id: String::new(),
             parent_id: None,
             item_type: "request".to_string(),

@@ -62,14 +62,14 @@ export default function ClaudeChat({ tabId }: Props) {
         </div>
       )}
 
-      {tab.messages.map((msg) => {
-        if (msg.role === 'user') return (
-          <div key={msg.id} className="rounded-xl border border-overlay/[0.08] bg-overlay/[0.04] px-3.5 py-2.5 text-sm">
-            {msg.content}
+      {groupMessages(tab.messages).map((item) => {
+        if (item.type === 'user') return (
+          <div key={item.msg.id} className="rounded-xl border border-overlay/[0.08] bg-overlay/[0.04] px-3.5 py-2.5 text-sm">
+            {item.msg.content}
           </div>
         )
-        if (msg.role === 'assistant') return (
-          <div key={msg.id} className="flex gap-2.5">
+        if (item.type === 'assistant') return (
+          <div key={item.msg.id} className="flex gap-2.5">
             <div className="shrink-0 mt-1"><ClaudeLogo size={14} /></div>
             <div className="text-sm leading-relaxed min-w-0 prose prose-sm dark:prose-invert max-w-none
               [&_pre]:bg-overlay/[0.06] [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:text-xs [&_pre]:border [&_pre]:border-overlay/[0.06]
@@ -87,12 +87,12 @@ export default function ClaudeChat({ tabId }: Props) {
               [&_hr]:border-overlay/[0.06] [&_hr]:my-3
               [&_a]:text-primary [&_a]:no-underline [&_a]:hover:underline
             ">
-              <Markdown remarkPlugins={[remarkGfm]}>{msg.content}</Markdown>
+              <Markdown remarkPlugins={[remarkGfm]}>{item.msg.content}</Markdown>
             </div>
           </div>
         )
-        if (msg.role === 'tool') return <ToolCallCard key={msg.id} content={msg.content} />
-        return <div key={msg.id} className="text-xs text-destructive/80 ml-6 px-2 py-1 rounded-lg bg-destructive/5 border border-destructive/10">{msg.content}</div>
+        if (item.type === 'tool_group') return <ToolCallGroup key={item.msgs[0].id} messages={item.msgs} />
+        return <div key={item.msg.id} className="text-xs text-destructive/80 ml-6 px-2 py-1 rounded-lg bg-destructive/5 border border-destructive/10">{item.msg.content}</div>
       })}
 
       {tab.sending && (
@@ -139,6 +139,70 @@ function CliGuide({ cliStatus }: { cliStatus: string }) {
         onClick={() => { setCliStatus('checking'); setTimeout(() => { invoke<{ status: string }>('claude_check_status').then((res) => setCliStatus(res.status as 'ready' | 'not_installed' | 'not_authenticated')).catch(() => setCliStatus('not_installed')) }, 500) }}
         className="mt-4 text-xs text-primary/70 hover:text-primary transition-colors cursor-pointer"
       >{t('claude.retry_check')}</button>
+    </div>
+  )
+}
+
+type ClaudeMessage = { id: string; role: string; content: string }
+type GroupedItem =
+  | { type: 'user'; msg: ClaudeMessage }
+  | { type: 'assistant'; msg: ClaudeMessage }
+  | { type: 'tool_group'; msgs: ClaudeMessage[] }
+  | { type: 'other'; msg: ClaudeMessage }
+
+/** 将连续的 tool 消息合并为一组 */
+function groupMessages(messages: ClaudeMessage[]): GroupedItem[] {
+  const result: GroupedItem[] = []
+  let toolBuf: ClaudeMessage[] = []
+
+  const flushTools = () => {
+    if (toolBuf.length > 0) {
+      result.push({ type: 'tool_group', msgs: [...toolBuf] })
+      toolBuf = []
+    }
+  }
+
+  for (const msg of messages) {
+    if (msg.role === 'tool') {
+      toolBuf.push(msg)
+    } else {
+      flushTools()
+      if (msg.role === 'user') result.push({ type: 'user', msg })
+      else if (msg.role === 'assistant') result.push({ type: 'assistant', msg })
+      else result.push({ type: 'other', msg })
+    }
+  }
+  flushTools()
+  return result
+}
+
+/** 折叠显示一组连续工具调用 */
+function ToolCallGroup({ messages }: { messages: ClaudeMessage[] }) {
+  const [expanded, setExpanded] = useState(false)
+  // 提取工具名称统计
+  const toolNames = messages.map((m) => {
+    const idx = m.content.indexOf(': ')
+    return idx > 0 ? m.content.slice(0, idx) : m.content
+  })
+  const counts: Record<string, number> = {}
+  for (const name of toolNames) counts[name] = (counts[name] || 0) + 1
+  const summary = Object.entries(counts).map(([name, count]) => count > 1 ? `${name} ×${count}` : name).join(', ')
+
+  return (
+    <div className="ml-6 py-0.5">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-1.5 text-xs text-muted-foreground/70 rounded-lg px-2 py-1 hover:bg-overlay/[0.04] cursor-pointer transition-colors"
+      >
+        <ChevronRight className={`h-2.5 w-2.5 transition-transform duration-150 ${expanded ? 'rotate-90' : ''}`} />
+        <Wrench className="h-3 w-3 text-primary/50" />
+        <span className="font-medium">{summary}</span>
+      </button>
+      {expanded && (
+        <div className="ml-2 mt-0.5 space-y-0">
+          {messages.map((m) => <ToolCallCard key={m.id} content={m.content} />)}
+        </div>
+      )}
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import { useState, useRef, type ReactNode } from 'react'
+import { useState, useRef, useEffect, type ReactNode } from 'react'
 
 interface TooltipProps {
   content: string
@@ -14,6 +14,11 @@ export function Tooltip({ content, children, delay = 300, side = 'bottom' }: Too
 
   const enter = () => { timer.current = setTimeout(() => setShow(true), delay) }
   const leave = () => { clearTimeout(timer.current); setShow(false) }
+
+  // 组件卸载时清理 timer，防止内存泄漏
+  useEffect(() => {
+    return () => clearTimeout(timer.current)
+  }, [])
 
   return (
     <div className="relative inline-flex" onMouseEnter={enter} onMouseLeave={leave}>

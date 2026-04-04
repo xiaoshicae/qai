@@ -51,7 +51,8 @@ export default function CollectionTree({ collections, trees, selectedNodeId, onS
   const toggle = useCallback(async (id: string, collectionId?: string) => {
     setExpanded((prev) => {
       const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
       return next
     })
     if (collectionId) {
@@ -246,7 +247,7 @@ function TreeNode({ node, collectionId, level, expanded, selectedNodeId, renamin
     const method = node.method?.toUpperCase() ?? ''
     const colorClass = METHOD_COLORS[method] ?? 'text-muted-foreground'
     const statusDot = status
-      ? status.status === 'success' ? 'bg-emerald-500' : 'bg-red-500'
+      ? status.status === 'success' ? 'bg-success' : 'bg-error'
       : ''
     return (
       <TreeRow
@@ -278,7 +279,7 @@ function TreeNode({ node, collectionId, level, expanded, selectedNodeId, renamin
       <TreeRow
         id={node.id}
         icon={isChain
-          ? <Link2 className="h-3.5 w-3.5 text-amber-500" />
+          ? <Link2 className="h-3.5 w-3.5 text-warning" />
           : isExpanded ? <FolderOpen className="h-3.5 w-3.5 text-primary/60" /> : <Folder className="h-3.5 w-3.5 text-muted-foreground" />}
         chevron={isExpanded ? <ChevronDown className="h-3 w-3 text-muted-foreground" /> : <ChevronRight className="h-3 w-3 text-muted-foreground/50" />}
         label={node.name}

@@ -155,7 +155,7 @@ function VarValueInput({ value, onChange, envVars }: { value: string; onChange: 
           const varName = match[1]
           const resolved = varName in envVars!
           return (
-            <span key={i} className={`rounded-sm px-0.5 ${resolved ? 'bg-cyan-500/15 text-cyan-600 dark:text-cyan-400' : 'bg-red-500/15 text-red-500'}`}>
+            <span key={i} className={`rounded-sm px-0.5 ${resolved ? 'bg-variable/15 text-variable' : 'bg-error/15 text-error'}`}>
               {seg}
             </span>
           )

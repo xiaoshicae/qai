@@ -32,9 +32,9 @@ function VarTag({ name, value, isChainVar }: { name: string; value?: string; isC
   const resolved = value !== undefined
 
   const style = resolved
-    ? 'text-cyan-600 dark:text-cyan-400'
+    ? 'text-variable'
     : isChainVar
-    ? 'text-amber-600 dark:text-amber-400'
+    ? 'text-warning'
     : 'text-muted-foreground/60'
 
   const tooltip = resolved
@@ -63,7 +63,7 @@ function VarTag({ name, value, isChainVar }: { name: string; value?: string; isC
           style={{ left: pos.x, top: pos.y, transform: 'translate(-50%, -100%)' }}
         >
           <span className="text-muted-foreground">{name} = </span>
-          <span className={resolved ? 'text-foreground' : isChainVar ? 'text-amber-600 dark:text-amber-400 italic' : 'text-muted-foreground italic'}>
+          <span className={resolved ? 'text-foreground' : isChainVar ? 'text-warning italic' : 'text-muted-foreground italic'}>
             {tooltip}
           </span>
         </span>,

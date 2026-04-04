@@ -56,7 +56,7 @@ export function HistoryRow({ entry, expanded, highlight, onToggle, onGoTo, onRun
       <div className="flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors hover:bg-overlay/[0.04]" onClick={onToggle}>
         {expanded ? <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0" /> : <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />}
 
-        {isSuccess ? <CheckCircle className="h-3.5 w-3.5 text-emerald-500 shrink-0" /> : isError ? <AlertCircle className="h-3.5 w-3.5 text-amber-500 shrink-0" /> : <XCircle className="h-3.5 w-3.5 text-red-500 shrink-0" />}
+        {isSuccess ? <CheckCircle className="h-3.5 w-3.5 text-success shrink-0" /> : isError ? <AlertCircle className="h-3.5 w-3.5 text-warning shrink-0" /> : <XCircle className="h-3.5 w-3.5 text-error shrink-0" />}
 
         <span className={`text-[10px] font-bold font-mono w-12 shrink-0 ${color}`}>{method}</span>
 
@@ -70,7 +70,7 @@ export function HistoryRow({ entry, expanded, highlight, onToggle, onGoTo, onRun
         )}
 
         {assertions.length > 0 && (
-          <span className={`text-xs shrink-0 ${passedCount === assertions.length ? 'text-emerald-500' : 'text-red-500'}`}>{passedCount}/{assertions.length}</span>
+          <span className={`text-xs shrink-0 ${passedCount === assertions.length ? 'text-success' : 'text-error'}`}>{passedCount}/{assertions.length}</span>
         )}
 
         <span className="text-xs text-muted-foreground tabular-nums shrink-0">{formatDuration(entry.response_time_ms)}</span>
@@ -115,15 +115,15 @@ export function HistoryRow({ entry, expanded, highlight, onToggle, onGoTo, onRun
               <div className="space-y-0.5">
                 {assertions.map((a) => (
                   <div key={a.assertion_id} className="flex items-center gap-1.5">
-                    {a.passed ? <CheckCircle className="h-3 w-3 text-emerald-500 shrink-0" /> : <XCircle className="h-3 w-3 text-red-500 shrink-0" />}
-                    <span className={a.passed ? '' : 'text-red-500'}>{a.message}</span>
+                    {a.passed ? <CheckCircle className="h-3 w-3 text-success shrink-0" /> : <XCircle className="h-3 w-3 text-error shrink-0" />}
+                    <span className={a.passed ? '' : 'text-error'}>{a.message}</span>
                   </div>
                 ))}
               </div>
             </div>
           )}
 
-          {entry.error_message && <div className="text-red-500 bg-red-500/5 rounded-lg p-2.5">{entry.error_message}</div>}
+          {entry.error_message && <div className="text-error bg-error/5 rounded-lg p-2.5">{entry.error_message}</div>}
 
           <div className="flex items-center gap-2 pt-1">
             {entry.item_id && (

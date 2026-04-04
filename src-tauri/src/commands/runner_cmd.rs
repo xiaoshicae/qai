@@ -1,24 +1,57 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::db::init::{DbState, HttpClient};
 use crate::models::execution::ChainResult;
 use crate::runner::batch::{self, BatchResult};
 
+/// 运行器状态，管理每次运行的取消令牌
+/// 每次运行使用独立的取消令牌，避免多个运行互相干扰
 pub struct RunnerState {
-    pub cancelled: Arc<AtomicBool>,
+    /// 当前运行的取消令牌（None 表示无运行中的任务）
+    current_cancel: Mutex<Option<Arc<AtomicBool>>>,
 }
 
 impl RunnerState {
     pub fn new() -> Self {
-        Self { cancelled: Arc::new(AtomicBool::new(false)) }
+        Self { current_cancel: Mutex::new(None) }
+    }
+
+    fn lock_inner(&self) -> std::sync::MutexGuard<'_, Option<Arc<AtomicBool>>> {
+        self.current_cancel.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// 开始新运行，返回取消令牌
+    /// 会取消之前的运行（如果存在）
+    fn start_run(&self) -> Arc<AtomicBool> {
+        let token = Arc::new(AtomicBool::new(false));
+        let mut guard = self.lock_inner();
+        // 如果有正在运行的任务，先取消它
+        if let Some(old_token) = guard.take() {
+            old_token.store(true, Ordering::Release);
+        }
+        *guard = Some(token.clone());
+        token
+    }
+
+    /// 取消当前运行
+    fn cancel_current(&self) {
+        if let Some(token) = self.lock_inner().take() {
+            token.store(true, Ordering::Release);
+        }
+    }
+
+    /// 运行结束，清除令牌
+    fn end_run(&self) {
+        *self.lock_inner() = None;
     }
 }
 
 #[tauri::command]
 pub async fn cancel_run(runner: State<'_, RunnerState>) -> Result<(), String> {
-    runner.cancelled.store(true, Ordering::Relaxed);
+    runner.cancel_current();
     Ok(())
 }
 
@@ -32,11 +65,30 @@ pub async fn run_collection(
     parent_id: Option<String>,
     concurrency: Option<usize>,
     exclude_ids: Option<Vec<String>>,
+    dry_run: Option<bool>,
 ) -> Result<BatchResult, String> {
-    // 重置取消标志
-    runner.cancelled.store(false, Ordering::Relaxed);
-    let cancel_token = runner.cancelled.clone();
+    let dry_run = dry_run.unwrap_or(false);
+    // 获取本次运行的取消令牌（会取消之前正在运行的任务）
+    let cancel_token = runner.start_run();
+    // 使用 inner 函数确保 end_run() 在所有退出路径都被调用
+    let result = run_collection_inner(
+        &app, &db, &http, cancel_token, &collection_id, parent_id, concurrency, exclude_ids, dry_run,
+    ).await;
+    runner.end_run();
+    result
+}
 
+async fn run_collection_inner(
+    app: &AppHandle,
+    db: &DbState,
+    http: &HttpClient,
+    cancel_token: Arc<AtomicBool>,
+    collection_id: &str,
+    parent_id: Option<String>,
+    concurrency: Option<usize>,
+    exclude_ids: Option<Vec<String>>,
+    dry_run: bool,
+) -> Result<BatchResult, String> {
     let excluded: std::collections::HashSet<String> = exclude_ids.unwrap_or_default().into_iter().collect();
     // 分离：chain 类型 item 内的子请求用链式执行，其余并行
     let (normal_items, chain_groups, chain_names, var_map) = {
@@ -47,7 +99,7 @@ pub async fn run_collection(
             crate::db::item::list_by_parent(&conn, pid)
                 .map_err(|e| e.to_string())?
         } else {
-            crate::db::item::list_by_collection(&conn, &collection_id)
+            crate::db::item::list_by_collection(&conn, collection_id)
                 .map_err(|e| e.to_string())?
         };
         if !excluded.is_empty() {
@@ -57,11 +109,7 @@ pub async fn run_collection(
             });
         }
 
-        let var_map = if let Ok(Some(env)) = crate::db::environment::get_active(&conn) {
-            crate::http::vars::build_var_map(&env.variables)
-        } else {
-            std::collections::HashMap::new()
-        };
+        let var_map = crate::db::environment::get_active_var_map(&conn);
 
         // 区分 chain 容器和普通 request，同时记录 chain 名称
         let mut chain_names: std::collections::HashMap<String, String> = std::collections::HashMap::new();
@@ -181,6 +229,7 @@ pub async fn run_collection(
             Some(Box::new(move |result| {
                 let _ = app_result_chain.emit("execution-result", result);
             })),
+            dry_run,
         ).await;
 
         let chain_failed = chain_result.status != crate::models::Status::Success.as_str();
@@ -204,7 +253,7 @@ pub async fn run_collection(
         let normal_result = batch::run_batch(
             &http.0,
             normal_items,
-            concurrency.unwrap_or(5),
+            concurrency.unwrap_or(crate::DEFAULT_CONCURRENCY),
             cancel_token.clone(),
             move |mut progress| {
                 progress.batch_id = batch_id_clone.clone();
@@ -215,6 +264,7 @@ pub async fn run_collection(
             move |result| {
                 let _ = app_result_batch.emit("execution-result", result);
             },
+            dry_run,
         ).await;
         all_results.extend(normal_result.results);
     }
@@ -234,8 +284,8 @@ pub async fn run_collection(
         results: all_results,
     };
 
-    // 发射请求日志 + 保存执行记录
-    {
+    // 发射请求日志 + 保存执行记录（dry-run 跳过持久化）
+    if !dry_run {
         let conn = db.conn()?;
         for result in &batch_result.results {
             crate::http::emit_request_log(&app, result);
@@ -258,7 +308,9 @@ pub async fn run_chain(
     db: State<'_, DbState>,
     http: State<'_, HttpClient>,
     item_id: String,
+    dry_run: Option<bool>,
 ) -> Result<ChainResult, String> {
+    let dry_run = dry_run.unwrap_or(false);
     let (steps, base_vars, item_name) = {
         let conn = db.conn()?;
 
@@ -271,11 +323,7 @@ pub async fn run_chain(
         let children = crate::db::item::list_by_parent(&conn, &item_id)
             .map_err(|e| e.to_string())?;
 
-        let var_map = if let Ok(Some(env)) = crate::db::environment::get_active(&conn) {
-            crate::http::vars::build_var_map(&env.variables)
-        } else {
-            std::collections::HashMap::new()
-        };
+        let var_map = crate::db::environment::get_active_var_map(&conn);
 
         let request_children: Vec<_> = children.iter()
             .filter(|c| c.item_type == crate::models::ItemType::Request.as_str())
@@ -310,11 +358,12 @@ pub async fn run_chain(
         Some(Box::new(move |result| {
             let _ = app_result.emit("execution-result", result);
         })),
+        dry_run,
     )
     .await;
 
-    // 发射请求日志 + 保存每步执行记录
-    {
+    // 发射请求日志 + 保存每步执行记录（dry-run 跳过持久化）
+    if !dry_run {
         let conn = db.conn()?;
         for step in &chain_result.steps {
             let result = &step.execution_result;
@@ -343,7 +392,7 @@ pub fn list_history(
     limit: Option<u32>,
 ) -> Result<Vec<crate::db::execution::HistoryEntry>, String> {
     let conn = db.conn()?;
-    crate::db::execution::list_recent(&conn, limit.unwrap_or(50)).map_err(|e| e.to_string())
+    crate::db::execution::list_recent(&conn, limit.unwrap_or(crate::DEFAULT_HISTORY_LIMIT)).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -361,7 +410,7 @@ pub fn list_history_filtered(
         status.as_deref(),
         method.as_deref(),
         keyword.as_deref(),
-        limit.unwrap_or(50),
+        limit.unwrap_or(crate::DEFAULT_HISTORY_LIMIT),
         offset.unwrap_or(0),
     )
     .map_err(|e| e.to_string())
@@ -399,7 +448,7 @@ pub fn list_item_runs(
     limit: Option<u32>,
 ) -> Result<Vec<crate::db::execution::RunRecord>, String> {
     let conn = db.conn()?;
-    crate::db::execution::list_by_item(&conn, &item_id, limit.unwrap_or(20)).map_err(|e| e.to_string())
+    crate::db::execution::list_by_item(&conn, &item_id, limit.unwrap_or(crate::DEFAULT_ITEM_RUNS_LIMIT)).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

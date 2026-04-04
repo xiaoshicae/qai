@@ -137,7 +137,7 @@ pub async fn test_ai_connection(
     base_url: Option<String>,
 ) -> Result<String, String> {
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
+        .timeout(std::time::Duration::from_secs(crate::AI_TEST_TIMEOUT_SECS))
         .build()
         .map_err(|e| e.to_string())?;
 

@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { Eye, EyeOff, Check, Loader2, Wifi, WifiOff, ExternalLink, Save, Bot } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from 'react-i18next'
 
 function ClaudeIcon({ className }: { className?: string }) {
@@ -71,11 +72,6 @@ async function putSetting(key: string, value: string) {
 
 type TestStatus = 'idle' | 'testing' | 'success' | 'error'
 
-interface Props {
-  loaded: boolean
-  onLoaded: () => void
-}
-
 function FeatureToggle({ label, hint, icon: Icon, enabled, onToggle }: {
   label: string; hint: string; icon: React.ElementType; enabled: boolean; onToggle: () => void
 }) {
@@ -102,8 +98,9 @@ function FeatureToggle({ label, hint, icon: Icon, enabled, onToggle }: {
   )
 }
 
-export default function AIConfigSection({ onLoaded }: Props) {
+export default function AIConfigSection() {
   const { t } = useTranslation()
+  const [loading, setLoading] = useState(true)
   const [claudeCodeOn, setClaudeCodeOn] = useState(() => localStorage.getItem(FEATURE_KEYS.claudeCode) === 'true')
   const [aiAssistantOn] = useState(() => localStorage.getItem(FEATURE_KEYS.aiAssistant) === 'true')
 
@@ -155,7 +152,7 @@ export default function AIConfigSection({ onLoaded }: Props) {
       setSavedModels({ ...loadedModels })
       setBaseUrl(await getSetting('ai_base_url'))
       setSavedBaseUrl(await getSetting('ai_base_url'))
-      onLoaded()
+      setLoading(false)
     })()
   }, [])
 
@@ -211,6 +208,28 @@ export default function AIConfigSection({ onLoaded }: Props) {
       setTestStatus('error')
       setTestError(typeof e === 'string' ? e : e.message ?? t('settings.connection_failed'))
     }
+  }
+
+  // 加载状态骨架屏
+  if (loading) {
+    return (
+      <section className="glass-card rounded-2xl p-6">
+        <div className="flex items-center gap-2.5 mb-5">
+          <Skeleton variant="avatar" className="h-7 w-7 rounded-lg" />
+          <Skeleton variant="text" width={80} />
+        </div>
+        <div className="space-y-3">
+          <div className="flex items-center gap-3 py-2">
+            <Skeleton variant="avatar" className="h-8 w-8 rounded-lg" />
+            <div className="flex-1 space-y-2">
+              <Skeleton variant="text" width="40%" />
+              <Skeleton variant="text" width="60%" height={12} className="h-3" />
+            </div>
+            <Skeleton variant="avatar" className="h-5 w-10 rounded-full" />
+          </div>
+        </div>
+      </section>
+    )
   }
 
   return (

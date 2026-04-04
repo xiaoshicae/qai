@@ -48,7 +48,7 @@ pub fn initialize_database(app: &AppHandle) -> Result<(), Box<dyn std::error::Er
 
     app.manage(HttpClient(
         reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
+            .timeout(std::time::Duration::from_secs(crate::HTTP_TIMEOUT_SECS))
             .build()
             .expect("failed to build http client"),
     ));

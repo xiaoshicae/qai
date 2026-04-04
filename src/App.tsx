@@ -4,6 +4,8 @@ import { Toaster } from 'sonner'
 import AppLayout from './components/layout/app-layout'
 import WorkbenchView from './views/workbench-view'
 import { ConfirmDialog } from './components/ui/confirm-dialog'
+import { ShortcutHelpProvider } from './components/ui/shortcut-help'
+import { ErrorBoundary } from './components/ui/error-boundary'
 import { useThemeStore } from './stores/theme-store'
 import { initConsoleListener } from './stores/console-store'
 
@@ -22,20 +24,23 @@ function RouteFallback() {
 export default function App() {
   const resolved = useThemeStore((s) => s.resolved)
   const init = useThemeStore((s) => s.init)
-  useEffect(() => { init(); initConsoleListener() }, [])
+  useEffect(() => { init(); initConsoleListener() }, [init])
 
   return (
-    <BrowserRouter>
-      <Toaster theme={resolved} position="top-right" richColors />
-      <ConfirmDialog />
-      <Routes>
-        <Route element={<AppLayout />}>
-          <Route path="/" element={<WorkbenchView />} />
-          <Route path="/environments" element={<Suspense fallback={<RouteFallback />}><EnvironmentsView /></Suspense>} />
-          <Route path="/history" element={<Suspense fallback={<RouteFallback />}><HistoryView /></Suspense>} />
-          <Route path="/settings" element={<Suspense fallback={<RouteFallback />}><SettingsView /></Suspense>} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <Toaster theme={resolved} position="top-right" richColors />
+        <ConfirmDialog />
+        <ShortcutHelpProvider />
+        <Routes>
+          <Route element={<AppLayout />}>
+            <Route path="/" element={<WorkbenchView />} />
+            <Route path="/environments" element={<Suspense fallback={<RouteFallback />}><EnvironmentsView /></Suspense>} />
+            <Route path="/history" element={<Suspense fallback={<RouteFallback />}><HistoryView /></Suspense>} />
+            <Route path="/settings" element={<Suspense fallback={<RouteFallback />}><SettingsView /></Suspense>} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </ErrorBoundary>
   )
 }

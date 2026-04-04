@@ -81,20 +81,22 @@ export const useRequestStore = create<RequestState>((set, get) => ({
     })
 
     try {
-      console.log(`[QAI] → ${currentRequest.method} ${currentRequest.url}`, {
-        bodyType: currentRequest.body_type,
-        headers: currentRequest.headers,
-        body: currentRequest.body_content?.slice(0, 500),
-      })
+      // 仅在开发环境记录日志，避免敏感数据暴露
+      if (import.meta.env.DEV) {
+        console.log(`[QAI] → ${currentRequest.method} ${currentRequest.url}`)
+      }
       const result = await invoke<ExecutionResult>('send_request', { id: currentRequest.id })
-      console.log(`[QAI] ← ${result.response?.status ?? 'ERR'}`, {
-        time: result.response?.time_ms + 'ms',
-        size: result.response?.size_bytes + 'B',
-        error: result.error_message,
-      })
+      if (import.meta.env.DEV) {
+        console.log(`[QAI] ← ${result.response?.status ?? 'ERR'}`, {
+          time: result.response?.time_ms + 'ms',
+          size: result.response?.size_bytes + 'B',
+        })
+      }
       set({ currentResponse: result })
-    } catch (e: any) {
-      console.error(`[QAI] ✗ ${currentRequest.method} ${currentRequest.url}`, e)
+    } catch (e: unknown) {
+      if (import.meta.env.DEV) {
+        console.error(`[QAI] ✗ ${currentRequest.method} ${currentRequest.url}`, e)
+      }
       set({
         currentResponse: {
           execution_id: '',

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { Download, Copy, CheckCircle2, XCircle, Plus, Trash2, Pencil, Loader2, Bug, Braces } from 'lucide-react'
+import { Download, Copy, CheckCircle2, XCircle, Plus, Trash2, Pencil, Loader2, Bug, Braces, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,9 +14,10 @@ import type { CollectionItem, ExecutionResult } from '@/types'
 import { BodyTypeSelector } from '@/components/request/body-type-selector'
 import { WsStepsEditor } from '@/components/request/ws-steps-editor'
 import { MiniResponseViewer } from '@/components/request/mini-response-viewer'
+import AssertionEditor from '@/components/assertion/assertion-editor'
 import { invokeErrorMessage } from '@/lib/invoke-error'
 
-type EditFormTab = 'body' | 'headers' | 'expect' | 'extract' | 'poll'
+type EditFormTab = 'body' | 'headers' | 'assertions' | 'extract' | 'poll'
 
 export function StatCard({ label, value, color }: { label: string; value: number; color?: string }) {
   return (
@@ -136,7 +137,7 @@ function PollConfigEditor({ value, onChange }: {
         <button
           type="button"
           onClick={toggle}
-          className={`px-2 py-0.5 rounded-md text-[10px] font-medium cursor-pointer transition-colors ${enabled ? 'bg-amber-500/15 text-amber-500' : 'bg-overlay/[0.04] text-muted-foreground hover:text-foreground'}`}
+          className={`px-2 py-0.5 rounded-md text-[10px] font-medium cursor-pointer transition-colors ${enabled ? 'bg-warning/15 text-warning' : 'bg-overlay/[0.04] text-muted-foreground hover:text-foreground'}`}
         >
           {enabled ? t('assertion.enabled') : t('assertion.disabled')}
         </button>
@@ -176,10 +177,11 @@ interface ParseCurlResult {
   body_content?: string
 }
 
-export function EditForm({ req, onChange, onSave, onCancel, envVars, saving }: {
+export function EditForm({ req, onChange, onSave, onEnsureSaved, onCancel, envVars, saving }: {
   req: CollectionItem
   onChange: (r: CollectionItem) => void
   onSave: () => void
+  onEnsureSaved?: () => Promise<string | null>
   onCancel: () => void
   envVars: Record<string, string>
   saving?: boolean
@@ -198,6 +200,13 @@ export function EditForm({ req, onChange, onSave, onCancel, envVars, saving }: {
   const streamScrollRef = useRef<HTMLPreElement>(null)
   const [touched, setTouched] = useState(false)
   const nameError = touched && !req.name.trim()
+  const [assertionCount, setAssertionCount] = useState(0)
+  const [autoSaving, setAutoSaving] = useState(false)
+
+  useEffect(() => {
+    if (!req.id) { setAssertionCount(0); return }
+    invoke<{ id: string }[]>('list_assertions', { itemId: req.id }).then((list) => setAssertionCount(list.length)).catch(() => {})
+  }, [req.id])
 
   useEffect(() => {
     setDebugResult(null)
@@ -273,6 +282,7 @@ export function EditForm({ req, onChange, onSave, onCancel, envVars, saving }: {
     setDebugStreamContent('')
     streamContentRef.current = ''
 
+    const tempId = crypto.randomUUID()
     const payload = {
       method: req.method || 'GET',
       url: req.url,
@@ -281,13 +291,16 @@ export function EditForm({ req, onChange, onSave, onCancel, envVars, saving }: {
       bodyType: req.body_type || 'none',
       bodyContent: req.body_content || '',
       protocol: req.protocol || 'http',
+      requestId: tempId,
     }
 
     // 始终监听 stream-chunk，后端自动检测 SSE 响应
     let unlisten: (() => void) | undefined
     let streamStarted = false
     try {
-      unlisten = await listen<{ chunk: string }>('stream-chunk', (event) => {
+      unlisten = await listen<{ item_id: string; chunk: string; done: boolean }>('stream-chunk', (event) => {
+        if (event.payload.item_id !== tempId) return
+        if (event.payload.done || event.payload.chunk === '[DONE]') return
         if (!streamStarted) { streamStarted = true; setDebugStreaming(true) }
         streamContentRef.current += event.payload.chunk
         setDebugStreamContent(streamContentRef.current)
@@ -312,7 +325,7 @@ export function EditForm({ req, onChange, onSave, onCancel, envVars, saving }: {
   const tabDefs: { key: EditFormTab; label: string; count?: number }[] = [
     { key: 'body', label: t('edit.body') },
     { key: 'headers', label: 'Headers', count: headers.filter((h) => h.key).length },
-    { key: 'expect', label: t('edit.expect_status') },
+    { key: 'assertions', label: t('edit.assertions_tab'), count: assertionCount || undefined },
     { key: 'extract', label: t('edit.extract_tab'), count: extractRules.length || undefined },
     { key: 'poll', label: t('edit.poll_config'), count: hasPollConfig ? 1 : undefined },
   ]
@@ -352,7 +365,7 @@ export function EditForm({ req, onChange, onSave, onCancel, envVars, saving }: {
               title={t('edit.copy_curl')}
             >
               {curlCopied
-                ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                ? <CheckCircle2 className="h-3.5 w-3.5 text-success" />
                 : <Copy className="h-3.5 w-3.5" />}
               <span className="text-[10px]">{curlCopied ? 'Copied' : 'cURL'}</span>
             </button>
@@ -457,11 +470,29 @@ export function EditForm({ req, onChange, onSave, onCancel, envVars, saving }: {
           />
         )}
 
-        {activeTab === 'expect' && (
-          <div className="flex items-center gap-3 pt-1">
-            <label className="text-xs text-muted-foreground">{t('edit.expect_status')}</label>
-            <Input type="number" value={req.expect_status} onChange={(e) => set('expect_status', Number(e.target.value))} className="h-8 w-24 text-sm text-center" />
-          </div>
+        {activeTab === 'assertions' && (
+          req.id
+            ? <AssertionEditor requestId={req.id} />
+            : <div className="flex flex-col items-center gap-3 py-8">
+                <ShieldCheck className="h-8 w-8 text-muted-foreground/30" />
+                <span className="text-xs text-muted-foreground/50">{t('assertion.empty_hint')}</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs text-muted-foreground hover:text-foreground border border-dashed border-overlay/[0.06] hover:border-overlay/[0.12]"
+                  disabled={autoSaving}
+                  onClick={async () => {
+                    if (!req.name.trim()) { setTouched(true); return }
+                    if (!onEnsureSaved) return
+                    setAutoSaving(true)
+                    await onEnsureSaved()
+                    setAutoSaving(false)
+                  }}
+                >
+                  {autoSaving ? <Loader2 className="h-3 w-3 animate-spin mr-1.5" /> : <Plus className="h-3 w-3 mr-1.5" />}
+                  {t('assertion.add')}
+                </Button>
+              </div>
         )}
 
         {activeTab === 'extract' && (
@@ -483,7 +514,7 @@ export function EditForm({ req, onChange, onSave, onCancel, envVars, saving }: {
       {debugStreaming && debugStreamContent && (
         <div className="rounded-xl border border-overlay/[0.06] bg-overlay/[0.02] overflow-hidden text-xs flex-1 min-h-0 flex flex-col">
           <div className="flex items-center gap-2 px-3 py-2 border-b border-overlay/[0.06] shrink-0">
-            <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+            <div className="h-2 w-2 rounded-full bg-success animate-pulse" />
             <span className="text-muted-foreground">Streaming...</span>
           </div>
           <pre ref={streamScrollRef} className="font-mono text-xs leading-relaxed whitespace-pre-wrap break-all flex-1 min-h-0 overflow-y-auto p-3">

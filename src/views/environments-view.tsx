@@ -20,8 +20,17 @@ export default function EnvironmentsView() {
   const [loaded, setLoaded] = useState(false)
   const [saveIndicator, setSaveIndicator] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const indicatorTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const varsRef = useRef(variables)
   varsRef.current = variables
+
+  // 组件卸载时清理所有 timer
+  useEffect(() => {
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current)
+      if (indicatorTimer.current) clearTimeout(indicatorTimer.current)
+    }
+  }, [])
 
   const loadEnvs = useCallback(async () => {
     try {
@@ -59,11 +68,13 @@ export default function EnvironmentsView() {
       try {
         await invoke('save_env_variables', { environmentId: selectedId, variables: toSave })
         setSaveIndicator('saved')
-        setTimeout(() => setSaveIndicator('idle'), 1500)
+        if (indicatorTimer.current) clearTimeout(indicatorTimer.current)
+        indicatorTimer.current = setTimeout(() => setSaveIndicator('idle'), 1500)
       } catch (e) {
         console.error('自动保存失败:', e)
         setSaveIndicator('error')
-        setTimeout(() => setSaveIndicator('idle'), 3000)
+        if (indicatorTimer.current) clearTimeout(indicatorTimer.current)
+        indicatorTimer.current = setTimeout(() => setSaveIndicator('idle'), 3000)
       }
     }, 800)
   }, [selectedId])

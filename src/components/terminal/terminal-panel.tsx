@@ -85,7 +85,9 @@ export default function TerminalPanel({ onClose }: Props) {
         invoke('claude_warmup_spare', { mcpConfigPath: store.mcpConfigPath }).catch(() => {})
         return
       }
-    } catch {}
+    } catch {
+      // No spare session available, continue to cold start
+    }
 
     // 没有备用 session，走冷启动
     store.setWarmupStatus(tabId, 'warming')
@@ -118,9 +120,9 @@ export default function TerminalPanel({ onClose }: Props) {
         <div className="flex items-center gap-2">
           <ClaudeLogo />
           <span className="text-xs font-medium">Claude Code</span>
-          {activeTab?.warmupStatus === 'warming' && <span className="text-[9px] text-amber-500 dark:text-amber-400 animate-pulse">{t('claude.warming_up')}</span>}
-          {activeTab?.warmupStatus === 'ready' && store.mcpConfigPath && <span className="text-[9px] text-emerald-500 font-medium">MCP</span>}
-          {activeTab?.warmupStatus === 'ready' && !store.mcpConfigPath && <span className="text-[9px] text-emerald-500">{t('claude.warmed_up')}</span>}
+          {activeTab?.warmupStatus === 'warming' && <span className="text-[9px] text-warning animate-pulse">{t('claude.warming_up')}</span>}
+          {activeTab?.warmupStatus === 'ready' && store.mcpConfigPath && <span className="text-[9px] text-success font-medium">MCP</span>}
+          {activeTab?.warmupStatus === 'ready' && !store.mcpConfigPath && <span className="text-[9px] text-success">{t('claude.warmed_up')}</span>}
         </div>
         <div className="flex items-center gap-1">
           <button onClick={onClose} className="p-1 rounded hover:bg-overlay/[0.06] cursor-pointer transition-colors" title={t('common.close')}>
@@ -157,7 +159,7 @@ export default function TerminalPanel({ onClose }: Props) {
               ) : (
                 <span className="truncate">{tab.title}</span>
               )}
-              {tab.sending && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse shrink-0" />}
+              {tab.sending && <span className="h-1.5 w-1.5 rounded-full bg-warning animate-pulse shrink-0" />}
               {store.tabs.length > 1 && renamingTabId !== tab.id && (
                 <X
                   className="h-3 w-3 shrink-0 opacity-0 group-hover:opacity-100 hover:text-destructive transition-opacity cursor-pointer"

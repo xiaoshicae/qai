@@ -1,11 +1,6 @@
 import { create } from 'zustand'
 import { listen } from '@tauri-apps/api/event'
-
-interface KeyValuePair {
-  key: string
-  value: string
-  enabled: boolean
-}
+import type { KeyValuePair } from '@/types'
 
 export interface RequestLog {
   id: string

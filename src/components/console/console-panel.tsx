@@ -16,9 +16,9 @@ const METHOD_COLORS: Record<string, string> = {
 
 function statusColor(status: number | null): string {
   if (!status) return 'text-destructive'
-  if (status >= 200 && status < 300) return 'text-emerald-600 dark:text-emerald-400'
+  if (status >= 200 && status < 300) return 'text-success'
   if (status >= 400) return 'text-destructive'
-  return 'text-amber-600 dark:text-amber-400'
+  return 'text-warning'
 }
 
 interface Props {

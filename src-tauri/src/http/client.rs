@@ -5,6 +5,39 @@ use uuid::Uuid;
 use crate::models::execution::{Execution, ExecutionResult};
 use crate::models::item::{CollectionItem, HttpResponse};
 
+/// 响应体最大大小限制（10MB）
+const MAX_RESPONSE_SIZE: usize = 10 * 1024 * 1024;
+/// 流式响应最大累积大小限制（10MB）
+const MAX_STREAM_BODY_SIZE: usize = 10 * 1024 * 1024;
+
+/// 检查 Content-Length 是否超限
+fn check_content_length(headers: &reqwest::header::HeaderMap, max: usize) -> Result<(), anyhow::Error> {
+    if let Some(len) = headers.get("content-length")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<usize>().ok())
+    {
+        if len > max {
+            return Err(anyhow::anyhow!("响应体过大 ({}MB)，已超过 {}MB 限制", len / 1024 / 1024, max / 1024 / 1024));
+        }
+    }
+    Ok(())
+}
+
+/// 流式读取响应体并累计检查大小，防止无 Content-Length 时 OOM
+async fn read_body_with_limit(resp: reqwest::Response, max: usize) -> Result<Vec<u8>, anyhow::Error> {
+    use futures_util::StreamExt;
+    let mut stream = resp.bytes_stream();
+    let mut buf: Vec<u8> = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk?;
+        if buf.len() + chunk.len() > max {
+            return Err(anyhow::anyhow!("响应体过大，已超过 {}MB 限制", max / 1024 / 1024));
+        }
+        buf.extend_from_slice(&chunk);
+    }
+    Ok(buf)
+}
+
 /// 检测响应是否为流式（SSE / chunked text）
 fn is_streaming_response(headers: &reqwest::header::HeaderMap) -> bool {
     let ct = headers
@@ -12,9 +45,9 @@ fn is_streaming_response(headers: &reqwest::header::HeaderMap) -> bool {
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
     ct.contains("text/event-stream")
-        || ct.contains("text/plain") && headers.get("transfer-encoding")
+        || (ct.contains("text/plain") && headers.get("transfer-encoding")
             .and_then(|v| v.to_str().ok())
-            .map_or(false, |v| v.contains("chunked"))
+            .map_or(false, |v| v.contains("chunked")))
 }
 
 /// 智能执行：自动检测响应类型，流式响应通过回调逐块推送
@@ -70,6 +103,12 @@ pub async fn execute_smart(
                 let trimmed = line.trim();
                 if trimmed.is_empty() || trimmed.starts_with(':') { continue; }
 
+                // 检查累积大小限制
+                if full_body.len() + trimmed.len() > MAX_STREAM_BODY_SIZE {
+                    log::warn!("流式响应体超过大小限制 ({}MB)，已截断", MAX_STREAM_BODY_SIZE / 1024 / 1024);
+                    return Err(anyhow::anyhow!("响应体过大，已超过 {}MB 限制", MAX_STREAM_BODY_SIZE / 1024 / 1024));
+                }
+
                 if let Some(data) = trimmed.strip_prefix("data:") {
                     let data = data.trim();
                     if data == "[DONE]" {
@@ -94,19 +133,23 @@ pub async fn execute_smart(
         }
         let size = full_body.len() as u64;
         (full_body, size)
-    } else if is_binary {
-        let bytes = resp.bytes().await?;
-        let size = bytes.len() as u64;
-        let encoded = format!(
-            "data:{};base64,{}",
-            content_type,
-            base64::engine::general_purpose::STANDARD.encode(&bytes)
-        );
-        (encoded, size)
     } else {
-        let text = resp.text().await?;
-        let size = text.len() as u64;
-        (text, size)
+        // 先检查 Content-Length（如果有的话）
+        check_content_length(resp.headers(), MAX_RESPONSE_SIZE)?;
+        // 流式读取并累计检查大小，防止无 Content-Length 时 OOM
+        let bytes = read_body_with_limit(resp, MAX_RESPONSE_SIZE).await?;
+        let size = bytes.len() as u64;
+        if is_binary {
+            let encoded = format!(
+                "data:{};base64,{}",
+                content_type,
+                base64::engine::general_purpose::STANDARD.encode(&bytes)
+            );
+            (encoded, size)
+        } else {
+            let text = String::from_utf8_lossy(&bytes).into_owned();
+            (text, size)
+        }
     };
 
     let time_ms = start.elapsed().as_millis() as u64;
@@ -136,6 +179,37 @@ pub async fn execute_smart(
 /// 普通执行（向后兼容）
 pub async fn execute(client: &reqwest::Client, item: &CollectionItem) -> Result<ExecutionResult, anyhow::Error> {
     execute_smart(client, item, None).await
+}
+
+/// Dry-run 模拟执行：不发真实请求，返回 mock 响应，带伪随机延迟模拟网络耗时
+pub async fn mock_execute(item: &CollectionItem) -> ExecutionResult {
+    // 用 item id 的哈希生成 50~300ms 的伪随机延迟
+    let hash: u64 = item.id.bytes().fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64));
+    let delay_ms = 50 + (hash % 250);
+    tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+
+    let status = if item.expect_status > 0 { item.expect_status as u16 } else { 200 };
+    let body = r#"{"dry_run":true}"#.to_string();
+    let is_success = super::response::is_success_status(status, item.expect_status);
+
+    ExecutionResult {
+        execution_id: Uuid::new_v4().to_string(),
+        item_id: item.id.clone(),
+        item_name: item.name.clone(),
+        request_url: item.url.clone(),
+        request_method: item.method.clone(),
+        status: super::response::status_string(is_success),
+        response: Some(HttpResponse {
+            status,
+            status_text: "OK (dry-run)".to_string(),
+            headers: vec![],
+            body,
+            time_ms: delay_ms,
+            size_bytes: 17,
+        }),
+        assertion_results: vec![],
+        error_message: None,
+    }
 }
 
 /// 将 ExecutionResult 转为数据库可存储的 Execution

@@ -1,9 +1,7 @@
-import { useState } from 'react'
 import { Moon, Sun, Monitor, Globe } from 'lucide-react'
 import { useThemeStore } from '@/stores/theme-store'
 import { useTranslation } from 'react-i18next'
 import { changeLanguage } from '@/i18n'
-import { ViewLoader } from '@/components/ui/view-loader'
 import AIConfigSection from './settings-ai-config'
 
 const THEME_OPTIONS = [
@@ -16,14 +14,6 @@ export default function SettingsView() {
   const { t, i18n } = useTranslation()
   const themeMode = useThemeStore((s) => s.mode)
   const setThemeMode = useThemeStore((s) => s.setMode)
-  const [loaded, setLoaded] = useState(false)
-
-  if (!loaded) return (
-    <>
-      <ViewLoader />
-      <div className="hidden"><AIConfigSection loaded={loaded} onLoaded={() => setLoaded(true)} /></div>
-    </>
-  )
 
   return (
     <div className="h-full overflow-y-auto">
@@ -91,7 +81,7 @@ export default function SettingsView() {
         </section>
 
         {/* AI 配置 */}
-        <AIConfigSection loaded={loaded} onLoaded={() => setLoaded(true)} />
+        <AIConfigSection />
 
       </div>
     </div>

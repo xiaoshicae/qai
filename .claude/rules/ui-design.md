@@ -6,405 +6,117 @@
 
 ## 主题系统
 
-### 切换机制
-
-- 通过 `useThemeStore`（`src/stores/theme-store.ts`）管理，支持 `dark` / `light` / `system` 三种模式
-- 在 `<html>` 上添加 `.dark` 或 `.light` 类来切换
-- 持久化到 SQLite settings 表（key: `theme_mode`）
-- `system` 模式监听 `prefers-color-scheme` 媒体查询
-
-### CSS 变量结构
-
-```
-index.css:
-  @theme { ... }        ← 浅色主题为默认值
-  .dark { ... }         ← 深色主题覆盖
-  :root:not(.dark) { }  ← 浅色特定样式
-```
+- `useThemeStore` 管理 `dark`/`light`/`system` 三种模式
+- `<html>` 上添加 `.dark`/`.light` 类切换
+- CSS 结构：`@theme {}` 浅色默认 → `.dark {}` 覆盖 → `:root:not(.dark) {}` 浅色特定
 
 ## overlay 色（核心概念）
 
-**`--color-overlay`** 是双主题系统的关键：
-- 深色模式 = 白色 `oklch(1 0 0)` → 叠加在深底上产生"微亮"效果
-- 浅色模式 = 黑色 `oklch(0 0 0)` → 叠加在浅底上产生"微暗"效果
-
-**所有半透明叠加层必须使用 `overlay`，禁止硬编码 `white` 或 `black`。**
+`--color-overlay`：深色=白色，浅色=黑色。**所有半透明叠加必须用 `overlay`，禁止硬编码 `white`/`black`。**
 
 ```
-bg-overlay/[0.03]   ← 输入框/textarea 背景
-bg-overlay/[0.04]   ← hover 态
-bg-overlay/[0.06]   ← 分割线、badge 背景
-bg-overlay/[0.08]   ← active/selected 态
-border-overlay/[0.06] ← 静态边框
-border-overlay/[0.08] ← 输入框边框
-border-overlay/[0.10] ← hover 边框
-border-overlay/[0.12] ← 焦点/强调边框
-border-overlay/[0.15] ← 最强边框（radio 等）
+bg-overlay/[0.03] 输入框背景 | /[0.04] hover | /[0.06] 分割线/badge | /[0.08] active/selected
+border-overlay/[0.06] 静态 | /[0.08] 输入框 | /[0.10] hover | /[0.12] 焦点 | /[0.15] 最强
 ```
 
-## 色彩系统
+浅色模式 overlay 补偿已在 `index.css` 中自动处理，组件无需额外适配。
 
-所有颜色使用 OKLch 色彩空间，**禁止纯灰**（色度 0），每个灰度加微量蓝紫色调（色度 0.002~0.006，色相 260）。
+## 语义化颜色
 
-### 深色色板
+**必须使用语义变量，禁止硬编码颜色（`text-emerald-500` 等）**
 
-| 用途 | 值 | Tailwind |
-|------|-----|---------|
-| 背景 | `oklch(0.145 0.004 260)` | `bg-background` |
-| 卡片 | `oklch(0.185 0.005 260)` | `bg-card` |
-| 侧边栏 | `oklch(0.125 0.004 260)` | `bg-sidebar` |
-| 前景文字 | `oklch(0.93 0.005 260)` | `text-foreground` |
-| 次要文字 | `oklch(0.55 0.01 260)` | `text-muted-foreground` |
-| 品牌色 | `oklch(0.65 0.18 240)` | `text-primary` |
-
-### 浅色色板
-
-| 用途 | 值 | Tailwind |
-|------|-----|---------|
-| 背景 | `oklch(0.965 0.002 260)` | `bg-background` |
-| 卡片 | `oklch(1 0 0)` | `bg-card` |
-| 侧边栏 | `oklch(0.975 0.002 260)` | `bg-sidebar` |
-| 前景文字 | `oklch(0.14 0.005 260)` | `text-foreground` |
-| 次要文字 | `oklch(0.45 0.01 260)` | `text-muted-foreground` |
-| 品牌色 | `oklch(0.55 0.2 250)` | `text-primary` |
+- 状态：`text-success`/`text-warning`/`text-error`/`text-info` + 对应 `bg-*`
+- HTTP 方法：`text-method-get`/`post`/`put`/`delete`/`patch`
+- 变量高亮：`text-variable`
+- 色彩空间 OKLch，禁止纯灰（色度 0），具体值见 `index.css`
 
 ## 效果类（自动适配双主题）
 
-### glass-card
+- `glass-card` — 毛玻璃卡片
+- `btn-gradient` — 渐变主色按钮（已内置到 Button 组件）
+- `glow-ring` — 选中态微光
+- `text-gradient` — 渐变文字
+- `divider-glow` — 面板分隔线
 
-深色：半透明深灰底 + 白色微光边框 + 强阴影 + 顶部内光
-浅色：半透明白底 + 黑色微光边框 + 柔和阴影
-
-```html
-<div className="glass-card rounded-2xl p-5">...</div>
-```
-
-### btn-gradient
-
-深色：亮青蓝→紫蓝渐变 + 品牌色光晕
-浅色：深青蓝→紫蓝渐变 + 更强投影
-
-```html
-<button className="btn-gradient text-primary-foreground">...</button>
-```
-
-### glow-ring
-
-选中态微光，深浅色自动调整亮度。
-
-### text-gradient
-
-渐变文字，深色更亮，浅色更暗以保证对比度。
-
-### divider-glow
-
-面板间分隔线，深浅色自动调整透明度。
-
-## 交互态
+## 交互态 / 边框 / 圆角 / 间距 / 过渡
 
 ```
-默认:     bg-transparent
-Hover:    bg-overlay/[0.04]
-Active:   bg-overlay/[0.08]
-Selected: bg-overlay/[0.08] + glow-ring
+交互:  hover → bg-overlay/[0.04]  active/selected → bg-overlay/[0.08] + glow-ring
+边框:  静态 border-overlay/[0.06]  输入框 /[0.08]  hover /[0.10]  焦点 border-primary/50 + ring-2 ring-primary/20
+圆角:  badge rounded-lg  按钮/输入 rounded-xl  卡片/弹窗 rounded-2xl
+间距:  卡片 p-5  卡片间 space-y-4  按钮高 h-9  页面 px-8 py-8
+过渡:  快速 duration-150  标准 duration-200  慢速 duration-300
 ```
 
-## 边框
+## 禁止写法速查
+
+| 禁止 | 替代 |
+|------|------|
+| `text-emerald/red/amber/blue-500` | `text-success/error/warning/info` |
+| `bg-white/[0.0x]` / `border-white/[0.0x]` | `bg-overlay/[0.0x]` / `border-overlay/[0.0x]` |
+| `bg-muted` / `bg-accent` / `border-border` | `bg-overlay/[0.04]` / `bg-overlay/[0.08]` / `border-overlay/[0.06]` |
+| `ring-1 ring-foreground/10` | `border border-overlay/[0.06]` 或 `glass-card` |
+| `focus:ring-1` | `focus-visible:ring-2 focus-visible:ring-primary/20` |
+| `shadow-md/xl/lg`（浮层） | `shadow-2xl` |
+| `hover:bg-accent` | `hover:bg-overlay/[0.06]` |
+| 原生 `<select>` | `@/components/ui/select.tsx` |
+| `tauriConfirm` / `alert()` / `confirm()` | `useConfirmStore` (`confirm-dialog.tsx`) |
+| 魔法数字 `max-h-[120px]` | Tailwind 标准尺寸或 CSS 变量 |
+| 单色阶 `text-sky-400` | `text-sky-600 dark:text-sky-400` |
+
+## 浮层菜单
 
 ```
-静态:     border-overlay/[0.06]
-输入框:   border-overlay/[0.08]
-Hover:    border-overlay/[0.10] 或 hover:border-overlay/[0.12]
-焦点:     border-primary/50 + ring-2 ring-primary/20
-分割线:   border-overlay/[0.06] 或 border-overlay/[0.04]
+容器: rounded-xl glass-card p-1.5 shadow-2xl
+菜单项: px-3 py-2 rounded-lg text-xs hover:bg-overlay/[0.06] transition-colors
+分割线: h-px bg-overlay/[0.06] my-1    危险项: text-destructive hover:bg-destructive/10
 ```
 
-## 圆角
+使用 `src/lib/styles.ts` 中的 `MENU_CONTAINER_CLASS`/`MENU_ITEM_CLASS` 等常量。
 
-```
-小元素（badge）     →  rounded-lg  (6px)
-中等（按钮/输入框）→  rounded-xl  (12px)
-大容器（卡片/弹窗）→  rounded-2xl (16px)
-```
+## 遮罩层
 
-## 间距
+统一 `bg-black/50 backdrop-blur-sm`。`bg-black` 是唯一允许硬编码的颜色（遮罩不需要主题适配）。
 
-```
-卡片内 padding:    p-5
-卡片间 gap:        space-y-4
-按钮/输入框高度:   h-9
-页面 padding:      px-8 py-8
-```
+## 侧边栏间距
 
-## 过渡
-
-所有交互元素：`transition-all duration-200`
-
-## 禁止的写法
-
-| 禁止 | 替代 | 原因 |
-|------|------|------|
-| `bg-white/[0.0x]` | `bg-overlay/[0.0x]` | 浅色模式下白底叠白色不可见 |
-| `border-white/[0.0x]` | `border-overlay/[0.0x]` | 同上 |
-| `ring-1 ring-foreground/10` | `border border-overlay/[0.06]` 或 `glass-card` | 旧写法，不统一 |
-| `dark:bg-input/30` | 已内置到 Input/Textarea 组件 | 使用 overlay 系统 |
-| `bg-muted/30` | `bg-overlay/[0.03]` | 统一用 overlay |
-| `bg-muted` / `hover:bg-muted` | `bg-overlay/[0.04]` / `hover:bg-overlay/[0.04]` | 统一用 overlay |
-| `bg-accent` / `hover:bg-accent` | `bg-overlay/[0.08]` / `hover:bg-overlay/[0.08]` | 选中/高亮统一用 overlay |
-| `border-border` / `bg-border` (JSX 中) | `border-overlay/[0.06]` / `bg-overlay/[0.06]` | 统一用 overlay |
-| `bg-surface-1` | `bg-overlay/[0.03]` | 不存在的变量 |
-| `text-sky-400`（单色阶硬编码） | `text-sky-600 dark:text-sky-400` | 浅色主题对比度不足 |
-| `focus:ring-1` / `focus:border-*` | `focus-visible:ring-2 focus-visible:border-primary/50` | 统一用 focus-visible + ring-2 |
-| `shadow-md` / `shadow-xl`（浮层） | `shadow-2xl` | 浮层阴影统一为 shadow-2xl |
-| 原生 `<select>` | `@/components/ui/select.tsx` | 原生下拉白色系统样式 |
-| `tauriConfirm` / `tauri-plugin-dialog` 的 `confirm` | `useConfirmStore` (`@/components/ui/confirm-dialog.tsx`) | 原生弹窗白色系统样式 |
-
-## 原生控件替代
-
-### 自定义 Select
-
-```tsx
-import { Select } from '@/components/ui/select'
-<Select value={v} onChange={setV} options={[{ value: 'a', label: 'A' }]} />
-```
-
-### 自定义确认弹窗
-
-```tsx
-import { useConfirmStore } from '@/components/ui/confirm-dialog'
-const confirm = useConfirmStore((s) => s.confirm)
-const ok = await confirm('确定删除？', { title: '删除', kind: 'warning' })
-```
+Logo 区 `px-4`，其余 `px-2.5`。禁止 `px-1.5`/`px-2`/`px-3`。
 
 ## macOS 标题栏
 
-- `tauri.conf.json`: `titleBarStyle: "Overlay"` + `hiddenTitle: true`
-- 侧边栏顶部 `pt-9` + `data-tauri-drag-region`
-- 主内容区/AI 面板顶部 `h-8` + `data-tauri-drag-region`
+侧边栏顶部 `pt-9` + `data-tauri-drag-region`，主内容区顶部 `h-8` + `data-tauri-drag-region`。
 
-## 浅色模式 overlay 补偿
+## 语法高亮
 
-浅色模式下 `overlay/[0.06]` (6% 黑色在白底) 几乎不可见。
-`index.css` 中通过 CSS 选择器覆盖，将浅色模式的 overlay 透明度统一提升约 2 倍：
+浅色 `-600` 色阶，深色 `-400`。定义在 `src/lib/syntax.ts`，禁止重复定义。
 
-```css
-:root:not(.dark) .border-overlay\/\[0\.06\] { border-color: oklch(0 0 0 / 0.12); }
-:root:not(.dark) .bg-overlay\/\[0\.04\] { background-color: oklch(0 0 0 / 0.06); }
-/* ... 等 */
-```
+## Body 类型
 
-**不需要在组件中写额外的浅色模式适配代码**，CSS 层自动处理。
+5 种：none / form-data / urlencoded / json / raw。`form-data`/`urlencoded` 的 body_content 存储为 `JSON.stringify([{key, value, enabled}])`。
 
-## 布局防跳动规范
+## 布局防跳动
 
-### 条件内容不能改变容器尺寸
+- 条件内容不能改变容器尺寸（固定 minHeight）
+- 条件按钮用 `invisible` 占位或 `absolute` 浮动
 
-弹窗内切换显示/隐藏内容时，必须保持容器高度不变：
+## UX 交互
 
-```tsx
-// 错误：条件渲染导致弹窗尺寸跳动
-{bodyType !== 'none' && <textarea rows={8} />}
+- 删除必须弹确认（`useConfirmStore` + `t('common.confirm_delete', { name })`）
+- 编辑弹窗关闭前对比快照检测变更
+- 空状态统一用 `<EmptyState>` 组件
+- 按钮只用 `sm`(h-8) 和 `default`(h-9) 两档
+- Split Button 下拉区域必须是按钮内部子元素
+- 表格 ≤ 6 列，数值列 `tabular-nums`
+- i18n：所有文本走 `t()` 调用，禁止硬编码中文
 
-// 正确：固定容器高度，所有状态共用
-<div style={{ minHeight: '218px' }}>
-  {bodyType === 'none' ? (
-    <div className="h-full ...">无请求体</div>
-  ) : (
-    <textarea className="h-full ..." />
-  )}
-</div>
-```
+## 组件检查清单
 
-### 工具按钮不能影响布局
-
-条件出现的按钮（如 Format）不应该在标签栏内导致其他按钮位移：
-
-```tsx
-// 错误：条件渲染导致标签组宽度变化
-{bodyType === 'json' && <button>Format</button>}
-
-// 正确方案 A：invisible 占位
-<button className={bodyType === 'json' ? '' : 'invisible'}>Format</button>
-
-// 正确方案 B：浮动在内容区内
-<div className="relative">
-  <textarea />
-  {bodyType === 'json' && (
-    <button className="absolute top-2 right-2 ...">Format</button>
-  )}
-</div>
-```
-
-## Body 类型规范
-
-支持 5 种 body 类型：
-
-| 类型 | body_type | 编辑器 | Content-Type |
-|------|-----------|--------|-------------|
-| None | `none` | 占位框 | (不发送) |
-| Form Data | `form-data` | KeyValueTable | multipart/form-data |
-| URL Encoded | `urlencoded` | KeyValueTable | x-www-form-urlencoded |
-| JSON | `json` | textarea + Format | application/json |
-| Raw | `raw` | textarea | (手动设置) |
-
-- `form-data` 和 `urlencoded` 的 body_content 存储格式：`JSON.stringify([{key, value, enabled}])`
-- Rust 端 `form-data` 用 `reqwest::multipart::Form`，`urlencoded` 用 `builder.form()`
-- 旧的 `form` 类型等同于 `urlencoded`，Rust 端做了兼容
-
-## 语法高亮颜色（双主题适配）
-
-代码/JSON 语法高亮必须使用 `dark:` 变体适配双主题。浅色用 `-600` 色阶，深色用 `-400`。
-
-```
-key:      text-sky-600 dark:text-sky-400
-string:   text-emerald-600 dark:text-emerald-400
-number:   text-amber-600 dark:text-amber-400
-boolean:  text-purple-600 dark:text-purple-400
-null:     text-purple-600 dark:text-purple-400
-bracket:  text-muted-foreground/60
-```
-
-共享的 tokenizer 和颜色定义在 `src/lib/syntax.ts`，所有 JSON 高亮组件统一引用，禁止重复定义。
-
-变量高亮 `{{var}}` 同理：`text-cyan-600 dark:text-cyan-400`，禁止单色阶 `text-cyan-400`。
-
-## 焦点态规范
-
-所有可聚焦元素统一使用 `focus-visible`（非 `focus`），参数固定：
-
-```
-focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/20
-```
-
-- 禁止 `focus:ring-1`（太细）或 `focus:outline-none`（无反馈）
-- 图标按钮也必须有焦点态（不能只有 opacity 变化）
-
-## 浮层菜单规范
-
-所有浮层（右键菜单、下拉选择、弹出菜单）统一样式：
-
-```
-容器:   rounded-xl glass-card p-1.5 shadow-2xl
-菜单项: px-3 py-2 rounded-lg text-xs hover:bg-overlay/[0.06] transition-colors
-分割线: h-px bg-overlay/[0.06] my-1
-危险项: text-destructive hover:bg-destructive/10
-```
-
-禁止使用 `shadow-md`、`shadow-xl`、`shadow-lg`（统一 `shadow-2xl`）。
-禁止使用 `rounded-md`、`rounded-lg`（容器统一 `rounded-xl`）。
-禁止使用 `hover:bg-accent`（统一 `hover:bg-overlay/[0.06]`）。
-
-## 遮罩层规范
-
-Dialog/Modal 的遮罩层统一为 `bg-black/50 backdrop-blur-sm`。
-
-- 禁止 `bg-black/60`（过深）或其他不一致透明度
-- `bg-black` 是唯一允许在遮罩层硬编码的颜色（遮罩本质就是遮挡，不需要主题适配）
-
-## 侧边栏间距规范
-
-侧边栏内部水平间距统一为两档：
-
-```
-Logo 区域:       px-4（含 drag-region，需要更多留白）
-其余区域:        px-2.5（搜索栏、树列表、底部导航）
-```
-
-禁止出现 `px-1.5`、`px-2`、`px-3` 等中间值，保持左侧对齐线一致。
-
-## 新建/修改组件检查清单
-
-- [ ] 半透明叠加用 `overlay`，不用 `white`、`black`、`accent`、`muted`
-- [ ] 不使用 `ring-1 ring-foreground/10`
-- [ ] 不使用原生 `<select>` 或 `tauriConfirm`
-- [ ] 卡片用 `glass-card` 或 `border border-overlay/[0.06]`
-- [ ] 交互态用 `bg-overlay/[0.04]`（hover）、`bg-overlay/[0.08]`（active/selected）
-- [ ] 选中态用 `bg-overlay/[0.08] glow-ring`，不用 `bg-accent`
-- [ ] 焦点态用 `focus-visible:ring-2 focus-visible:ring-primary/20`，不用 `focus:ring-1`
-- [ ] 浮层菜单用 `rounded-xl glass-card shadow-2xl`，菜单项用 `hover:bg-overlay/[0.06]`
-- [ ] 语法高亮色用 `dark:` 变体适配双主题（`-600` + `dark:-400`）
-- [ ] 圆角层级正确（badge=rounded-lg, 按钮/输入=rounded-xl, 卡片/弹窗=rounded-2xl）
-- [ ] 有 `transition-all duration-200`
-- [ ] 条件内容不改变容器尺寸（防跳动）
-- [ ] 在深色和浅色模式下都测试过
-- [ ] 空状态使用 `<EmptyState>` 组件（`@/components/ui/empty-state`）
-- [ ] 弹窗表单关闭前检查未保存变更
-- [ ] i18n：所有用户可见文本走 `t()` 调用，禁止硬编码中文
-- [ ] 禁用态 opacity ≥ 50 + `cursor-not-allowed`
-- [ ] 右键菜单使用 `<ContextMenu>` 组件（`@/components/ui/context-menu`）
-
-## UX 交互规范
-
-### 破坏性操作保护
-
-- 删除操作必须弹 `useConfirmStore` 确认弹窗，消息用 `t('common.confirm_delete', { name })`
-- 编辑弹窗/表单关闭前，对比快照检测变更，有改动则弹确认
-- 禁止使用浏览器 `alert()` / `confirm()` — 统一用自定义弹窗
-
-```tsx
-// 编辑弹窗模式：打开时存快照，关闭时比对
-const snapshot = useRef<string>('')
-const openEdit = (item) => { setEditItem(item); snapshot.current = JSON.stringify(item) }
-const closeEdit = async () => {
-  if (JSON.stringify(editItem) !== snapshot.current) {
-    const ok = await confirm(t('common.confirm_discard'), { title: t('common.close_confirm'), kind: 'warning' })
-    if (!ok) return
-  }
-  setEditItem(null)
-}
-```
-
-### 空状态
-
-所有列表/表格/面板的空数据展示统一使用 `<EmptyState>` 组件：
-
-```tsx
-import { EmptyState } from '@/components/ui/empty-state'
-<EmptyState icon={Clock} title="暂无数据" description="补充说明文字" />
-```
-
-**禁止**各组件自行编写空状态 div。
-
-### 按钮尺寸收敛
-
-只使用两档按钮尺寸：
-
-| 场景 | size | 高度 |
-|------|------|------|
-| 表单操作、工具栏 | `sm` | h-8 |
-| 主操作、页面级按钮 | `default` | h-9 |
-
-禁止使用 `h-6`、`h-7` 等自定义高度。
-
-### Split Button（按钮带下拉）
-
-当一个按钮需要附带下拉菜单时，下拉区域必须是按钮的**内部子元素**，不能是独立按钮。
-
-```tsx
-// 正确：下拉箭头在 Button 内部
-<Button onClick={action} size="sm" className="pr-0">
-  <Play className="h-3.5 w-3.5" /> 运行
-  <span role="button" onClick={(e) => { e.stopPropagation(); toggle() }}
-    className="ml-1 pl-1.5 pr-2 h-full flex items-center border-l border-primary-foreground/20">
-    <ChevronDown className="h-3 w-3" />
-  </span>
-</Button>
-
-// 错误：两个独立元素拼接（圆角/背景不一致）
-<Button className="rounded-r-none">运行</Button>
-<button className="rounded-r-xl bg-primary">▼</button>
-```
-
-### 表格信息密度
-
-- 表格列数 ≤ 6 列（含操作列）
-- 低价值列（大多为空的 DESCRIPTION 等）不独占列，放到展开行或 tooltip 中
-- 数值列统一 `tabular-nums` 等宽数字
-- 表头用 `text-xs text-muted-foreground uppercase` 而非 `text-[10px]`
-
-### i18n 规范
-
-- 所有用户可见的文本必须使用 `t()` 调用
-- 翻译 key 结构：`<页面>.<用途>`，如 `dashboard.run_all`、`common.confirm_delete`
-- 带参数的翻译：`t('common.confirm_delete', { name })`，JSON 中用 `{{name}}` 占位
-- **禁止**模板字符串嵌套 `t()` 调用：`` `{t('key')}` `` 语法错误，应直接写 `t('key')`
+- [ ] 半透明用 `overlay`，状态色用语义变量，方法色用 `text-method-*`
+- [ ] 卡片 `glass-card`，浮层 `rounded-xl glass-card shadow-2xl`
+- [ ] 焦点态 `focus-visible:ring-2`，过渡 `duration-200`
+- [ ] 圆角层级：badge=lg, 按钮=xl, 卡片=2xl
+- [ ] 条件内容不改变容器尺寸
+- [ ] 深色/浅色模式都测试过
+- [ ] 空状态用 `<EmptyState>`，右键菜单用 `<ContextMenu>`
+- [ ] 弹窗关闭检查未保存变更
+- [ ] i18n 完整，禁用态 opacity ≥ 50 + `cursor-not-allowed`

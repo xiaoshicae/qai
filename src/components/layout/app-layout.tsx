@@ -12,7 +12,12 @@ import { useGlobalShortcuts } from '@/hooks/use-global-shortcuts'
 function useResizable(initial: number, min: number, max: number, reverse = false, storageKey?: string, dynamicMax?: () => number) {
   const [width, setWidth] = useState(() => {
     if (storageKey) {
-      try { const v = localStorage.getItem(storageKey); if (v) return Math.min(max, Math.max(min, Number(v))) } catch {}
+      try {
+        const v = localStorage.getItem(storageKey)
+        if (v) return Math.min(max, Math.max(min, Number(v)))
+      } catch {
+        // localStorage not available
+      }
     }
     return initial
   })
@@ -41,7 +46,13 @@ function useResizable(initial: number, min: number, max: number, reverse = false
       setWidth(next)
       if (storageKey) {
         clearTimeout(saveTimer.current)
-        saveTimer.current = setTimeout(() => { try { localStorage.setItem(storageKey, String(next)) } catch {} }, 300)
+        saveTimer.current = setTimeout(() => {
+          try {
+            localStorage.setItem(storageKey, String(next))
+          } catch {
+            // localStorage not available
+          }
+        }, 300)
       }
     }
     const onMouseUp = () => {

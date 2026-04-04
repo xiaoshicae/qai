@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { AlertTriangle } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Button } from './button'
 
 interface ConfirmState {
@@ -44,6 +45,7 @@ export const useConfirmStore = create<ConfirmState & ConfirmActions>((set, get) 
 }))
 
 export function ConfirmDialog() {
+  const { t } = useTranslation()
   const { open, title, message, kind, handleConfirm, handleCancel } = useConfirmStore()
 
   if (!open) return null
@@ -74,7 +76,7 @@ export function ConfirmDialog() {
 
           <div className="flex items-center justify-end gap-2.5 mt-5">
             <Button variant="outline" size="sm" onClick={handleCancel} autoFocus>
-              取消
+              {t('common.cancel')}
             </Button>
             <Button
               variant={kind === 'warning' ? 'destructive' : 'default'}
@@ -82,7 +84,7 @@ export function ConfirmDialog() {
               onClick={handleConfirm}
               className={kind === 'warning' ? 'bg-destructive/15 hover:bg-destructive/25 text-destructive border-destructive/20' : ''}
             >
-              确定
+              {t('common.confirm')}
             </Button>
           </div>
         </div>

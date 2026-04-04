@@ -1,4 +1,5 @@
 use rusqlite::{params, Connection, Row};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::models::environment::{EnvVariable, Environment, EnvironmentWithVars};
@@ -82,6 +83,17 @@ pub fn get_active(conn: &Connection) -> Result<Option<EnvironmentWithVars>, rusq
     };
     let vars = list_variables(conn, &env.id)?;
     Ok(Some(EnvironmentWithVars { environment: env, variables: vars }))
+}
+
+/// 获取当前活跃环境的变量映射（便捷方法）
+/// 如果没有活跃环境或发生错误，返回空的 HashMap
+pub fn get_active_var_map(conn: &Connection) -> HashMap<String, String> {
+    get_active(conn)
+        .map_err(|e| { log::warn!("获取活跃环境失败: {e}"); e })
+        .ok()
+        .flatten()
+        .map(|env| crate::http::vars::build_var_map(&env.variables))
+        .unwrap_or_default()
 }
 
 pub fn list_variables(conn: &Connection, environment_id: &str) -> Result<Vec<EnvVariable>, rusqlite::Error> {

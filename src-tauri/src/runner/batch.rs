@@ -35,6 +35,7 @@ pub async fn run_batch(
     cancel_token: Arc<std::sync::atomic::AtomicBool>,
     progress_callback: impl Fn(TestProgress) + Send + Sync + 'static,
     on_result: impl Fn(&ExecutionResult) + Send + Sync + 'static,
+    dry_run: bool,
 ) -> BatchResult {
     let batch_id = Uuid::new_v4().to_string();
     let total = items.len() as u32;
@@ -69,7 +70,9 @@ pub async fn run_batch(
                 total,
             });
 
-            let exec_future = if item.protocol == "websocket" {
+            let exec_future = if dry_run {
+                Ok(crate::http::client::mock_execute(&item).await)
+            } else if item.protocol == "websocket" {
                 crate::websocket::client::execute(&item).await
             } else {
                 crate::http::client::execute(&client, &item).await

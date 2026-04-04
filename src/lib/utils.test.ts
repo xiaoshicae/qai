@@ -11,7 +11,9 @@ describe('cn', () => {
   })
 
   it('条件类名', () => {
+    // eslint-disable-next-line no-constant-binary-expression
     expect(cn('foo', false && 'bar')).toBe('foo')
+    // eslint-disable-next-line no-constant-binary-expression
     expect(cn('foo', true && 'bar')).toBe('foo bar')
   })
 

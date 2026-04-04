@@ -123,7 +123,23 @@ pub fn list_summary_by_collection(conn: &Connection, collection_id: &str) -> Res
 }
 
 /// 复制一个 item（含断言和子项），新 item 排在同级最后
-pub fn duplicate(conn: &Connection, id: &str) -> Result<CollectionItem, rusqlite::Error> {
+/// 使用事务确保原子性：任何失败都会回滚
+pub fn duplicate(conn: &mut Connection, id: &str) -> Result<CollectionItem, rusqlite::Error> {
+    let tx = conn.transaction()?;
+    let result = duplicate_in_tx(&tx, id);
+    match result {
+        Ok(item) => {
+            tx.commit()?;
+            Ok(item)
+        }
+        Err(e) => {
+            // 事务会在 drop 时自动回滚
+            Err(e)
+        }
+    }
+}
+
+fn duplicate_in_tx(conn: &Connection, id: &str) -> Result<CollectionItem, rusqlite::Error> {
     let src = get(conn, id)?;
     let new_id = Uuid::new_v4().to_string();
     let new_name = format!("{}-copy", src.name);

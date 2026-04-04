@@ -12,6 +12,35 @@
   /* overlay 色：深色模式=白，浅色模式=黑（用于半透明叠加） */
   --color-overlay: oklch(1 0 0);
 
+  /* ═══ 语义化颜色变量 ═══ */
+  /* 成功态 - 翠绿 */
+  --color-success: oklch(0.72 0.19 155);
+  --color-success-foreground: oklch(0.98 0 0);
+
+  /* 警告态 - 琥珀 */
+  --color-warning: oklch(0.75 0.18 55);
+  --color-warning-foreground: oklch(0.14 0.005 260);
+
+  /* 错误态 - 红色 (复用 destructive) */
+  --color-error: oklch(0.577 0.245 27.33);
+  --color-error-foreground: oklch(1 0 0);
+
+  /* 信息态 - 天蓝 */
+  --color-info: oklch(0.68 0.17 250);
+  --color-info-foreground: oklch(0.98 0 0);
+
+  /* 变量高亮 - 青色 */
+  --color-variable: oklch(0.72 0.15 195);
+  --color-variable-foreground: oklch(0.14 0.005 260);
+
+  /* HTTP 方法颜色 */
+  --color-method-get: oklch(0.72 0.19 155);
+  --color-method-post: oklch(0.75 0.18 55);
+  --color-method-put: oklch(0.68 0.17 250);
+  --color-method-delete: oklch(0.65 0.2 27);
+  --color-method-patch: oklch(0.68 0.18 300);
+  --color-method-head: oklch(0.55 0.01 0);
+
   /* ═══ 默认浅色主题 ═══ */
   --color-background: oklch(0.955 0.003 260);
   --color-foreground: oklch(0.14 0.005 260);
@@ -49,6 +78,42 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) * 1.5);
   --radius-2xl: calc(var(--radius) * 2);
+
+  /* ═══ 标准尺寸变量 ═══ */
+  /* 容器最大宽度 */
+  --size-container-xs: 320px;
+  --size-container-sm: 384px;
+  --size-container-md: 448px;
+  --size-container-lg: 512px;
+  --size-container-xl: 576px;
+  --size-container-2xl: 672px;
+  --size-container-3xl: 768px;
+  --size-container-4xl: 896px;
+  --size-container-5xl: 1024px;
+
+  /* 编辑器/预览区高度 */
+  --size-editor-sm: 120px;
+  --size-editor-md: 180px;
+  --size-editor-lg: 280px;
+  --size-editor-xl: 400px;
+
+  /* 表单元素宽度 */
+  --size-input-xs: 60px;
+  --size-input-sm: 80px;
+  --size-input-md: 100px;
+  --size-input-lg: 120px;
+  --size-input-xl: 180px;
+
+  /* 标签/徽章宽度 */
+  --size-badge-sm: 60px;
+  --size-badge-md: 80px;
+  --size-badge-lg: 100px;
+  --size-badge-xl: 120px;
+
+  /* ═══ 过渡时间变量 ═══ */
+  --duration-fast: 150ms;
+  --duration-normal: 200ms;
+  --duration-slow: 300ms;
 }
 
 /* ═══ 深色主题覆盖 ═══ */
@@ -80,6 +145,13 @@
   --color-sidebar-accent: oklch(0.22 0.01 260);
   --color-sidebar-accent-foreground: oklch(0.9 0.005 260);
   --color-sidebar-border: oklch(0.22 0.006 260);
+
+  /* 深色主题语义化颜色覆盖 */
+  --color-success: oklch(0.75 0.17 155);
+  --color-warning: oklch(0.78 0.16 55);
+  --color-error: oklch(0.637 0.208 25.33);
+  --color-info: oklch(0.72 0.15 240);
+  --color-variable: oklch(0.75 0.14 195);
 }
 
 /* 浅色模式 overlay */
@@ -111,15 +183,6 @@
 :root:not(.dark) .hover\:bg-overlay\/\[0\.06\]:hover { background-color: oklch(0 0 0 / 0.1); }
 :root:not(.dark) .hover\:bg-overlay\/\[0\.08\]:hover { background-color: oklch(0 0 0 / 0.12); }
 :root:not(.dark) .hover\:bg-overlay\/\[0\.1\]:hover { background-color: oklch(0 0 0 / 0.14); }
-
-@theme {
-  --color-method-get: oklch(0.72 0.19 155);
-  --color-method-post: oklch(0.75 0.18 55);
-  --color-method-put: oklch(0.68 0.17 250);
-  --color-method-delete: oklch(0.65 0.2 27);
-  --color-method-patch: oklch(0.68 0.18 300);
-  --color-method-head: oklch(0.55 0.01 0);
-}
 
 @layer base {
   * {

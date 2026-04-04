@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
@@ -13,6 +13,7 @@ import KeyValueTable from '@/components/request/key-value-table'
 import { BodyTypeSelector } from '@/components/request/body-type-selector'
 import { MiniResponseViewer } from '@/components/request/mini-response-viewer'
 import { invokeErrorMessage } from '@/lib/invoke-error'
+import { useEnvVars } from '@/hooks/use-env-vars'
 import type { ExecutionResult, KeyValuePair } from '@/types'
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD'].map((m) => ({ value: m, label: m }))
@@ -33,8 +34,10 @@ interface Props {
   envVars?: Record<string, string>
 }
 
-export default function QuickTestDialog({ open, onOpenChange, envVars = {} }: Props) {
+export default function QuickTestDialog({ open, onOpenChange, envVars: envVarsProp }: Props) {
   const { t } = useTranslation()
+  const { envVars: activeEnvVars } = useEnvVars()
+  const envVars = useMemo(() => envVarsProp ?? activeEnvVars, [envVarsProp, activeEnvVars])
   const [method, setMethod] = useState('GET')
   const [url, setUrl] = useState('')
   const [headers, setHeaders] = useState<KeyValuePair[]>([])
@@ -59,10 +62,13 @@ export default function QuickTestDialog({ open, onOpenChange, envVars = {} }: Pr
     streamContentRef.current = ''
 
     const isKvBody = bodyType === 'form-data' || bodyType === 'urlencoded'
+    const tempId = crypto.randomUUID()
     let unlisten: (() => void) | undefined
     let streamStarted = false
     try {
-      unlisten = await listen<{ chunk: string }>('stream-chunk', (event) => {
+      unlisten = await listen<{ item_id: string; chunk: string; done: boolean }>('stream-chunk', (event) => {
+        if (event.payload.item_id !== tempId) return
+        if (event.payload.done || event.payload.chunk === '[DONE]') return
         if (!streamStarted) { streamStarted = true; setStreaming(true) }
         streamContentRef.current += event.payload.chunk
         setStreamContent(streamContentRef.current)
@@ -79,6 +85,7 @@ export default function QuickTestDialog({ open, onOpenChange, envVars = {} }: Pr
           bodyType,
           bodyContent: isKvBody ? JSON.stringify(bodyKv) : bodyContent,
           protocol: 'http',
+          requestId: tempId,
         },
       })
       setResult(res)

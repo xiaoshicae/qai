@@ -308,13 +308,13 @@ pub async fn run_collection(
     // 执行 chains
     for (chain_id, steps) in &chains {
         let name = chain_names.get(chain_id).cloned().unwrap_or_default();
-        let cr = qai_lib::runner::chain::run_chain(client, steps.clone(), var_map.clone(), chain_id.clone(), name, None, |_| {}, None).await;
+        let cr = qai_lib::runner::chain::run_chain(client, steps.clone(), var_map.clone(), chain_id.clone(), name, None, |_| {}, None, false).await;
         for step in cr.steps { all_results.push(step.execution_result); }
     }
 
     // 并行执行普通请求
     if !normal.is_empty() {
-        let br = qai_lib::runner::batch::run_batch(client, normal, concurrency.unwrap_or(5), std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)), |_| {}, |_| {}).await;
+        let br = qai_lib::runner::batch::run_batch(client, normal, concurrency.unwrap_or(qai_lib::DEFAULT_CONCURRENCY), std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)), |_| {}, |_| {}, false).await;
         all_results.extend(br.results);
     }
 
@@ -408,7 +408,7 @@ pub fn delete_environment(conn: &Connection, id: &str) -> Result<String, String>
 // ─── History ───────────────────────────────────────────────────
 
 pub fn list_history(conn: &Connection, status: Option<&str>, method: Option<&str>, keyword: Option<&str>, limit: Option<u32>) -> Result<String, String> {
-    let list = qai_lib::db::execution::list_filtered(conn, status, method, keyword, limit.unwrap_or(50), 0).map_err(|e| e.to_string())?;
+    let list = qai_lib::db::execution::list_filtered(conn, status, method, keyword, limit.unwrap_or(qai_lib::DEFAULT_HISTORY_LIMIT), 0).map_err(|e| e.to_string())?;
     ok_json(&list)
 }
 
@@ -418,7 +418,7 @@ pub fn get_history_stats(conn: &Connection) -> Result<String, String> {
 }
 
 pub fn list_item_runs(conn: &Connection, item_id: &str, limit: Option<u32>) -> Result<String, String> {
-    let runs = qai_lib::db::execution::list_by_item(conn, item_id, limit.unwrap_or(20)).map_err(|e| e.to_string())?;
+    let runs = qai_lib::db::execution::list_by_item(conn, item_id, limit.unwrap_or(qai_lib::DEFAULT_ITEM_RUNS_LIMIT)).map_err(|e| e.to_string())?;
     ok_json(&runs)
 }
 

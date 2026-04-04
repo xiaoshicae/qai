@@ -1,5 +1,64 @@
 use crate::models::item::{CollectionItem, KeyValuePair};
 
+/// 文件上传最大大小限制（50MB）
+const MAX_FILE_SIZE: u64 = 50 * 1024 * 1024;
+
+/// 验证文件路径安全性
+/// 防止目录遍历攻击和读取敏感系统文件
+pub fn validate_file_path(path: &str) -> Result<std::path::PathBuf, anyhow::Error> {
+    let path = std::path::Path::new(path);
+    
+    // 检查路径是否为空
+    if path.as_os_str().is_empty() {
+        return Err(anyhow::anyhow!("文件路径不能为空"));
+    }
+    
+    // 规范化路径（解析 .. 和符号链接）
+    let canonical = path.canonicalize()
+        .map_err(|e| anyhow::anyhow!("文件路径无效: {}", e))?;
+
+    // 检查是否尝试读取敏感系统文件（Unix）
+    #[cfg(unix)]
+    {
+        let path_str = canonical.to_string_lossy();
+        // 阻止读取 /etc/passwd, /etc/shadow 等敏感文件
+        if path_str.starts_with("/etc/passwd") 
+            || path_str.starts_with("/etc/shadow")
+            || path_str.starts_with("/etc/sudoers") {
+            return Err(anyhow::anyhow!("不允许读取系统敏感文件"));
+        }
+    }
+    
+    // 检查是否尝试读取敏感系统文件（Windows）
+    #[cfg(windows)]
+    {
+        let path_str = canonical.to_string_lossy().to_lowercase();
+        if path_str.contains("\\windows\\system32\\config\\")
+            || path_str.contains("\\windows\\system32\\sam") {
+            return Err(anyhow::anyhow!("不允许读取系统敏感文件"));
+        }
+    }
+    
+    Ok(canonical)
+}
+
+/// 检查文件大小是否在限制内
+async fn check_file_size(path: &std::path::Path) -> Result<(), anyhow::Error> {
+    let metadata = tokio::fs::metadata(path).await
+        .map_err(|e| anyhow::anyhow!("无法获取文件信息: {}", e))?;
+    let size = metadata.len();
+    
+    if size > MAX_FILE_SIZE {
+        return Err(anyhow::anyhow!(
+            "文件过大 ({}MB)，已超过 {}MB 限制", 
+            size / 1024 / 1024, 
+            MAX_FILE_SIZE / 1024 / 1024
+        ));
+    }
+    
+    Ok(())
+}
+
 /// 从 CollectionItem 构建 reqwest::RequestBuilder（method + headers + query + body）
 pub async fn build_request(
     client: &reqwest::Client,
@@ -79,8 +138,13 @@ async fn apply_body(
             let mut multipart = reqwest::multipart::Form::new();
             for kv in form_data.iter().filter(|kv| kv.enabled) {
                 if kv.field_type == "file" && !kv.value.is_empty() {
-                    let file_bytes = tokio::fs::read(&kv.value).await?;
-                    let filename = std::path::Path::new(&kv.value)
+                    // 验证文件路径安全性
+                    let validated_path = validate_file_path(&kv.value)?;
+                    // 检查文件大小
+                    check_file_size(&validated_path).await?;
+                    // 读取文件
+                    let file_bytes = tokio::fs::read(&validated_path).await?;
+                    let filename = validated_path
                         .file_name()
                         .unwrap_or_default()
                         .to_string_lossy()

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { useTranslation } from 'react-i18next'
 import {
-  Play, Download, ChevronDown, ChevronRight, Loader2, Plus, Trash2, Link2, Square, Zap, ListOrdered, GripVertical, Pencil, Copy,
+  Play, Download, ChevronDown, ChevronRight, Loader2, Plus, Trash2, Link2, Square, GripVertical, Pencil, Copy,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
@@ -15,6 +15,7 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { useConfirmStore } from '@/components/ui/confirm-dialog'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from '@/components/ui/dialog'
 import { useCollectionStore } from '@/stores/collection-store'
+import { useRunConfigStore } from '@/stores/run-queue-store'
 import { invokeErrorMessage } from '@/lib/invoke-error'
 import { useEnvVars } from '@/hooks/use-env-vars'
 import { useCollectionRunner } from '@/hooks/use-collection-runner'
@@ -60,19 +61,20 @@ export default function CollectionOverview({ collection, tree }: Props) {
   const {
     statuses, running, runningIds, progress, singleResults, batchResult,
     error, streamingContents,
-    runMode, setRunMode, concurrency, setConcurrency, delayMs, setDelayMs,
     total, passed, failed, passRate, progressPercent,
     runAll, stopRun, runSingle, runChain,
     getStatus, getResult, loadStatuses, resetResults, clearItemResult, cleanup,
   } = runner
+  const dryRun = useRunConfigStore((s) => s.dryRun)
 
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
   const [detailData, setDetailData] = useState<Record<string, CollectionItem>>({})
   const [itemVersion, setItemVersion] = useState<Record<string, number>>({})
+  const [assertionCounts, setAssertionCounts] = useState<Record<string, number>>({})
   const [editReq, setEditReq] = useState<CollectionItem | null>(null)
   const editReqSnapshot = useRef<string>('')
+  const editDialogKey = useRef(0)
   const [isNewReq, setIsNewReq] = useState(false)
-  const [showRunSettings, setShowRunSettings] = useState(false)
   const [disabledIds, setDisabledIds] = useState<Set<string>>(new Set())
   const [saving, setSaving] = useState(false)
   const [savingChain, setSavingChain] = useState(false)
@@ -109,10 +111,30 @@ export default function CollectionOverview({ collection, tree }: Props) {
     }
   }, [tableItems, sortableIds, collection.id, loadTree])
 
+  const loadAssertionCounts = useCallback(async () => {
+    try {
+      const counts = await invoke<Record<string, number>>('get_assertion_counts', { collectionId: collection.id })
+      setAssertionCounts(counts)
+    } catch { /* ignore */ }
+  }, [collection.id])
+
   useEffect(() => { return () => { cleanup() } }, [])
-  useEffect(() => { loadStatuses(); resetResults(); setDetailData({}) }, [collection.id])
+  useEffect(() => { cleanup(); loadStatuses(); resetResults(); setDetailData({}); loadAssertionCounts() }, [collection.id])
   // tree 变化时（增删 case）重新加载状态，保持统计卡片同步
-  useEffect(() => { loadStatuses() }, [tree])
+  useEffect(() => { loadStatuses(); loadAssertionCounts() }, [tree])
+
+  // MCP 写操作后自动刷新
+  useEffect(() => {
+    let unlisten: (() => void) | undefined
+    import('@tauri-apps/api/event').then(({ listen }) => {
+      listen('mcp:data-changed', () => {
+        loadTree(collection.id)
+        loadCollections()
+        loadAssertionCounts()
+      }).then((fn) => { unlisten = fn })
+    })
+    return () => { unlisten?.() }
+  }, [collection.id, loadTree, loadCollections])
 
   useEffect(() => {
     const handler = () => addTestCase()
@@ -137,6 +159,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
   }
 
   const addTestCase = () => {
+    editDialogKey.current += 1
     setIsNewReq(true)
 
     const initial: CollectionItem = {
@@ -203,6 +226,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
       n.add(`group-${chainId}`)
       return n
     })
+    editDialogKey.current += 1
     setIsNewReq(true)
 
     const initial = {
@@ -264,6 +288,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
   const openEdit = useCallback(async (id: string) => {
     try {
       const req = await invoke<CollectionItem>('get_item', { id })
+      editDialogKey.current += 1
       setIsNewReq(false)
       setEditReq(req)
       editReqSnapshot.current = JSON.stringify(req)
@@ -295,47 +320,59 @@ export default function CollectionOverview({ collection, tree }: Props) {
     setIsNewReq(false)
   }
 
+  /** 构建 update_item payload（ensureSaved / saveEdit 共用）
+   * 注意：不包含 expectStatus，它由断言编辑器通过 update_assertion 反向同步到 item */
+  const buildPayload = (r: CollectionItem) => ({
+    name: r.name,
+    method: r.method,
+    url: r.url,
+    headers: r.headers,
+    queryParams: r.query_params,
+    bodyType: r.body_type,
+    bodyContent: r.body_content,
+    extractRules: r.extract_rules,
+    description: r.description,
+  })
+
+  /** 创建新 item 并返回 ID（ensureSaved / saveEdit 共用） */
+  const createNewItem = async (r: CollectionItem): Promise<string> => {
+    const created = await invoke<CollectionItem>('create_item', {
+      collectionId: collection.id,
+      parentId: r.parent_id,
+      itemType: r.type,
+      name: r.name,
+      method: r.method,
+    })
+    await invoke('update_item', { id: created.id, payload: buildPayload(r) })
+    return created.id
+  }
+
+  // 新建时自动保存（获取 ID 后断言 Tab 可用），不关闭弹窗
+  const ensureSaved = async (): Promise<string | null> => {
+    if (!editReq || !editReq.name.trim()) return null
+    if (editReq.id) return editReq.id
+    try {
+      const id = await createNewItem(editReq)
+      setEditReq({ ...editReq, id })
+      editReqSnapshot.current = JSON.stringify({ ...editReq, id })
+      setIsNewReq(false)
+      await loadTree(collection.id)
+      return id
+    } catch (e) {
+      toast.error(invokeErrorMessage(e))
+      return null
+    }
+  }
+
   const saveEdit = async () => {
     if (!editReq || saving) return
     if (!editReq.name.trim()) { return }
     setSaving(true)
     try {
       if (isNewReq) {
-        const created = await invoke<CollectionItem>('create_item', {
-          collectionId: collection.id,
-          parentId: editReq.parent_id,
-          itemType: editReq.type,
-          name: editReq.name,
-          method: editReq.method,
-        })
-        await invoke('update_item', {
-          id: created.id,
-          payload: {
-            url: editReq.url,
-            headers: editReq.headers,
-            queryParams: editReq.query_params,
-            bodyType: editReq.body_type,
-            bodyContent: editReq.body_content,
-            extractRules: editReq.extract_rules,
-            description: editReq.description,
-            expectStatus: editReq.expect_status,
-          },
-        })
+        await createNewItem(editReq)
       } else {
-        const payload = {
-          name: editReq.name,
-          method: editReq.method,
-          url: editReq.url,
-          headers: editReq.headers,
-          queryParams: editReq.query_params,
-          bodyType: editReq.body_type,
-          bodyContent: editReq.body_content,
-          extractRules: editReq.extract_rules,
-          description: editReq.description,
-          expectStatus: editReq.expect_status,
-        }
-        console.log('[QAI] saveEdit payload:', payload)
-        await invoke('update_item', { id: editReq.id, payload })
+        await invoke('update_item', { id: editReq.id, payload: buildPayload(editReq) })
       }
       await loadTree(collection.id)
       if (editReq) {
@@ -397,14 +434,14 @@ export default function CollectionOverview({ collection, tree }: Props) {
 
       <div className="grid grid-cols-4 gap-3">
         <StatCard label="TOTAL" value={total} />
-        <StatCard label="PASSED" value={passed} color="text-emerald-500" />
-        <StatCard label="FAILED" value={failed} color="text-red-500" />
+        <StatCard label="PASSED" value={passed} color="text-success" />
+        <StatCard label="FAILED" value={failed} color="text-error" />
         <div className="rounded-xl border border-overlay/[0.06] px-4 py-3">
           <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">PASS RATE</span>
-          <div className="text-xl font-bold tabular-nums mt-0.5" style={{ color: passRate === 100 ? '#10b981' : passRate >= 60 ? '#f59e0b' : passed + failed === 0 ? 'inherit' : '#ef4444' }}>
+          <div className="text-xl font-bold tabular-nums mt-0.5 text-success" style={{ color: passRate === 100 ? 'var(--color-success)' : passRate >= 60 ? 'var(--color-warning)' : passed + failed === 0 ? 'inherit' : 'var(--color-error)' }}>
             {passed + failed > 0 ? `${passRate}%` : '-'}
           </div>
-          {passed + failed > 0 && <div className="mt-1.5 h-1.5 rounded-full bg-overlay/[0.06] overflow-hidden"><div className="h-full rounded-full transition-all duration-500" style={{ width: `${passRate}%`, background: passRate === 100 ? '#10b981' : passRate >= 60 ? '#f59e0b' : '#ef4444' }} /></div>}
+          {passed + failed > 0 && <div className="mt-1.5 h-1.5 rounded-full bg-overlay/[0.06] overflow-hidden"><div className="h-full rounded-full transition-all duration-500" style={{ width: `${passRate}%`, background: passRate === 100 ? 'var(--color-success)' : passRate >= 60 ? 'var(--color-warning)' : 'var(--color-error)' }} /></div>}
         </div>
       </div>
 
@@ -415,56 +452,9 @@ export default function CollectionOverview({ collection, tree }: Props) {
             <Square className="h-3 w-3" /> {t('dashboard.stop')}
           </Button>
         ) : (
-          <div className="relative flex items-center">
-            <Button onClick={handleRunAll} size="sm" className="gap-1.5 pr-0">
-              <Play className="h-3.5 w-3.5" /> {t('dashboard.run_all')}
-              <span
-                role="button"
-                onClick={(e) => { e.stopPropagation(); setShowRunSettings(!showRunSettings) }}
-                className="ml-1 pl-1.5 pr-2 h-full flex items-center border-l border-primary-foreground/20 hover:bg-primary-foreground/10 rounded-r-lg transition-colors"
-                title={runMode === 'concurrent' ? `${t('dashboard.concurrent')} ×${concurrency}` : `${t('dashboard.sequential')}${delayMs ? ` ${delayMs / 1000}s` : ''}`}
-              >
-                <ChevronDown className={`h-3 w-3 transition-transform ${showRunSettings ? 'rotate-180' : ''}`} />
-              </span>
-            </Button>
-            <span className="ml-2 text-[10px] text-muted-foreground tabular-nums">
-              {runMode === 'concurrent' ? <><Zap className="h-3 w-3 inline -mt-px" /> ×{concurrency}</> : <><ListOrdered className="h-3 w-3 inline -mt-px" />{delayMs ? ` ${delayMs / 1000}s` : ''}</>}
-            </span>
-            {showRunSettings && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowRunSettings(false)} />
-                <div className="absolute top-full left-0 mt-1 z-50 w-52 rounded-xl glass-card p-1.5 shadow-2xl space-y-0.5">
-                  <button type="button" onClick={() => setRunMode('concurrent')} className={`flex items-center gap-2 w-full px-2.5 py-2 rounded-lg text-xs cursor-pointer transition-colors ${runMode === 'concurrent' ? 'bg-overlay/[0.08] text-foreground' : 'text-muted-foreground hover:bg-overlay/[0.04]'}`}>
-                    <Zap className="h-3.5 w-3.5" /> {t('dashboard.concurrent')}
-                  </button>
-                  {runMode === 'concurrent' && (
-                    <div className="px-2.5 py-2 space-y-1.5">
-                      <div className="flex gap-1">
-                        {[1, 3, 5, 10, 20].map((n) => (
-                          <button key={n} type="button" onClick={() => setConcurrency(n)} className={`px-2.5 py-1 rounded-md text-[10px] cursor-pointer transition-colors ${concurrency === n ? 'bg-primary/15 text-primary font-medium' : 'text-muted-foreground hover:bg-overlay/[0.04]'}`}>{n}</button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  <div className="h-px bg-overlay/[0.06]" />
-                  <button type="button" onClick={() => setRunMode('sequential')} className={`flex items-center gap-2 w-full px-2.5 py-2 rounded-lg text-xs cursor-pointer transition-colors ${runMode === 'sequential' ? 'bg-overlay/[0.08] text-foreground' : 'text-muted-foreground hover:bg-overlay/[0.04]'}`}>
-                    <ListOrdered className="h-3.5 w-3.5" /> {t('dashboard.sequential')}
-                  </button>
-                  {runMode === 'sequential' && (
-                    <div className="px-2.5 py-2 space-y-1.5">
-                      <div className="flex gap-1 flex-wrap">
-                        {[0, 1000, 2000, 3000, 5000, 10000].map((ms) => (
-                          <button key={ms} type="button" onClick={() => setDelayMs(ms)} className={`px-2.5 py-1 rounded-md text-[10px] cursor-pointer transition-colors ${delayMs === ms ? 'bg-primary/15 text-primary font-medium' : 'text-muted-foreground hover:bg-overlay/[0.04]'}`}>
-                            {ms === 0 ? t('common.none') : `${ms / 1000}s`}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
+          <Button onClick={handleRunAll} size="sm" className="gap-1.5">
+            <Play className="h-3.5 w-3.5" /> {dryRun ? t('dashboard.dry_run') : t('dashboard.run_all')}
+          </Button>
         )}
         <Button variant="outline" size="sm" className="gap-1.5" onClick={addTestCase}>
           <Plus className="h-3.5 w-3.5" /> {t('dashboard.add_case')}
@@ -529,14 +519,21 @@ export default function CollectionOverview({ collection, tree }: Props) {
               const groupPass = groupStatuses.every((s) => s === 'success')
               const groupFail = groupStatuses.some((s) => s === 'failed' || s === 'error')
               const groupLabel = isAnyStepRunning ? 'Running' : groupStatuses.length === 0 ? '-' : groupPass ? 'PASS' : groupFail ? 'FAIL' : '-'
-              const groupColor = isAnyStepRunning ? 'text-blue-500' : groupStatuses.length === 0 ? '' : groupPass ? 'text-emerald-500' : groupFail ? 'text-red-500' : ''
+              const groupColor = isAnyStepRunning ? 'text-info' : groupStatuses.length === 0 ? '' : groupPass ? 'text-success' : groupFail ? 'text-error' : ''
               return (
                 <SortableRow key={item.groupId} id={item.groupId}>
                   {(dragHandleProps) => (
                 <div>
                   <div
-                    className="grid grid-cols-[minmax(0,1fr)_80px_64px_64px_80px_72px] gap-2 px-4 py-2.5 text-sm bg-amber-500/5 hover:bg-amber-500/10 cursor-pointer transition-colors group"
-                    onClick={() => setExpandedRows((p) => { const n = new Set(p); n.has(groupKey) ? n.delete(groupKey) : n.add(groupKey); return n })}
+                    className="grid grid-cols-[minmax(0,1fr)_80px_64px_64px_80px_72px] gap-2 px-4 py-2.5 text-sm bg-warning/5 hover:bg-warning/10 cursor-pointer transition-colors group"
+                    onClick={() => {
+                      setExpandedRows((p) => {
+                        const n = new Set(p)
+                        if (n.has(groupKey)) n.delete(groupKey)
+                        else n.add(groupKey)
+                        return n
+                      })
+                    }}
                   >
                     <span className="flex items-center gap-1.5 min-w-0">
                       <span {...dragHandleProps} className="cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-40 hover:!opacity-100 transition-opacity shrink-0 touch-none" onClick={(e) => e.stopPropagation()}>
@@ -545,12 +542,19 @@ export default function CollectionOverview({ collection, tree }: Props) {
                       <input
                         type="checkbox"
                         checked={!disabledIds.has(item.groupId)}
-                        onChange={() => setDisabledIds((prev) => { const n = new Set(prev); n.has(item.groupId) ? n.delete(item.groupId) : n.add(item.groupId); return n })}
+                        onChange={() => {
+                          setDisabledIds((prev) => {
+                            const n = new Set(prev)
+                            if (n.has(item.groupId)) n.delete(item.groupId)
+                            else n.add(item.groupId)
+                            return n
+                          })
+                        }}
                         onClick={(e) => e.stopPropagation()}
                         className="h-3.5 w-3.5 rounded accent-primary cursor-pointer shrink-0 mr-1"
                       />
-                      {groupExpanded ? <ChevronDown className="h-3 w-3 shrink-0 text-amber-500" /> : <ChevronRight className="h-3 w-3 shrink-0 text-amber-500" />}
-                      <Link2 className="h-3 w-3 shrink-0 text-amber-500" />
+                      {groupExpanded ? <ChevronDown className="h-3 w-3 shrink-0 text-warning" /> : <ChevronRight className="h-3 w-3 shrink-0 text-warning" />}
+                      <Link2 className="h-3 w-3 shrink-0 text-warning" />
                       {editingChainId === item.groupId ? (
                         <Input
                           value={editingChainName}
@@ -563,8 +567,8 @@ export default function CollectionOverview({ collection, tree }: Props) {
                         />
                       ) : (
                         <>
-                          <span className="font-medium truncate text-amber-500/90" onDoubleClick={(e) => startEditChain(item.groupId, item.groupName, e)}>{item.groupName}</span>
-                          <span className="text-[10px] text-amber-500/50 ml-1">{item.steps.length} {t('scenario.steps')}</span>
+                          <span className="font-medium truncate text-warning/90" onDoubleClick={(e) => startEditChain(item.groupId, item.groupName, e)}>{item.groupName}</span>
+                          <span className="text-[10px] text-warning/50 ml-1">{item.steps.length} {t('scenario.steps')}</span>
                         </>
                       )}
                     </span>
@@ -575,17 +579,17 @@ export default function CollectionOverview({ collection, tree }: Props) {
                     <span className="flex items-center justify-end gap-0.5" onClick={(e) => e.stopPropagation()}>
                       {(() => { const isChainRunning = runningIds.has(item.groupId); return (
                         <button type="button" className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 hover:bg-overlay/[0.04] transition-all cursor-pointer" onClick={() => runChain(item.groupId, item.steps.map((s) => s.id))} disabled={isChainRunning} title={t('runner.run_chain')}>
-                          {isChainRunning ? <Loader2 className="h-3 w-3 animate-spin text-amber-500" /> : <Play className="h-3 w-3 text-amber-500" />}
+                          {isChainRunning ? <Loader2 className="h-3 w-3 animate-spin text-warning" /> : <Play className="h-3 w-3 text-warning" />}
                         </button>
                       ) })()}
                       <button type="button" className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 hover:bg-overlay/[0.04] transition-all cursor-pointer" onClick={(e) => startEditChain(item.groupId, item.groupName, e)} title={t('tree.rename')}>
-                        <Pencil className="h-3 w-3 text-amber-500" />
+                        <Pencil className="h-3 w-3 text-warning" />
                       </button>
                       <button type="button" className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 hover:bg-overlay/[0.04] transition-all cursor-pointer" onClick={() => addChainStep(item.groupId)} title={t('chain.add_step')}>
-                        <Plus className="h-3 w-3 text-amber-500" />
+                        <Plus className="h-3 w-3 text-warning" />
                       </button>
                       <button type="button" className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 hover:bg-overlay/[0.04] transition-all cursor-pointer" onClick={() => copyRequest(item.groupId)} title={t('common.copy')}>
-                        <Copy className="h-3 w-3 text-amber-500" />
+                        <Copy className="h-3 w-3 text-warning" />
                       </button>
                       <button type="button" className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 hover:bg-destructive/10 transition-all cursor-pointer" onClick={(e) => deleteChain(item.groupId, item.groupName, e)} title={t('common.delete')}>
                         <Trash2 className="h-3 w-3 text-destructive" />
@@ -594,7 +598,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
                   </div>
                   {groupExpanded && item.steps.map((r, stepIdx) => {
                     const prevDone = stepIdx === 0 || !!getStatus(item.steps[stepIdx - 1].id)
-                    return <ScenarioRow key={r.id} r={r} stepLabel={`Step ${stepIdx + 1}`} version={itemVersion[r.id]} indent envVars={envVars} getResult={getResult} getStatus={getStatus} statuses={statuses} progress={progress} runningIds={runningIds} expandedRows={expandedRows} detailData={detailData} loadDetail={loadDetail} toggleRow={toggleRow} runSingle={handleRunSingle} openEdit={openEdit} copyRequest={copyRequest} deleteRequest={deleteRequest} streamingContent={streamingContents[r.id]} canRun={prevDone} />
+                    return <ScenarioRow key={r.id} r={r} stepLabel={`Step ${stepIdx + 1}`} version={itemVersion[r.id]} indent envVars={envVars} assertionCount={assertionCounts[r.id] ?? 0} getResult={getResult} getStatus={getStatus} statuses={statuses} progress={progress} runningIds={runningIds} expandedRows={expandedRows} detailData={detailData} loadDetail={loadDetail} toggleRow={toggleRow} runSingle={handleRunSingle} openEdit={openEdit} copyRequest={copyRequest} deleteRequest={deleteRequest} streamingContent={streamingContents[r.id]} canRun={prevDone} />
                   })}
                 </div>
                   )}
@@ -604,7 +608,14 @@ export default function CollectionOverview({ collection, tree }: Props) {
             return (
               <SortableRow key={item.id} id={item.id}>
                 {(dragHandleProps) => (
-                  <ScenarioRow r={item} version={itemVersion[item.id]} envVars={envVars} getResult={getResult} getStatus={getStatus} statuses={statuses} progress={progress} runningIds={runningIds} expandedRows={expandedRows} detailData={detailData} loadDetail={loadDetail} toggleRow={toggleRow} runSingle={handleRunSingle} openEdit={openEdit} copyRequest={copyRequest} deleteRequest={deleteRequest} streamingContent={streamingContents[item.id]} enabled={!disabledIds.has(item.id)} onToggleEnabled={(id) => setDisabledIds((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })} dragHandleProps={dragHandleProps} />
+                  <ScenarioRow r={item} version={itemVersion[item.id]} envVars={envVars} assertionCount={assertionCounts[item.id] ?? 0} getResult={getResult} getStatus={getStatus} statuses={statuses} progress={progress} runningIds={runningIds} expandedRows={expandedRows} detailData={detailData} loadDetail={loadDetail} toggleRow={toggleRow} runSingle={handleRunSingle} openEdit={openEdit} copyRequest={copyRequest} deleteRequest={deleteRequest} streamingContent={streamingContents[item.id]} enabled={!disabledIds.has(item.id)} onToggleEnabled={(id) => {
+                    setDisabledIds((prev) => {
+                      const n = new Set(prev)
+                      if (n.has(id)) n.delete(id)
+                      else n.add(id)
+                      return n
+                    })
+                  }} dragHandleProps={dragHandleProps} />
                 )}
               </SortableRow>
             )
@@ -622,10 +633,11 @@ export default function CollectionOverview({ collection, tree }: Props) {
           <DialogHeader><DialogTitle>{isNewReq ? t('edit.new_case') : t('edit.edit_case')}</DialogTitle></DialogHeader>
           {editReq && (
             <EditForm
-              key={editReq.id}
+              key={editDialogKey.current}
               req={editReq}
               onChange={setEditReq}
               onSave={saveEdit}
+              onEnsureSaved={ensureSaved}
               onCancel={closeEditDialog}
               envVars={envVars}
               saving={saving}

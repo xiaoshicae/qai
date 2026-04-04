@@ -59,7 +59,7 @@ export const useAIStore = create<AIState>((set) => ({
         ),
         sending: false,
       }))
-    } catch (e: any) {
+    } catch (e: unknown) {
       const errMsg = invokeErrorMessage(e)
       set((s) => ({
         messages: s.messages.map((m) =>

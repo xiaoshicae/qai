@@ -12,6 +12,12 @@ pub struct DynamicUpdate {
     values: Vec<Box<dyn rusqlite::types::ToSql>>,
 }
 
+impl Default for DynamicUpdate {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DynamicUpdate {
     pub fn new() -> Self {
         Self {

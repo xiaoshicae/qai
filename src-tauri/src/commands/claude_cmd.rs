@@ -7,7 +7,7 @@ use tokio::process::Command;
 /// 验证 MCP 配置路径：必须是 .json 文件且位于合理目录
 fn validate_mcp_config(path: &str) -> Result<(), String> {
     let p = std::path::Path::new(path);
-    if !p.extension().map_or(false, |e| e == "json") {
+    if !p.extension().is_some_and(|e| e == "json") {
         return Err("MCP 配置文件必须是 .json 格式".into());
     }
     // canonicalize 确保路径存在且无符号链接绕过

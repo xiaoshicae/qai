@@ -13,6 +13,12 @@ pub struct PtyState {
     reader_handle: Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 
+impl Default for PtyState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PtyState {
     pub fn new() -> Self {
         Self {

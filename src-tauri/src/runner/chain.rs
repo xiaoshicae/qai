@@ -6,6 +6,7 @@ use crate::models::item::{CollectionItem, ExtractRule, PollConfig};
 use crate::runner::assertion::apply_assertions;
 
 /// 按顺序执行链中的步骤，步骤间传递提取的变量，任一步骤失败则终止
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub async fn run_chain(
     client: &reqwest::Client,
     steps: Vec<(CollectionItem, Vec<Assertion>)>,

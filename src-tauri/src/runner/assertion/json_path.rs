@@ -3,10 +3,10 @@ use serde_json::Value;
 /// 简易 JSON Path 提取（支持 $.a.b.c 和 $.a[0].b 语法）
 pub fn extract_json_path(value: &Value, path: &str) -> Option<Value> {
     let path = path.trim();
-    let path = if path.starts_with("$.") {
-        &path[2..]
-    } else if path.starts_with('$') {
-        &path[1..]
+    let path = if let Some(stripped) = path.strip_prefix("$.") {
+        stripped
+    } else if let Some(stripped) = path.strip_prefix('$') {
+        stripped
     } else {
         path
     };

@@ -63,7 +63,7 @@ fn is_streaming_response(headers: &reqwest::header::HeaderMap) -> bool {
             && headers
                 .get("transfer-encoding")
                 .and_then(|v| v.to_str().ok())
-                .map_or(false, |v| v.contains("chunked")))
+                .is_some_and(|v| v.contains("chunked")))
 }
 
 /// 智能执行：自动检测响应类型，流式响应通过回调逐块推送
@@ -243,7 +243,7 @@ pub async fn mock_execute(item: &CollectionItem) -> ExecutionResult {
     tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
 
     let status = if item.expect_status > 0 {
-        item.expect_status as u16
+        item.expect_status
     } else {
         200
     };

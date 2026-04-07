@@ -59,6 +59,7 @@ pub async fn cancel_run(runner: State<'_, RunnerState>) -> Result<(), String> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn run_collection(
     app: AppHandle,
@@ -91,6 +92,7 @@ pub async fn run_collection(
     result
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_collection_inner(
     app: &AppHandle,
     db: &DbState,
@@ -351,7 +353,7 @@ async fn run_collection_inner(
     if !dry_run {
         let conn = db.conn()?;
         for result in &batch_result.results {
-            crate::http::emit_request_log(&app, result);
+            crate::http::emit_request_log(app, result);
             if let Ok(item) = crate::db::item::get(&conn, &result.item_id) {
                 let mut exec = crate::http::client::to_execution(&item, result);
                 exec.batch_id = Some(batch_id.clone());

@@ -19,8 +19,8 @@ fn extract_token(headers_json: &str) -> Option<String> {
     for kv in headers.iter().filter(|kv| kv.enabled) {
         if kv.key.eq_ignore_ascii_case("authorization") {
             let val = kv.value.trim();
-            if val.starts_with("Bearer ") {
-                return Some(val[7..].to_string());
+            if let Some(stripped) = val.strip_prefix("Bearer ") {
+                return Some(stripped.to_string());
             }
             return Some(val.to_string());
         }
@@ -328,21 +328,19 @@ where
             .await
             .map_err(|e| anyhow::anyhow!("发送认证消息失败: {}", e))?;
 
-        if let Some(Ok(msg)) = ws.next().await {
-            if let Message::Text(text) = msg {
-                if let Ok(data) = serde_json::from_str::<serde_json::Value>(&text) {
-                    if data.get("status").and_then(|v| v.as_str()) != Some("authenticated") {
-                        let err = data
-                            .get("error")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("未知认证错误");
-                        return Ok(make_error_result(
-                            &execution_id,
-                            item,
-                            start,
-                            &format!("认证失败: {}", err),
-                        ));
-                    }
+        if let Some(Ok(Message::Text(text))) = ws.next().await {
+            if let Ok(data) = serde_json::from_str::<serde_json::Value>(&text) {
+                if data.get("status").and_then(|v| v.as_str()) != Some("authenticated") {
+                    let err = data
+                        .get("error")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("未知认证错误");
+                    return Ok(make_error_result(
+                        &execution_id,
+                        item,
+                        start,
+                        &format!("认证失败: {}", err),
+                    ));
                 }
             }
         }

@@ -11,7 +11,9 @@ fn validate_mcp_config(path: &str) -> Result<(), String> {
         return Err("MCP 配置文件必须是 .json 格式".into());
     }
     // canonicalize 确保路径存在且无符号链接绕过
-    let canonical = p.canonicalize().map_err(|e| format!("MCP 配置路径无效: {e}"))?;
+    let canonical = p
+        .canonicalize()
+        .map_err(|e| format!("MCP 配置路径无效: {e}"))?;
     let path_str = canonical.to_string_lossy();
     // 禁止指向系统敏感目录
     #[cfg(unix)]
@@ -67,7 +69,9 @@ impl ClaudeState {
 
     /// 获取状态的可变引用
     fn lock_inner(&self) -> Result<std::sync::MutexGuard<'_, ClaudeInner>, String> {
-        self.0.lock().map_err(|_| "内部状态不可用（锁冲突）".to_string())
+        self.0
+            .lock()
+            .map_err(|_| "内部状态不可用（锁冲突）".to_string())
     }
 }
 
@@ -108,7 +112,8 @@ pub async fn claude_warmup(
     let claude_bin = which_claude().unwrap_or_else(|| "claude".to_string());
     let mut args: Vec<String> = vec![
         "-p".into(),
-        "--output-format".into(), "stream-json".into(),
+        "--output-format".into(),
+        "stream-json".into(),
         "--verbose".into(),
     ];
     if let Some(ref config) = mcp_config_path {
@@ -132,12 +137,17 @@ pub async fn claude_warmup(
     cmd.args(&args);
     let path = std::env::var("PATH").unwrap_or_default();
     let home = std::env::var("HOME").unwrap_or_default();
-    cmd.env("PATH", format!("{home}/.local/bin:/opt/homebrew/bin:/usr/local/bin:{path}"));
+    cmd.env(
+        "PATH",
+        format!("{home}/.local/bin:/opt/homebrew/bin:/usr/local/bin:{path}"),
+    );
     if let Ok(home) = std::env::var("HOME") {
         cmd.env("HOME", &home);
         cmd.current_dir(&home);
     }
-    cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
 
     let mut child = cmd.spawn().map_err(|e| format!("Warmup failed: {e}"))?;
     if let Some(pid) = child.id() {
@@ -149,9 +159,12 @@ pub async fn claude_warmup(
     let mut lines = reader.lines();
 
     while let Ok(Some(line)) = lines.next_line().await {
-        if line.trim().is_empty() { continue; }
+        if line.trim().is_empty() {
+            continue;
+        }
         let json: serde_json::Value = match serde_json::from_str(&line) {
-            Ok(v) => v, Err(_) => continue,
+            Ok(v) => v,
+            Err(_) => continue,
         };
         if json.get("type").and_then(|v| v.as_str()) == Some("result") {
             if let Some(sid) = json.get("session_id").and_then(|s| s.as_str()) {
@@ -165,8 +178,12 @@ pub async fn claude_warmup(
     if let Some(stderr) = child.stderr.take() {
         let mut r = BufReader::new(stderr);
         let mut buf = String::new();
-        tokio::io::AsyncReadExt::read_to_string(&mut r, &mut buf).await.ok();
-        if !buf.trim().is_empty() { log::warn!("[claude warmup stderr] {}", buf.trim()); }
+        tokio::io::AsyncReadExt::read_to_string(&mut r, &mut buf)
+            .await
+            .ok();
+        if !buf.trim().is_empty() {
+            log::warn!("[claude warmup stderr] {}", buf.trim());
+        }
     }
 
     let _ = child.wait().await;
@@ -199,12 +216,16 @@ pub async fn claude_send(
     let claude_bin = which_claude().unwrap_or_else(|| "claude".to_string());
     // 优先使用前端传入的 session_id（多 Tab 场景），其次用全局缓存的
     let resume_sid = session_id.or_else(|| {
-        claude_state.lock_inner().ok().and_then(|g| g.session_id.clone())
+        claude_state
+            .lock_inner()
+            .ok()
+            .and_then(|g| g.session_id.clone())
     });
 
     let mut args: Vec<String> = vec![
         "-p".into(),
-        "--output-format".into(), "stream-json".into(),
+        "--output-format".into(),
+        "stream-json".into(),
         "--verbose".into(),
         "--include-partial-messages".into(),
     ];
@@ -237,13 +258,18 @@ pub async fn claude_send(
 
     let path = std::env::var("PATH").unwrap_or_default();
     let home = std::env::var("HOME").unwrap_or_default();
-    cmd.env("PATH", format!("{home}/.local/bin:/opt/homebrew/bin:/usr/local/bin:{path}"));
+    cmd.env(
+        "PATH",
+        format!("{home}/.local/bin:/opt/homebrew/bin:/usr/local/bin:{path}"),
+    );
     if let Ok(home) = std::env::var("HOME") {
         cmd.env("HOME", &home);
         cmd.current_dir(&home); // 避免继承 QAI 项目目录，防止 Claude Code 误读源码
     }
 
-    cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
 
     let mut child = cmd.spawn().map_err(|e| format!("启动 Claude 失败: {e}"))?;
     if let Some(pid) = child.id() {
@@ -258,9 +284,12 @@ pub async fn claude_send(
     let mut has_mcp_write = false;
 
     while let Ok(Some(line)) = lines.next_line().await {
-        if line.trim().is_empty() { continue; }
+        if line.trim().is_empty() {
+            continue;
+        }
         let json: serde_json::Value = match serde_json::from_str(&line) {
-            Ok(v) => v, Err(_) => continue,
+            Ok(v) => v,
+            Err(_) => continue,
         };
         let event_type = json.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
@@ -269,25 +298,54 @@ pub async fn claude_send(
                 if let Some(event) = json.get("event") {
                     let sub = event.get("type").and_then(|t| t.as_str()).unwrap_or("");
                     if sub == "content_block_delta" {
-                        if let Some(text) = event.get("delta").and_then(|d| d.get("text")).and_then(|t| t.as_str()) {
+                        if let Some(text) = event
+                            .get("delta")
+                            .and_then(|d| d.get("text"))
+                            .and_then(|t| t.as_str())
+                        {
                             if !text.is_empty() {
-                                let _ = app.emit("claude-event", ClaudeEvent { event_type: "delta".into(), content: text.into(), session_id: current_sid.clone(), raw: None });
+                                let _ = app.emit(
+                                    "claude-event",
+                                    ClaudeEvent {
+                                        event_type: "delta".into(),
+                                        content: text.into(),
+                                        session_id: current_sid.clone(),
+                                        raw: None,
+                                    },
+                                );
                             }
                         }
                     }
                 }
             }
             "assistant" => {
-                if let Some(content) = json.get("message").and_then(|m| m.get("content")).and_then(|c| c.as_array()) {
+                if let Some(content) = json
+                    .get("message")
+                    .and_then(|m| m.get("content"))
+                    .and_then(|c| c.as_array())
+                {
                     for block in content {
                         if block.get("type").and_then(|t| t.as_str()) == Some("tool_use") {
                             let name = block.get("name").and_then(|n| n.as_str()).unwrap_or("");
                             // 检测 MCP 写操作（create/update/delete）
-                            if name.starts_with("mcp__qai__") && (name.contains("create") || name.contains("update") || name.contains("delete") || name.contains("save")) {
+                            if name.starts_with("mcp__qai__")
+                                && (name.contains("create")
+                                    || name.contains("update")
+                                    || name.contains("delete")
+                                    || name.contains("save"))
+                            {
                                 has_mcp_write = true;
                             }
                             let detail = tool_use_summary(name, block.get("input"));
-                            let _ = app.emit("claude-event", ClaudeEvent { event_type: "tool_use".into(), content: format!("{name}: {detail}"), session_id: current_sid.clone(), raw: Some(block.clone()) });
+                            let _ = app.emit(
+                                "claude-event",
+                                ClaudeEvent {
+                                    event_type: "tool_use".into(),
+                                    content: format!("{name}: {detail}"),
+                                    session_id: current_sid.clone(),
+                                    raw: Some(block.clone()),
+                                },
+                            );
                         }
                     }
                 }
@@ -300,11 +358,20 @@ pub async fn claude_send(
                         inner.session_id = Some(sid.to_string());
                     }
                 }
-                let result_text = json.get("result")
+                let result_text = json
+                    .get("result")
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
-                let _ = app.emit("claude-event", ClaudeEvent { event_type: "result".into(), content: result_text, session_id: current_sid.clone(), raw: Some(json.clone()) });
+                let _ = app.emit(
+                    "claude-event",
+                    ClaudeEvent {
+                        event_type: "result".into(),
+                        content: result_text,
+                        session_id: current_sid.clone(),
+                        raw: Some(json.clone()),
+                    },
+                );
                 final_result = json;
             }
             _ => {}
@@ -315,8 +382,12 @@ pub async fn claude_send(
     if let Some(stderr) = child.stderr.take() {
         let mut r = BufReader::new(stderr);
         let mut buf = String::new();
-        tokio::io::AsyncReadExt::read_to_string(&mut r, &mut buf).await.ok();
-        if !buf.trim().is_empty() { log::warn!("[claude stderr] {}", buf.trim()); }
+        tokio::io::AsyncReadExt::read_to_string(&mut r, &mut buf)
+            .await
+            .ok();
+        if !buf.trim().is_empty() {
+            log::warn!("[claude stderr] {}", buf.trim());
+        }
     }
 
     let _ = child.wait().await;
@@ -365,7 +436,8 @@ pub async fn claude_warmup_spare(
     let claude_bin = which_claude().unwrap_or_else(|| "claude".to_string());
     let mut args: Vec<String> = vec![
         "-p".into(),
-        "--output-format".into(), "stream-json".into(),
+        "--output-format".into(),
+        "stream-json".into(),
         "--verbose".into(),
     ];
     if let Some(ref config) = mcp_config_path {
@@ -388,21 +460,31 @@ pub async fn claude_warmup_spare(
     cmd.args(&args);
     let path = std::env::var("PATH").unwrap_or_default();
     let home = std::env::var("HOME").unwrap_or_default();
-    cmd.env("PATH", format!("{home}/.local/bin:/opt/homebrew/bin:/usr/local/bin:{path}"));
+    cmd.env(
+        "PATH",
+        format!("{home}/.local/bin:/opt/homebrew/bin:/usr/local/bin:{path}"),
+    );
     if let Ok(home) = std::env::var("HOME") {
         cmd.env("HOME", &home);
         cmd.current_dir(&home);
     }
-    cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
 
-    let mut child = cmd.spawn().map_err(|e| format!("Spare warmup failed: {e}"))?;
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Spare warmup failed: {e}"))?;
     let stdout = child.stdout.take().ok_or("No stdout")?;
     let mut lines = BufReader::new(stdout).lines();
 
     while let Ok(Some(line)) = lines.next_line().await {
-        if line.trim().is_empty() { continue; }
+        if line.trim().is_empty() {
+            continue;
+        }
         let json: serde_json::Value = match serde_json::from_str(&line) {
-            Ok(v) => v, Err(_) => continue,
+            Ok(v) => v,
+            Err(_) => continue,
         };
         if json.get("type").and_then(|v| v.as_str()) == Some("result") {
             if let Some(sid) = json.get("session_id").and_then(|s| s.as_str()) {
@@ -414,7 +496,9 @@ pub async fn claude_warmup_spare(
     if let Some(stderr) = child.stderr.take() {
         let mut r = BufReader::new(stderr);
         let mut buf = String::new();
-        tokio::io::AsyncReadExt::read_to_string(&mut r, &mut buf).await.ok();
+        tokio::io::AsyncReadExt::read_to_string(&mut r, &mut buf)
+            .await
+            .ok();
     }
     let _ = child.wait().await;
     let _ = app.emit("claude-spare-ready", ());
@@ -433,15 +517,24 @@ fn tool_use_summary(name: &str, input: Option<&serde_json::Value>) -> String {
             truncate_str(cmd, 200)
         }
         "Read" => {
-            let path = input.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
+            let path = input
+                .get("file_path")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             truncate_str(path, 200)
         }
         "Write" => {
-            let path = input.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
+            let path = input
+                .get("file_path")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             truncate_str(path, 200)
         }
         "Edit" => {
-            let path = input.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
+            let path = input
+                .get("file_path")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             truncate_str(path, 200)
         }
         "Glob" => {
@@ -453,7 +546,11 @@ fn tool_use_summary(name: &str, input: Option<&serde_json::Value>) -> String {
             truncate_str(pattern, 200)
         }
         "WebSearch" | "WebFetch" => {
-            let q = input.get("query").or_else(|| input.get("url")).and_then(|v| v.as_str()).unwrap_or("");
+            let q = input
+                .get("query")
+                .or_else(|| input.get("url"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             truncate_str(q, 200)
         }
         _ => {
@@ -486,14 +583,23 @@ fn which_claude() -> Option<String> {
     // 检查常见安装路径，含 ~/.local/bin（Claude Code 默认安装位置）
     let home = std::env::var("HOME").unwrap_or_default();
     let local_bin = format!("{home}/.local/bin/claude");
-    for p in &[local_bin.as_str(), "/opt/homebrew/bin/claude", "/usr/local/bin/claude", "/usr/bin/claude"] {
-        if std::path::Path::new(p).exists() { return Some(p.to_string()); }
+    for p in &[
+        local_bin.as_str(),
+        "/opt/homebrew/bin/claude",
+        "/usr/local/bin/claude",
+        "/usr/bin/claude",
+    ] {
+        if std::path::Path::new(p).exists() {
+            return Some(p.to_string());
+        }
     }
     // 尝试 PATH 中的 claude
     if let Ok(output) = std::process::Command::new("which").arg("claude").output() {
         if output.status.success() {
             let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !path.is_empty() { return Some(path); }
+            if !path.is_empty() {
+                return Some(path);
+            }
         }
     }
     None
@@ -504,13 +610,18 @@ fn which_claude() -> Option<String> {
 pub fn claude_check_status() -> Result<serde_json::Value, String> {
     let claude_bin = match which_claude() {
         Some(p) => p,
-        None => return Ok(serde_json::json!({
-            "status": "not_installed"
-        })),
+        None => {
+            return Ok(serde_json::json!({
+                "status": "not_installed"
+            }))
+        }
     };
 
     // 只获取版本验证可执行，不做认证测试（认证由 warmup 处理）
-    let version = match std::process::Command::new(&claude_bin).arg("--version").output() {
+    let version = match std::process::Command::new(&claude_bin)
+        .arg("--version")
+        .output()
+    {
         Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim().to_string(),
         _ => return Ok(serde_json::json!({ "status": "not_installed" })),
     };

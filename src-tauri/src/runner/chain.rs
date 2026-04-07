@@ -26,7 +26,10 @@ pub async fn run_chain(
 
     for (i, (raw_item, assertions)) in steps.into_iter().enumerate() {
         let step_index = i as u32;
-        if cancel_token.as_ref().is_some_and(|ct| ct.load(std::sync::atomic::Ordering::Relaxed)) {
+        if cancel_token
+            .as_ref()
+            .is_some_and(|ct| ct.load(std::sync::atomic::Ordering::Relaxed))
+        {
             break;
         }
 
@@ -76,10 +79,18 @@ pub async fn run_chain(
                     error_message: Some(e.to_string()),
                 };
                 progress_callback(ChainProgress {
-                    chain_id: chain_id.clone(), item_id: chain_item_id.clone(),
-                    step_index, step_name: item.name.clone(), status: crate::models::Status::Error.as_str().to_string(), total_steps,
+                    chain_id: chain_id.clone(),
+                    item_id: chain_item_id.clone(),
+                    step_index,
+                    step_name: item.name.clone(),
+                    status: crate::models::Status::Error.as_str().to_string(),
+                    total_steps,
                 });
-                step_results.push(ChainStepResult { step_index, execution_result: err_result, extracted_variables: HashMap::new() });
+                step_results.push(ChainStepResult {
+                    step_index,
+                    execution_result: err_result,
+                    extracted_variables: HashMap::new(),
+                });
                 overall_status = crate::models::Status::Error.as_str().to_string();
                 break;
             }
@@ -88,19 +99,31 @@ pub async fn run_chain(
         // 断言评估
         let mut result = result;
         apply_assertions(&mut result, &assertions);
-        if let Some(ref cb) = on_result { cb(&result); }
+        if let Some(ref cb) = on_result {
+            cb(&result);
+        }
 
         // 提取变量
         let extracted = if let Some(ref response) = result.response {
-            let rules: Vec<ExtractRule> = serde_json::from_str(&raw_item.extract_rules).unwrap_or_default();
+            let rules: Vec<ExtractRule> =
+                serde_json::from_str(&raw_item.extract_rules).unwrap_or_default();
             if !rules.is_empty() {
                 let new_vars = crate::http::vars::extract_variables(&rules, response);
-                log::info!("[chain] step {} '{}' extracted {} vars: {:?}",
-                    step_index, raw_item.name, new_vars.len(), new_vars.keys().collect::<Vec<_>>());
+                log::info!(
+                    "[chain] step {} '{}' extracted {} vars: {:?}",
+                    step_index,
+                    raw_item.name,
+                    new_vars.len(),
+                    new_vars.keys().collect::<Vec<_>>()
+                );
                 accumulated_vars.extend(new_vars.clone());
                 new_vars
             } else {
-                log::info!("[chain] step {} '{}' has no extract_rules", step_index, raw_item.name);
+                log::info!(
+                    "[chain] step {} '{}' has no extract_rules",
+                    step_index,
+                    raw_item.name
+                );
                 HashMap::new()
             }
         } else {
@@ -108,24 +131,45 @@ pub async fn run_chain(
         };
 
         let step_status = result.status.clone();
-        log::info!("[chain] step {} '{}' status={}, url={}", step_index, item.name, step_status, item.url);
+        log::info!(
+            "[chain] step {} '{}' status={}, url={}",
+            step_index,
+            item.name,
+            step_status,
+            item.url
+        );
 
         progress_callback(ChainProgress {
-            chain_id: chain_id.clone(), item_id: chain_item_id.clone(),
-            step_index, step_name: item.name.clone(), status: step_status.clone(), total_steps,
+            chain_id: chain_id.clone(),
+            item_id: chain_item_id.clone(),
+            step_index,
+            step_name: item.name.clone(),
+            status: step_status.clone(),
+            total_steps,
         });
 
-        step_results.push(ChainStepResult { step_index, execution_result: result, extracted_variables: extracted });
+        step_results.push(ChainStepResult {
+            step_index,
+            execution_result: result,
+            extracted_variables: extracted,
+        });
 
         if step_status != crate::models::Status::Success.as_str() {
-            log::info!("[chain] step {} failed with '{}', breaking chain", step_index, step_status);
+            log::info!(
+                "[chain] step {} failed with '{}', breaking chain",
+                step_index,
+                step_status
+            );
             overall_status = step_status;
             break;
         }
     }
 
     ChainResult {
-        chain_id, item_id: chain_item_id, item_name: chain_item_name, total_steps,
+        chain_id,
+        item_id: chain_item_id,
+        item_name: chain_item_name,
+        total_steps,
         completed_steps: step_results.len() as u32,
         status: overall_status,
         total_time_ms: start.elapsed().as_millis() as u64,
@@ -146,13 +190,19 @@ async fn execute_with_poll(
     let interval = std::time::Duration::from_secs(poll.interval_seconds);
 
     loop {
-        if cancel_token.as_ref().is_some_and(|ct| ct.load(std::sync::atomic::Ordering::Relaxed)) {
+        if cancel_token
+            .as_ref()
+            .is_some_and(|ct| ct.load(std::sync::atomic::Ordering::Relaxed))
+        {
             return Ok(ExecutionResult {
                 execution_id: uuid::Uuid::new_v4().to_string(),
-                item_id: item.id.clone(), item_name: item.name.clone(),
-                request_url: item.url.clone(), request_method: item.method.clone(),
+                item_id: item.id.clone(),
+                item_name: item.name.clone(),
+                request_url: item.url.clone(),
+                request_method: item.method.clone(),
                 status: crate::models::Status::Error.as_str().to_string(),
-                response: None, assertion_results: vec![],
+                response: None,
+                assertion_results: vec![],
                 error_message: Some("轮询已取消".to_string()),
             });
         }
@@ -161,7 +211,8 @@ async fn execute_with_poll(
 
         if let Some(ref response) = result.response {
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(&response.body) {
-                let extracted = crate::runner::assertion::json_path::extract_json_path(&json, &poll.field);
+                let extracted =
+                    crate::runner::assertion::json_path::extract_json_path(&json, &poll.field);
                 if let Some(val) = extracted {
                     let val_str = crate::runner::assertion::json_path::value_to_string(&val);
                     if val_str == poll.target {

@@ -1,10 +1,10 @@
-pub mod init;
-pub mod group;
-pub mod collection;
-pub mod item;
 pub mod assertion;
-pub mod execution;
+pub mod collection;
 pub mod environment;
+pub mod execution;
+pub mod group;
+pub mod init;
+pub mod item;
 
 /// 动态 UPDATE SQL 构建器，消除各 CRUD 模块重复的 update 模式
 pub struct DynamicUpdate {
@@ -14,13 +14,21 @@ pub struct DynamicUpdate {
 
 impl DynamicUpdate {
     pub fn new() -> Self {
-        Self { sets: Vec::new(), values: Vec::new() }
+        Self {
+            sets: Vec::new(),
+            values: Vec::new(),
+        }
     }
 
     /// 添加一个要更新的字段（仅在 value 为 Some 时生效）
-    pub fn set_opt<T: rusqlite::types::ToSql + 'static>(&mut self, col: &str, value: Option<T>) -> &mut Self {
+    pub fn set_opt<T: rusqlite::types::ToSql + 'static>(
+        &mut self,
+        col: &str,
+        value: Option<T>,
+    ) -> &mut Self {
         if let Some(v) = value {
-            self.sets.push(format!("{} = ?{}", col, self.values.len() + 1));
+            self.sets
+                .push(format!("{} = ?{}", col, self.values.len() + 1));
             self.values.push(Box::new(v));
         }
         self
@@ -28,34 +36,58 @@ impl DynamicUpdate {
 
     /// 无条件添加一个要更新的字段
     pub fn set<T: rusqlite::types::ToSql + 'static>(&mut self, col: &str, value: T) -> &mut Self {
-        self.sets.push(format!("{} = ?{}", col, self.values.len() + 1));
+        self.sets
+            .push(format!("{} = ?{}", col, self.values.len() + 1));
         self.values.push(Box::new(value));
         self
     }
 
     /// 添加自动更新 updated_at 并执行，返回是否有字段被更新
-    pub fn execute(mut self, conn: &rusqlite::Connection, table: &str, id: &str) -> Result<bool, rusqlite::Error> {
+    pub fn execute(
+        mut self,
+        conn: &rusqlite::Connection,
+        table: &str,
+        id: &str,
+    ) -> Result<bool, rusqlite::Error> {
         if self.sets.is_empty() {
             return Ok(false);
         }
-        self.sets.push("updated_at = datetime('now', 'localtime')".to_string());
+        self.sets
+            .push("updated_at = datetime('now', 'localtime')".to_string());
         let idx = self.values.len() + 1;
-        let sql = format!("UPDATE {} SET {} WHERE id = ?{}", table, self.sets.join(", "), idx);
+        let sql = format!(
+            "UPDATE {} SET {} WHERE id = ?{}",
+            table,
+            self.sets.join(", "),
+            idx
+        );
         self.values.push(Box::new(id.to_string()));
-        let params: Vec<&dyn rusqlite::types::ToSql> = self.values.iter().map(|v| v.as_ref()).collect();
+        let params: Vec<&dyn rusqlite::types::ToSql> =
+            self.values.iter().map(|v| v.as_ref()).collect();
         conn.execute(&sql, params.as_slice())?;
         Ok(true)
     }
 
     /// 执行（不自动添加 updated_at，用于没有该字段的表）
-    pub fn execute_without_timestamp(mut self, conn: &rusqlite::Connection, table: &str, id: &str) -> Result<bool, rusqlite::Error> {
+    pub fn execute_without_timestamp(
+        mut self,
+        conn: &rusqlite::Connection,
+        table: &str,
+        id: &str,
+    ) -> Result<bool, rusqlite::Error> {
         if self.sets.is_empty() {
             return Ok(false);
         }
         let idx = self.values.len() + 1;
-        let sql = format!("UPDATE {} SET {} WHERE id = ?{}", table, self.sets.join(", "), idx);
+        let sql = format!(
+            "UPDATE {} SET {} WHERE id = ?{}",
+            table,
+            self.sets.join(", "),
+            idx
+        );
         self.values.push(Box::new(id.to_string()));
-        let params: Vec<&dyn rusqlite::types::ToSql> = self.values.iter().map(|v| v.as_ref()).collect();
+        let params: Vec<&dyn rusqlite::types::ToSql> =
+            self.values.iter().map(|v| v.as_ref()).collect();
         conn.execute(&sql, params.as_slice())?;
         Ok(true)
     }
@@ -115,7 +147,8 @@ mod tests {
         conn.execute(
             "UPDATE collections SET updated_at = '2000-01-01 00:00:00' WHERE id = ?1",
             rusqlite::params![c.id],
-        ).unwrap();
+        )
+        .unwrap();
         let mut u = DynamicUpdate::new();
         u.set("name", "Updated".to_string());
         u.execute(&conn, "collections", &c.id).unwrap();

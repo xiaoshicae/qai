@@ -118,9 +118,18 @@ pub async fn run_batch(
     }
     let total_time_ms = start.elapsed().as_millis() as u64;
 
-    let passed = results.iter().filter(|r| r.status == crate::models::Status::Success.as_str()).count() as u32;
-    let failed = results.iter().filter(|r| r.status == crate::models::Status::Failed.as_str()).count() as u32;
-    let errors = results.iter().filter(|r| r.status == crate::models::Status::Error.as_str()).count() as u32;
+    let passed = results
+        .iter()
+        .filter(|r| r.status == crate::models::Status::Success.as_str())
+        .count() as u32;
+    let failed = results
+        .iter()
+        .filter(|r| r.status == crate::models::Status::Failed.as_str())
+        .count() as u32;
+    let errors = results
+        .iter()
+        .filter(|r| r.status == crate::models::Status::Error.as_str())
+        .count() as u32;
 
     BatchResult {
         batch_id,

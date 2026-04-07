@@ -28,7 +28,8 @@ pub fn status_string(success: bool) -> String {
         crate::models::Status::Success
     } else {
         crate::models::Status::Failed
-    }.to_string()
+    }
+    .to_string()
 }
 
 #[cfg(test)]
@@ -63,7 +64,9 @@ mod tests {
         map.insert("x-custom", "value".parse().unwrap());
         let result = extract_headers(&map);
         assert_eq!(result.len(), 2);
-        assert!(result.iter().any(|h| h.key == "content-type" && h.value == "application/json"));
+        assert!(result
+            .iter()
+            .any(|h| h.key == "content-type" && h.value == "application/json"));
         assert!(result.iter().all(|h| h.enabled));
     }
 }

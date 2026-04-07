@@ -1,5 +1,5 @@
-use std::time::Instant;
 use futures_util::StreamExt;
+use std::time::Instant;
 use uuid::Uuid;
 
 use crate::models::execution::ExecutionResult;
@@ -8,7 +8,7 @@ use crate::models::item::{CollectionItem, HttpResponse};
 #[derive(Clone, serde::Serialize)]
 pub struct StreamChunk {
     pub item_id: String,
-    pub chunk: String,      // SSE data 内容
+    pub chunk: String, // SSE data 内容
     pub chunk_index: u32,
     pub done: bool,
 }

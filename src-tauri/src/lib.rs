@@ -1,13 +1,13 @@
+pub mod ai;
 mod commands;
 pub mod db;
 pub mod http;
-pub mod models;
-pub mod runner;
-pub mod ai;
-mod report;
-pub mod websocket;
-pub mod pty;
 mod import;
+pub mod models;
+pub mod pty;
+mod report;
+pub mod runner;
+pub mod websocket;
 
 use db::init::initialize_database;
 use tauri::Manager;

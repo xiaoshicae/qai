@@ -45,7 +45,10 @@ fn default_true() -> bool {
 }
 
 /// 从 AI 响应文本中提取 JSON 数组（泛型，支持任意可反序列化类型）
-fn parse_json_array<T: serde::de::DeserializeOwned>(text: &str, desc: &str) -> Result<Vec<T>, anyhow::Error> {
+fn parse_json_array<T: serde::de::DeserializeOwned>(
+    text: &str,
+    desc: &str,
+) -> Result<Vec<T>, anyhow::Error> {
     // 尝试直接解析
     if let Ok(items) = serde_json::from_str::<Vec<T>>(text.trim()) {
         return Ok(items);

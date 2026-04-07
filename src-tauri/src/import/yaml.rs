@@ -1,5 +1,5 @@
-use std::path::{Path, PathBuf};
 use rusqlite::Connection;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, serde::Deserialize)]
 pub struct YamlCase {
@@ -45,7 +45,10 @@ pub fn find_yaml_files(dir: &Path) -> Vec<PathBuf> {
             let path = entry.path();
             if path.is_dir() {
                 files.extend(find_yaml_files(&path));
-            } else if path.extension().is_some_and(|ext| ext == "yml" || ext == "yaml") {
+            } else if path
+                .extension()
+                .is_some_and(|ext| ext == "yml" || ext == "yaml")
+            {
                 files.push(path);
             }
         }
@@ -81,15 +84,21 @@ pub fn import_single_case(
         }
     };
 
-    let existing_items = crate::db::item::list_by_collection(conn, &collection_id)
-        .map_err(|e| e.to_string())?;
+    let existing_items =
+        crate::db::item::list_by_collection(conn, &collection_id).map_err(|e| e.to_string())?;
 
     for (idx, scenario) in case.scenarios.iter().enumerate() {
-        let expect_status = scenario.expect.as_ref().and_then(|e| e.status).unwrap_or(200);
+        let expect_status = scenario
+            .expect
+            .as_ref()
+            .and_then(|e| e.status)
+            .unwrap_or(200);
         let is_ws = scenario.protocol.as_deref() == Some("websocket");
 
         let (body_type, body_content) = if is_ws {
-            let payload = scenario.ws_payload.as_ref()
+            let payload = scenario
+                .ws_payload
+                .as_ref()
                 .map(|v| serde_json::to_string_pretty(v).unwrap_or_default())
                 .unwrap_or_default();
             ("json".to_string(), payload)
@@ -110,7 +119,8 @@ pub fn import_single_case(
         match existing {
             Some(item) => {
                 crate::db::item::update(
-                    conn, &item.id,
+                    conn,
+                    &item.id,
                     &crate::models::item::UpdateItemPayload {
                         name: Some(scenario.id.clone()),
                         method: Some("POST".to_string()),
@@ -123,14 +133,23 @@ pub fn import_single_case(
                         protocol: protocol.map(|s| s.to_string()),
                         ..Default::default()
                     },
-                ).map_err(|e| e.to_string())?;
+                )
+                .map_err(|e| e.to_string())?;
                 result.requests_updated += 1;
             }
             None => {
-                let item = crate::db::item::create(conn, &collection_id, None, "request", &scenario.id, "POST")
-                    .map_err(|e| e.to_string())?;
+                let item = crate::db::item::create(
+                    conn,
+                    &collection_id,
+                    None,
+                    "request",
+                    &scenario.id,
+                    "POST",
+                )
+                .map_err(|e| e.to_string())?;
                 crate::db::item::update(
-                    conn, &item.id,
+                    conn,
+                    &item.id,
                     &crate::models::item::UpdateItemPayload {
                         url: Some(item_endpoint.to_string()),
                         headers: Some(headers.clone()),
@@ -141,9 +160,17 @@ pub fn import_single_case(
                         protocol: protocol.map(|s| s.to_string()),
                         ..Default::default()
                     },
-                ).map_err(|e| e.to_string())?;
-                crate::db::assertion::create(conn, &item.id, "status_code", "", "eq", &expect_status.to_string())
-                    .map_err(|e| e.to_string())?;
+                )
+                .map_err(|e| e.to_string())?;
+                crate::db::assertion::create(
+                    conn,
+                    &item.id,
+                    "status_code",
+                    "",
+                    "eq",
+                    &expect_status.to_string(),
+                )
+                .map_err(|e| e.to_string())?;
                 result.requests_created += 1;
             }
         }
@@ -152,7 +179,8 @@ pub fn import_single_case(
             conn.execute(
                 "UPDATE collection_items SET sort_order = ?1 WHERE id = ?2",
                 rusqlite::params![idx as i32, item.id],
-            ).ok();
+            )
+            .ok();
         }
     }
 
@@ -164,7 +192,8 @@ fn find_collection_by_name(conn: &Connection, name: &str) -> Option<String> {
         "SELECT id FROM collections WHERE name = ?1",
         rusqlite::params![name],
         |row| row.get::<_, String>(0),
-    ).ok()
+    )
+    .ok()
 }
 
 fn find_or_create_group(conn: &Connection, name: &str) -> Result<String, String> {
@@ -183,13 +212,19 @@ fn build_body(scenario: &YamlScenario, assets_dir: &Path) -> (String, String) {
     let ct = scenario.content_type.as_deref().unwrap_or("");
 
     if let Some(ref payload) = scenario.payload {
-        return ("json".to_string(), serde_json::to_string_pretty(payload).unwrap_or_default());
+        return (
+            "json".to_string(),
+            serde_json::to_string_pretty(payload).unwrap_or_default(),
+        );
     }
 
     if ct == "form-data" || ct == "application/x-www-form-urlencoded" {
         if let Some(ref fd) = scenario.form_data {
             let kvs = obj_to_kvs(fd);
-            return ("urlencoded".to_string(), serde_json::to_string(&kvs).unwrap_or_default());
+            return (
+                "urlencoded".to_string(),
+                serde_json::to_string(&kvs).unwrap_or_default(),
+            );
         }
     }
 
@@ -201,7 +236,10 @@ fn build_body(scenario: &YamlScenario, assets_dir: &Path) -> (String, String) {
         if let Some(ref files) = scenario.multipart_files {
             if let Some(obj) = files.as_object() {
                 for (field_name, file_info) in obj {
-                    let filename = file_info.get("filename").and_then(|v| v.as_str()).unwrap_or("");
+                    let filename = file_info
+                        .get("filename")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
                     let file_path = assets_dir.join(filename);
                     let path_str = if file_path.exists() {
                         file_path.to_string_lossy().to_string()
@@ -215,13 +253,19 @@ fn build_body(scenario: &YamlScenario, assets_dir: &Path) -> (String, String) {
             }
         }
         if !kvs.is_empty() {
-            return ("form-data".to_string(), serde_json::to_string(&kvs).unwrap_or_default());
+            return (
+                "form-data".to_string(),
+                serde_json::to_string(&kvs).unwrap_or_default(),
+            );
         }
     }
 
     if let Some(ref fd) = scenario.form_data {
         let kvs = obj_to_kvs(fd);
-        return ("urlencoded".to_string(), serde_json::to_string(&kvs).unwrap_or_default());
+        return (
+            "urlencoded".to_string(),
+            serde_json::to_string(&kvs).unwrap_or_default(),
+        );
     }
 
     ("none".to_string(), String::new())
@@ -231,13 +275,15 @@ fn build_body(scenario: &YamlScenario, assets_dir: &Path) -> (String, String) {
 fn obj_to_kvs(val: &serde_json::Value) -> Vec<serde_json::Value> {
     val.as_object()
         .map(|obj| {
-            obj.iter().map(|(k, v)| {
-                serde_json::json!({
-                    "key": k,
-                    "value": v.as_str().unwrap_or(&v.to_string()),
-                    "enabled": true
+            obj.iter()
+                .map(|(k, v)| {
+                    serde_json::json!({
+                        "key": k,
+                        "value": v.as_str().unwrap_or(&v.to_string()),
+                        "enabled": true
+                    })
                 })
-            }).collect()
+                .collect()
         })
         .unwrap_or_default()
 }
@@ -256,5 +302,6 @@ fn build_headers(scenario: &YamlScenario) -> String {
 
     serde_json::to_string(&[serde_json::json!({
         "key": "Content-Type", "value": content_type, "enabled": true
-    })]).unwrap_or_default()
+    })])
+    .unwrap_or_default()
 }

@@ -19,14 +19,20 @@ fn collection_from_row(row: &Row) -> Result<Collection, rusqlite::Error> {
 }
 
 pub fn list_all(conn: &Connection) -> Result<Vec<Collection>, rusqlite::Error> {
-    let mut stmt = conn.prepare(
-        &format!("SELECT {} FROM collections ORDER BY sort_order, created_at DESC", COLLECTION_COLS),
-    )?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {} FROM collections ORDER BY sort_order, created_at DESC",
+        COLLECTION_COLS
+    ))?;
     let rows = stmt.query_map([], collection_from_row)?;
     rows.collect()
 }
 
-pub fn create(conn: &Connection, name: &str, description: &str, group_id: Option<&str>) -> Result<Collection, rusqlite::Error> {
+pub fn create(
+    conn: &Connection,
+    name: &str,
+    description: &str,
+    group_id: Option<&str>,
+) -> Result<Collection, rusqlite::Error> {
     let id = Uuid::new_v4().to_string();
     conn.execute(
         "INSERT INTO collections (id, name, description, group_id) VALUES (?1, ?2, ?3, ?4)",
@@ -68,7 +74,10 @@ pub fn delete(conn: &Connection, id: &str) -> Result<(), rusqlite::Error> {
 }
 
 /// 构建集合树（从 collection_items 读取）
-pub fn get_tree(conn: &Connection, collection_id: &str) -> Result<CollectionTreeNode, rusqlite::Error> {
+pub fn get_tree(
+    conn: &Connection,
+    collection_id: &str,
+) -> Result<CollectionTreeNode, rusqlite::Error> {
     let collection = get(conn, collection_id)?;
     let items = crate::db::item::list_summary_by_collection(conn, collection_id)?;
 
@@ -76,7 +85,10 @@ pub fn get_tree(conn: &Connection, collection_id: &str) -> Result<CollectionTree
     let mut children_map: std::collections::HashMap<Option<String>, Vec<&CollectionItem>> =
         std::collections::HashMap::new();
     for item in &items {
-        children_map.entry(item.parent_id.clone()).or_default().push(item);
+        children_map
+            .entry(item.parent_id.clone())
+            .or_default()
+            .push(item);
     }
 
     fn build_children(
@@ -100,14 +112,30 @@ pub fn get_tree(conn: &Connection, collection_id: &str) -> Result<CollectionTree
                     id: item.id.clone(),
                     name: item.name.clone(),
                     node_type,
-                    method: if is_container { None } else { Some(item.method.clone()) },
-                    expect_status: if is_container { None } else { Some(item.expect_status) },
-                    children: if is_container { build_children(Some(&item.id), children_map) } else { vec![] },
+                    method: if is_container {
+                        None
+                    } else {
+                        Some(item.method.clone())
+                    },
+                    expect_status: if is_container {
+                        None
+                    } else {
+                        Some(item.expect_status)
+                    },
+                    children: if is_container {
+                        build_children(Some(&item.id), children_map)
+                    } else {
+                        vec![]
+                    },
                 }
             })
             .collect();
         nodes.sort_by_key(|n| {
-            children.iter().find(|i| i.id == n.id).map(|i| i.sort_order).unwrap_or(0)
+            children
+                .iter()
+                .find(|i| i.id == n.id)
+                .map(|i| i.sort_order)
+                .unwrap_or(0)
         });
         nodes
     }

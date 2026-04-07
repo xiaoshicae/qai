@@ -200,7 +200,8 @@ fn migrate_if_needed(conn: &Connection) -> Result<(), rusqlite::Error> {
     }
 
     // 1. 从旧 collections.category 创建 groups
-    let mut stmt = conn.prepare("SELECT DISTINCT category FROM collections WHERE category != ''")?;
+    let mut stmt =
+        conn.prepare("SELECT DISTINCT category FROM collections WHERE category != ''")?;
     let categories: Vec<String> = stmt
         .query_map([], |row| row.get::<_, String>(0))?
         .filter_map(|r| r.ok())
@@ -238,7 +239,11 @@ fn migrate_if_needed(conn: &Connection) -> Result<(), rusqlite::Error> {
 
     // 5. 迁移 assertions（request_id → item_id）
     let has_old_assertions: bool = conn
-        .query_row("SELECT count(*) FROM pragma_table_info('assertions') WHERE name='request_id'", [], |row| row.get::<_, i32>(0))
+        .query_row(
+            "SELECT count(*) FROM pragma_table_info('assertions') WHERE name='request_id'",
+            [],
+            |row| row.get::<_, i32>(0),
+        )
         .map(|c| c > 0)
         .unwrap_or(false);
 
@@ -253,7 +258,11 @@ fn migrate_if_needed(conn: &Connection) -> Result<(), rusqlite::Error> {
 
     // 6. 迁移 executions（request_id → item_id）
     let has_old_executions: bool = conn
-        .query_row("SELECT count(*) FROM pragma_table_info('executions') WHERE name='request_id'", [], |row| row.get::<_, i32>(0))
+        .query_row(
+            "SELECT count(*) FROM pragma_table_info('executions') WHERE name='request_id'",
+            [],
+            |row| row.get::<_, i32>(0),
+        )
         .map(|c| c > 0)
         .unwrap_or(false);
 
@@ -278,19 +287,19 @@ fn migrate_if_needed(conn: &Connection) -> Result<(), rusqlite::Error> {
     if has_old_executions {
         conn.execute_batch(
             "DROP TABLE IF EXISTS executions;
-             ALTER TABLE executions_new RENAME TO executions;"
+             ALTER TABLE executions_new RENAME TO executions;",
         )?;
     }
     conn.execute_batch(
         "DROP TABLE IF EXISTS requests;
-         DROP TABLE IF EXISTS folders;"
+         DROP TABLE IF EXISTS folders;",
     )?;
 
     // 8. 重建索引
     let _ = conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_executions_item ON executions(item_id);
          CREATE INDEX IF NOT EXISTS idx_executions_batch ON executions(batch_id);
-         CREATE INDEX IF NOT EXISTS idx_executions_collection ON executions(collection_id);"
+         CREATE INDEX IF NOT EXISTS idx_executions_collection ON executions(collection_id);",
     );
 
     // 9. 清理旧 collections 列（SQLite 不能 DROP COLUMN，但新数据不再使用这些字段）
@@ -305,9 +314,8 @@ fn migrate_if_needed(conn: &Connection) -> Result<(), rusqlite::Error> {
 
 /// 增量列迁移：新增字段时在此添加 ALTER TABLE，已存在的列会被忽略
 pub fn migrate_add_columns(conn: &Connection) -> Result<(), rusqlite::Error> {
-    let alterations = [
-        "ALTER TABLE collection_items ADD COLUMN protocol TEXT NOT NULL DEFAULT 'http'",
-    ];
+    let alterations =
+        ["ALTER TABLE collection_items ADD COLUMN protocol TEXT NOT NULL DEFAULT 'http'"];
     for sql in &alterations {
         let _ = conn.execute(sql, []);
     }

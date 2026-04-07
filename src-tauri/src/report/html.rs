@@ -20,19 +20,28 @@ pub fn generate_html_report(result: &BatchResult) -> String {
             _ => "ERROR",
         };
         let time = r.response.as_ref().map(|resp| resp.time_ms).unwrap_or(0);
-        let status_code = r.response.as_ref().map(|resp| resp.status.to_string()).unwrap_or_else(|| "-".to_string());
+        let status_code = r
+            .response
+            .as_ref()
+            .map(|resp| resp.status.to_string())
+            .unwrap_or_else(|| "-".to_string());
         let error_msg = r.error_message.as_deref().unwrap_or("");
 
-        let assertion_details: String = r.assertion_results.iter().map(|a| {
-            let icon = if a.passed { "&#10004;" } else { "&#10008;" };
-            let cls = if a.passed { "pass" } else { "fail" };
-            format!(
-                "<div class=\"assertion {cls}\"><span>{icon}</span> {msg}</div>",
-                cls = cls,
-                icon = icon,
-                msg = html_escape(&a.message),
-            )
-        }).collect::<Vec<_>>().join("\n");
+        let assertion_details: String = r
+            .assertion_results
+            .iter()
+            .map(|a| {
+                let icon = if a.passed { "&#10004;" } else { "&#10008;" };
+                let cls = if a.passed { "pass" } else { "fail" };
+                format!(
+                    "<div class=\"assertion {cls}\"><span>{icon}</span> {msg}</div>",
+                    cls = cls,
+                    icon = icon,
+                    msg = html_escape(&a.message),
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
 
         rows.push_str(&format!(
             r#"<tr class="{status_class}">
@@ -50,7 +59,11 @@ pub fn generate_html_report(result: &BatchResult) -> String {
             status_label = status_label,
             time = time,
             assertions = assertion_details,
-            error = if error_msg.is_empty() { String::new() } else { format!("<div class=\"error-msg\">{}</div>", html_escape(error_msg)) },
+            error = if error_msg.is_empty() {
+                String::new()
+            } else {
+                format!("<div class=\"error-msg\">{}</div>", html_escape(error_msg))
+            },
         ));
     }
 
@@ -153,7 +166,10 @@ mod tests {
 
     #[test]
     fn test_html_escape_combined() {
-        assert_eq!(html_escape(r#"<a href="x">&"#), "&lt;a href=&quot;x&quot;&gt;&amp;");
+        assert_eq!(
+            html_escape(r#"<a href="x">&"#),
+            "&lt;a href=&quot;x&quot;&gt;&amp;"
+        );
     }
 
     fn make_exec_result(status: &str, resp_status: u16, time_ms: u64) -> ExecutionResult {
@@ -181,8 +197,12 @@ mod tests {
     fn test_report_empty_results() {
         let batch = BatchResult {
             batch_id: "b1".into(),
-            total: 0, passed: 0, failed: 0, errors: 0,
-            total_time_ms: 0, results: vec![],
+            total: 0,
+            passed: 0,
+            failed: 0,
+            errors: 0,
+            total_time_ms: 0,
+            results: vec![],
         };
         let html = generate_html_report(&batch);
         assert!(html.contains("0.0%"));
@@ -193,7 +213,10 @@ mod tests {
     fn test_report_all_pass() {
         let batch = BatchResult {
             batch_id: "b1".into(),
-            total: 2, passed: 2, failed: 0, errors: 0,
+            total: 2,
+            passed: 2,
+            failed: 0,
+            errors: 0,
             total_time_ms: 100,
             results: vec![
                 make_exec_result("success", 200, 50),
@@ -208,7 +231,10 @@ mod tests {
     fn test_report_mixed_results() {
         let batch = BatchResult {
             batch_id: "b1".into(),
-            total: 3, passed: 2, failed: 1, errors: 0,
+            total: 3,
+            passed: 2,
+            failed: 1,
+            errors: 0,
             total_time_ms: 150,
             results: vec![
                 make_exec_result("success", 200, 50),
@@ -224,7 +250,10 @@ mod tests {
     fn test_report_contains_structure() {
         let batch = BatchResult {
             batch_id: "b1".into(),
-            total: 1, passed: 1, failed: 0, errors: 0,
+            total: 1,
+            passed: 1,
+            failed: 0,
+            errors: 0,
             total_time_ms: 50,
             results: vec![make_exec_result("success", 200, 50)],
         };
@@ -241,7 +270,10 @@ mod tests {
         result.error_message = Some("<script>alert('xss')</script>".into());
         let batch = BatchResult {
             batch_id: "b1".into(),
-            total: 1, passed: 0, failed: 0, errors: 1,
+            total: 1,
+            passed: 0,
+            failed: 0,
+            errors: 1,
             total_time_ms: 0,
             results: vec![result],
         };
@@ -269,7 +301,10 @@ mod tests {
         ];
         let batch = BatchResult {
             batch_id: "b1".into(),
-            total: 1, passed: 0, failed: 1, errors: 0,
+            total: 1,
+            passed: 0,
+            failed: 1,
+            errors: 0,
             total_time_ms: 50,
             results: vec![result],
         };

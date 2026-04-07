@@ -17,8 +17,16 @@ pub fn import(
 ) -> Result<PostmanImportResult, String> {
     let root: Value = serde_json::from_str(json).map_err(|e| format!("JSON 解析失败: {e}"))?;
     let info = root.get("info").ok_or("缺少 Postman info 字段")?;
-    let name = info.get("name").and_then(|v| v.as_str()).unwrap_or("Imported").to_string();
-    let items = root.get("item").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let name = info
+        .get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Imported")
+        .to_string();
+    let items = root
+        .get("item")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
 
     let col = crate::db::collection::create(conn, &name, "Imported from Postman", group_id)
         .map_err(|e| e.to_string())?;
@@ -44,15 +52,41 @@ fn import_items(
     folders: &mut u32,
 ) -> Result<(), String> {
     for item in items {
-        let item_name = item.get("name").and_then(|v| v.as_str()).unwrap_or("Untitled").to_string();
-        let has_children = item.get("item").and_then(|v| v.as_array()).map(|a| !a.is_empty()).unwrap_or(false);
+        let item_name = item
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Untitled")
+            .to_string();
+        let has_children = item
+            .get("item")
+            .and_then(|v| v.as_array())
+            .map(|a| !a.is_empty())
+            .unwrap_or(false);
 
         if has_children {
-            let folder = crate::db::item::create(conn, collection_id, parent_id, "folder", &item_name, "GET")
-                .map_err(|e| e.to_string())?;
+            let folder = crate::db::item::create(
+                conn,
+                collection_id,
+                parent_id,
+                "folder",
+                &item_name,
+                "GET",
+            )
+            .map_err(|e| e.to_string())?;
             *folders += 1;
-            let children = item.get("item").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-            import_items(conn, collection_id, Some(&folder.id), &children, requests, folders)?;
+            let children = item
+                .get("item")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            import_items(
+                conn,
+                collection_id,
+                Some(&folder.id),
+                &children,
+                requests,
+                folders,
+            )?;
         } else if let Some(req) = item.get("request") {
             import_request(conn, collection_id, parent_id, &item_name, req, requests)?;
         }
@@ -68,13 +102,22 @@ fn import_request(
     request: &Value,
     requests: &mut u32,
 ) -> Result<(), String> {
-    let method = request.get("method").and_then(|v| v.as_str()).unwrap_or("GET").to_uppercase();
+    let method = request
+        .get("method")
+        .and_then(|v| v.as_str())
+        .unwrap_or("GET")
+        .to_uppercase();
     let url_raw = url_string(request.get("url"));
     let headers_kv = parse_headers(request.get("header"));
     let (body_type, body_content) = parse_body(request.get("body"));
-    let desc = request.get("description").and_then(|v| {
-        v.as_str().map(String::from).or_else(|| v.get("content").and_then(|c| c.as_str()).map(String::from))
-    }).unwrap_or_default();
+    let desc = request
+        .get("description")
+        .and_then(|v| {
+            v.as_str()
+                .map(String::from)
+                .or_else(|| v.get("content").and_then(|c| c.as_str()).map(String::from))
+        })
+        .unwrap_or_default();
 
     let created = crate::db::item::create(conn, collection_id, parent_id, "request", name, &method)
         .map_err(|e| e.to_string())?;
@@ -97,30 +140,45 @@ fn import_request(
 
 fn url_string(url: Option<&Value>) -> String {
     let Some(u) = url else { return String::new() };
-    if let Some(s) = u.as_str() { return s.to_string() }
-    u.get("raw").and_then(|v| v.as_str()).map(String::from).unwrap_or_default()
+    if let Some(s) = u.as_str() {
+        return s.to_string();
+    }
+    u.get("raw")
+        .and_then(|v| v.as_str())
+        .map(String::from)
+        .unwrap_or_default()
 }
 
 fn parse_headers(header: Option<&Value>) -> Vec<Value> {
-    let Some(h) = header.and_then(|x| x.as_array()) else { return Vec::new() };
-    h.iter().map(|x| {
-        let key = x.get("key").and_then(|v| v.as_str()).unwrap_or("");
-        let val = x.get("value").and_then(|v| v.as_str()).unwrap_or("");
-        let disabled = x.get("disabled").and_then(|v| v.as_bool()).unwrap_or(false);
-        serde_json::json!({"key": key, "value": val, "enabled": !disabled})
-    }).collect()
+    let Some(h) = header.and_then(|x| x.as_array()) else {
+        return Vec::new();
+    };
+    h.iter()
+        .map(|x| {
+            let key = x.get("key").and_then(|v| v.as_str()).unwrap_or("");
+            let val = x.get("value").and_then(|v| v.as_str()).unwrap_or("");
+            let disabled = x.get("disabled").and_then(|v| v.as_bool()).unwrap_or(false);
+            serde_json::json!({"key": key, "value": val, "enabled": !disabled})
+        })
+        .collect()
 }
 
 fn parse_query_params(url: Option<&Value>) -> Vec<Value> {
-    let Some(q) = url.and_then(|x| x.as_object()).and_then(|u| u.get("query")).and_then(|x| x.as_array()) else {
+    let Some(q) = url
+        .and_then(|x| x.as_object())
+        .and_then(|u| u.get("query"))
+        .and_then(|x| x.as_array())
+    else {
         return Vec::new();
     };
-    q.iter().map(|x| {
-        let key = x.get("key").and_then(|v| v.as_str()).unwrap_or("");
-        let val = x.get("value").and_then(|v| v.as_str()).unwrap_or("");
-        let disabled = x.get("disabled").and_then(|v| v.as_bool()).unwrap_or(false);
-        serde_json::json!({"key": key, "value": val, "enabled": !disabled})
-    }).collect()
+    q.iter()
+        .map(|x| {
+            let key = x.get("key").and_then(|v| v.as_str()).unwrap_or("");
+            let val = x.get("value").and_then(|v| v.as_str()).unwrap_or("");
+            let disabled = x.get("disabled").and_then(|v| v.as_bool()).unwrap_or(false);
+            serde_json::json!({"key": key, "value": val, "enabled": !disabled})
+        })
+        .collect()
 }
 
 fn parse_body(body: Option<&Value>) -> (String, String) {
@@ -131,13 +189,28 @@ fn parse_body(body: Option<&Value>) -> (String, String) {
     match mode {
         "raw" => {
             let raw = b.get("raw").and_then(|v| v.as_str()).unwrap_or("");
-            let lang = b.get("options").and_then(|o| o.get("raw")).and_then(|o| o.get("language")).and_then(|v| v.as_str()).unwrap_or("");
-            let bt = if lang == "json" || raw.trim_start().starts_with('{') || raw.trim_start().starts_with('[') { "json" } else { "raw" };
+            let lang = b
+                .get("options")
+                .and_then(|o| o.get("raw"))
+                .and_then(|o| o.get("language"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let bt = if lang == "json"
+                || raw.trim_start().starts_with('{')
+                || raw.trim_start().starts_with('[')
+            {
+                "json"
+            } else {
+                "raw"
+            };
             (bt.to_string(), raw.to_string())
         }
         "urlencoded" => {
             let kvs = parse_kv_array(b.get("urlencoded"));
-            ("urlencoded".to_string(), serde_json::to_string(&kvs).unwrap_or_else(|_| "[]".into()))
+            (
+                "urlencoded".to_string(),
+                serde_json::to_string(&kvs).unwrap_or_else(|_| "[]".into()),
+            )
         }
         "formdata" => {
             let mut kvs: Vec<Value> = Vec::new();
@@ -147,14 +220,18 @@ fn parse_body(body: Option<&Value>) -> (String, String) {
                     let typ = p.get("type").and_then(|v| v.as_str()).unwrap_or("text");
                     let val = p.get("value").and_then(|v| v.as_str()).unwrap_or("");
                     let disabled = p.get("disabled").and_then(|v| v.as_bool()).unwrap_or(false);
-                    let mut kv = serde_json::json!({"key": key, "value": val, "enabled": !disabled});
+                    let mut kv =
+                        serde_json::json!({"key": key, "value": val, "enabled": !disabled});
                     if typ == "file" {
                         kv["fieldType"] = serde_json::json!("file");
                     }
                     kvs.push(kv);
                 }
             }
-            ("form-data".to_string(), serde_json::to_string(&kvs).unwrap_or_else(|_| "[]".into()))
+            (
+                "form-data".to_string(),
+                serde_json::to_string(&kvs).unwrap_or_else(|_| "[]".into()),
+            )
         }
         _ => ("none".to_string(), String::new()),
     }
@@ -162,13 +239,18 @@ fn parse_body(body: Option<&Value>) -> (String, String) {
 
 /// 解析 Postman [{key, value, disabled}] 数组为内部 [{key, value, enabled}]
 fn parse_kv_array(arr: Option<&Value>) -> Vec<Value> {
-    let Some(params) = arr.and_then(|x| x.as_array()) else { return Vec::new() };
-    params.iter().map(|p| {
-        let key = p.get("key").and_then(|v| v.as_str()).unwrap_or("");
-        let val = p.get("value").and_then(|v| v.as_str()).unwrap_or("");
-        let disabled = p.get("disabled").and_then(|v| v.as_bool()).unwrap_or(false);
-        serde_json::json!({"key": key, "value": val, "enabled": !disabled})
-    }).collect()
+    let Some(params) = arr.and_then(|x| x.as_array()) else {
+        return Vec::new();
+    };
+    params
+        .iter()
+        .map(|p| {
+            let key = p.get("key").and_then(|v| v.as_str()).unwrap_or("");
+            let val = p.get("value").and_then(|v| v.as_str()).unwrap_or("");
+            let disabled = p.get("disabled").and_then(|v| v.as_bool()).unwrap_or(false);
+            serde_json::json!({"key": key, "value": val, "enabled": !disabled})
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -207,7 +289,8 @@ mod tests {
 
     #[test]
     fn test_parse_body_raw_json() {
-        let body = json!({"mode": "raw", "raw": "{\"a\":1}", "options": {"raw": {"language": "json"}}});
+        let body =
+            json!({"mode": "raw", "raw": "{\"a\":1}", "options": {"raw": {"language": "json"}}});
         let (bt, content) = parse_body(Some(&body));
         assert_eq!(bt, "json");
         assert_eq!(content, "{\"a\":1}");

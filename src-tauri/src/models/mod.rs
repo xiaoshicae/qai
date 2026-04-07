@@ -1,9 +1,9 @@
-pub mod group;
-pub mod collection;
-pub mod item;
 pub mod assertion;
-pub mod execution;
+pub mod collection;
 pub mod environment;
+pub mod execution;
+pub mod group;
+pub mod item;
 
 /// 执行状态枚举 — 编译期检查，杜绝拼写错误
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

@@ -28,9 +28,15 @@ fn evaluate_status_code(assertion: &Assertion, response: &HttpResponse) -> Asser
         passed,
         actual: actual.clone(),
         message: if passed {
-            format!("状态码 {} {} {}", actual, &assertion.operator, &assertion.expected)
+            format!(
+                "状态码 {} {} {}",
+                actual, &assertion.operator, &assertion.expected
+            )
         } else {
-            format!("状态码 {} 不满足 {} {}", actual, &assertion.operator, &assertion.expected)
+            format!(
+                "状态码 {} 不满足 {} {}",
+                actual, &assertion.operator, &assertion.expected
+            )
         },
     }
 }
@@ -58,9 +64,15 @@ fn evaluate_json_path(assertion: &Assertion, response: &HttpResponse) -> Asserti
                 passed,
                 actual: actual_str.clone(),
                 message: if passed {
-                    format!("{} = {} {} {}", &assertion.expression, actual_str, &assertion.operator, &assertion.expected)
+                    format!(
+                        "{} = {} {} {}",
+                        &assertion.expression, actual_str, &assertion.operator, &assertion.expected
+                    )
                 } else {
-                    format!("{} = {}，不满足 {} {}", &assertion.expression, actual_str, &assertion.operator, &assertion.expected)
+                    format!(
+                        "{} = {}，不满足 {} {}",
+                        &assertion.expression, actual_str, &assertion.operator, &assertion.expected
+                    )
                 },
             }
         }
@@ -91,9 +103,25 @@ fn evaluate_body_contains(assertion: &Assertion, response: &HttpResponse) -> Ass
         passed,
         actual: truncate_str(&response.body, 100),
         message: if passed {
-            format!("响应体{}包含 \"{}\"", if assertion.operator == "not_contains" { "不" } else { "" }, &assertion.expected)
+            format!(
+                "响应体{}包含 \"{}\"",
+                if assertion.operator == "not_contains" {
+                    "不"
+                } else {
+                    ""
+                },
+                &assertion.expected
+            )
         } else {
-            format!("响应体{}包含 \"{}\"", if assertion.operator == "not_contains" { "" } else { "不" }, &assertion.expected)
+            format!(
+                "响应体{}包含 \"{}\"",
+                if assertion.operator == "not_contains" {
+                    ""
+                } else {
+                    "不"
+                },
+                &assertion.expected
+            )
         },
     }
 }
@@ -106,9 +134,15 @@ fn evaluate_response_time(assertion: &Assertion, response: &HttpResponse) -> Ass
         passed,
         actual: format!("{}ms", actual),
         message: if passed {
-            format!("响应时间 {}ms {} {}ms", actual, &assertion.operator, &assertion.expected)
+            format!(
+                "响应时间 {}ms {} {}ms",
+                actual, &assertion.operator, &assertion.expected
+            )
         } else {
-            format!("响应时间 {}ms 不满足 {} {}ms", actual, &assertion.operator, &assertion.expected)
+            format!(
+                "响应时间 {}ms 不满足 {} {}ms",
+                actual, &assertion.operator, &assertion.expected
+            )
         },
     }
 }
@@ -128,9 +162,15 @@ fn evaluate_header_contains(assertion: &Assertion, response: &HttpResponse) -> A
                 passed,
                 actual: val.clone(),
                 message: if passed {
-                    format!("Header {} = {} {} {}", &assertion.expression, val, &assertion.operator, &assertion.expected)
+                    format!(
+                        "Header {} = {} {} {}",
+                        &assertion.expression, val, &assertion.operator, &assertion.expected
+                    )
                 } else {
-                    format!("Header {} = {}，不满足 {} {}", &assertion.expression, val, &assertion.operator, &assertion.expected)
+                    format!(
+                        "Header {} = {}，不满足 {} {}",
+                        &assertion.expression, val, &assertion.operator, &assertion.expected
+                    )
                 },
             }
         }

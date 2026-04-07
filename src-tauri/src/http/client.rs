@@ -1,5 +1,5 @@
-use std::time::Instant;
 use base64::Engine;
+use std::time::Instant;
 use uuid::Uuid;
 
 use crate::models::execution::{Execution, ExecutionResult};
@@ -11,27 +11,41 @@ const MAX_RESPONSE_SIZE: usize = 10 * 1024 * 1024;
 const MAX_STREAM_BODY_SIZE: usize = 10 * 1024 * 1024;
 
 /// 检查 Content-Length 是否超限
-fn check_content_length(headers: &reqwest::header::HeaderMap, max: usize) -> Result<(), anyhow::Error> {
-    if let Some(len) = headers.get("content-length")
+fn check_content_length(
+    headers: &reqwest::header::HeaderMap,
+    max: usize,
+) -> Result<(), anyhow::Error> {
+    if let Some(len) = headers
+        .get("content-length")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.parse::<usize>().ok())
     {
         if len > max {
-            return Err(anyhow::anyhow!("响应体过大 ({}MB)，已超过 {}MB 限制", len / 1024 / 1024, max / 1024 / 1024));
+            return Err(anyhow::anyhow!(
+                "响应体过大 ({}MB)，已超过 {}MB 限制",
+                len / 1024 / 1024,
+                max / 1024 / 1024
+            ));
         }
     }
     Ok(())
 }
 
 /// 流式读取响应体并累计检查大小，防止无 Content-Length 时 OOM
-async fn read_body_with_limit(resp: reqwest::Response, max: usize) -> Result<Vec<u8>, anyhow::Error> {
+async fn read_body_with_limit(
+    resp: reqwest::Response,
+    max: usize,
+) -> Result<Vec<u8>, anyhow::Error> {
     use futures_util::StreamExt;
     let mut stream = resp.bytes_stream();
     let mut buf: Vec<u8> = Vec::new();
     while let Some(chunk) = stream.next().await {
         let chunk = chunk?;
         if buf.len() + chunk.len() > max {
-            return Err(anyhow::anyhow!("响应体过大，已超过 {}MB 限制", max / 1024 / 1024));
+            return Err(anyhow::anyhow!(
+                "响应体过大，已超过 {}MB 限制",
+                max / 1024 / 1024
+            ));
         }
         buf.extend_from_slice(&chunk);
     }
@@ -45,9 +59,11 @@ fn is_streaming_response(headers: &reqwest::header::HeaderMap) -> bool {
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
     ct.contains("text/event-stream")
-        || (ct.contains("text/plain") && headers.get("transfer-encoding")
-            .and_then(|v| v.to_str().ok())
-            .map_or(false, |v| v.contains("chunked")))
+        || (ct.contains("text/plain")
+            && headers
+                .get("transfer-encoding")
+                .and_then(|v| v.to_str().ok())
+                .map_or(false, |v| v.contains("chunked")))
 }
 
 /// 智能执行：自动检测响应类型，流式响应通过回调逐块推送
@@ -62,9 +78,15 @@ pub async fn execute_smart(
     let resp = builder.send().await?;
 
     let status = resp.status().as_u16();
-    log::info!("[response] {} {} status={} content-type={:?}",
-        item.method, item.url, status,
-        resp.headers().get("content-type").and_then(|v| v.to_str().ok()));
+    log::info!(
+        "[response] {} {} status={} content-type={:?}",
+        item.method,
+        item.url,
+        status,
+        resp.headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+    );
     let status_text = resp.status().canonical_reason().unwrap_or("").to_string();
     let resp_headers = super::response::extract_headers(resp.headers());
 
@@ -101,35 +123,61 @@ pub async fn execute_smart(
                 let line = buf[..pos].to_string();
                 buf = buf[pos + 1..].to_string();
                 let trimmed = line.trim();
-                if trimmed.is_empty() || trimmed.starts_with(':') { continue; }
+                if trimmed.is_empty() || trimmed.starts_with(':') {
+                    continue;
+                }
 
                 // 检查累积大小限制
                 if full_body.len() + trimmed.len() > MAX_STREAM_BODY_SIZE {
-                    log::warn!("流式响应体超过大小限制 ({}MB)，已截断", MAX_STREAM_BODY_SIZE / 1024 / 1024);
-                    return Err(anyhow::anyhow!("响应体过大，已超过 {}MB 限制", MAX_STREAM_BODY_SIZE / 1024 / 1024));
+                    log::warn!(
+                        "流式响应体超过大小限制 ({}MB)，已截断",
+                        MAX_STREAM_BODY_SIZE / 1024 / 1024
+                    );
+                    return Err(anyhow::anyhow!(
+                        "响应体过大，已超过 {}MB 限制",
+                        MAX_STREAM_BODY_SIZE / 1024 / 1024
+                    ));
                 }
 
                 if let Some(data) = trimmed.strip_prefix("data:") {
                     let data = data.trim();
                     if data == "[DONE]" {
-                        on_chunk(super::stream::StreamChunk { item_id: stream_item_id.clone(), chunk: "[DONE]".to_string(), chunk_index, done: true });
+                        on_chunk(super::stream::StreamChunk {
+                            item_id: stream_item_id.clone(),
+                            chunk: "[DONE]".to_string(),
+                            chunk_index,
+                            done: true,
+                        });
                     } else {
                         full_body.push_str(data);
                         full_body.push('\n');
-                        on_chunk(super::stream::StreamChunk { item_id: stream_item_id.clone(), chunk: data.to_string(), chunk_index, done: false });
+                        on_chunk(super::stream::StreamChunk {
+                            item_id: stream_item_id.clone(),
+                            chunk: data.to_string(),
+                            chunk_index,
+                            done: false,
+                        });
                     }
                 } else {
                     full_body.push_str(trimmed);
                     full_body.push('\n');
-                    on_chunk(super::stream::StreamChunk { item_id: stream_item_id.clone(), chunk: trimmed.to_string(), chunk_index, done: false });
+                    on_chunk(super::stream::StreamChunk {
+                        item_id: stream_item_id.clone(),
+                        chunk: trimmed.to_string(),
+                        chunk_index,
+                        done: false,
+                    });
                 }
                 chunk_index += 1;
             }
         }
         if !buf.trim().is_empty() {
             let trimmed = buf.trim();
-            if let Some(data) = trimmed.strip_prefix("data:") { full_body.push_str(data.trim()); }
-            else { full_body.push_str(trimmed); }
+            if let Some(data) = trimmed.strip_prefix("data:") {
+                full_body.push_str(data.trim());
+            } else {
+                full_body.push_str(trimmed);
+            }
         }
         let size = full_body.len() as u64;
         (full_body, size)
@@ -177,18 +225,28 @@ pub async fn execute_smart(
 }
 
 /// 普通执行（向后兼容）
-pub async fn execute(client: &reqwest::Client, item: &CollectionItem) -> Result<ExecutionResult, anyhow::Error> {
+pub async fn execute(
+    client: &reqwest::Client,
+    item: &CollectionItem,
+) -> Result<ExecutionResult, anyhow::Error> {
     execute_smart(client, item, None).await
 }
 
 /// Dry-run 模拟执行：不发真实请求，返回 mock 响应，带伪随机延迟模拟网络耗时
 pub async fn mock_execute(item: &CollectionItem) -> ExecutionResult {
     // 用 item id 的哈希生成 50~300ms 的伪随机延迟
-    let hash: u64 = item.id.bytes().fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64));
+    let hash: u64 = item
+        .id
+        .bytes()
+        .fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64));
     let delay_ms = 50 + (hash % 250);
     tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
 
-    let status = if item.expect_status > 0 { item.expect_status as u16 } else { 200 };
+    let status = if item.expect_status > 0 {
+        item.expect_status as u16
+    } else {
+        200
+    };
     let body = r#"{"dry_run":true}"#.to_string();
     let is_success = super::response::is_success_status(status, item.expect_status);
 
@@ -286,7 +344,12 @@ mod tests {
             response: Some(HttpResponse {
                 status: 200,
                 status_text: "OK".into(),
-                headers: vec![KeyValuePair { key: "content-type".into(), value: "application/json".into(), enabled: true, field_type: String::new() }],
+                headers: vec![KeyValuePair {
+                    key: "content-type".into(),
+                    value: "application/json".into(),
+                    enabled: true,
+                    field_type: String::new(),
+                }],
                 body: r#"{"ok":true}"#.into(),
                 time_ms: 150,
                 size_bytes: 11,

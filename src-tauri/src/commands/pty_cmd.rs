@@ -1,5 +1,5 @@
-use tauri::{AppHandle, Manager, State};
 use crate::pty::PtyState;
+use tauri::{AppHandle, Manager, State};
 
 #[tauri::command]
 pub fn pty_spawn(
@@ -54,14 +54,20 @@ pub fn prepare_mcp_config(app: AppHandle) -> Result<String, String> {
 /// 查找 qai-mcp 二进制路径
 /// 依次检查：exe 同目录 → resource 目录 → 常见路径
 fn find_mcp_binary(app: &AppHandle) -> Result<std::path::PathBuf, String> {
-    let suffix = if cfg!(target_os = "windows") { ".exe" } else { "" };
+    let suffix = if cfg!(target_os = "windows") {
+        ".exe"
+    } else {
+        ""
+    };
     let bin_name = format!("qai-mcp{suffix}");
 
     // 1. exe 同目录（开发模式 target/debug，生产模式 app bundle 内）
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             let path = dir.join(&bin_name);
-            if path.exists() { return Ok(path); }
+            if path.exists() {
+                return Ok(path);
+            }
         }
     }
 
@@ -69,9 +75,13 @@ fn find_mcp_binary(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     if let Ok(dir) = app.path().resource_dir() {
         for sub in &["", "binaries"] {
             let path = dir.join(sub).join(&bin_name);
-            if path.exists() { return Ok(path); }
+            if path.exists() {
+                return Ok(path);
+            }
         }
     }
 
-    Err(format!("{bin_name} not found. Ensure qai-mcp is built: cargo build --bin qai-mcp"))
+    Err(format!(
+        "{bin_name} not found. Ensure qai-mcp is built: cargo build --bin qai-mcp"
+    ))
 }

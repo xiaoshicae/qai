@@ -28,8 +28,15 @@ pub fn create_assertion(
     expected: String,
 ) -> Result<Assertion, String> {
     let conn = db.conn()?;
-    crate::db::assertion::create(&conn, &item_id, &assertion_type, &expression, &operator, &expected)
-        .map_err(|e| e.to_string())
+    crate::db::assertion::create(
+        &conn,
+        &item_id,
+        &assertion_type,
+        &expression,
+        &operator,
+        &expected,
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

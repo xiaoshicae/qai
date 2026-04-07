@@ -1,5 +1,5 @@
-use std::time::Instant;
 use futures_util::{SinkExt, StreamExt};
+use std::time::Instant;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use uuid::Uuid;
 
@@ -9,7 +9,8 @@ use crate::models::Status;
 
 /// 将 http(s) URL 转换为 ws(s) URL
 fn to_ws_url(url: &str) -> String {
-    url.replace("https://", "wss://").replace("http://", "ws://")
+    url.replace("https://", "wss://")
+        .replace("http://", "ws://")
 }
 
 /// 从 headers 中提取 Bearer token
@@ -61,10 +62,32 @@ fn is_multi_step_body(body_content: &str) -> bool {
 
 /// 检查 JSON 消息是否为完成信号
 fn is_done_signal(json: &serde_json::Value) -> bool {
-    let msg_type = json.get("type").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
-    let msg_status = json.get("status").and_then(|v| v.as_str()).unwrap_or("").to_lowercase();
-    let done_types = ["complete", "completed", "done", "finished", "end", "billing"];
-    let done_statuses = ["complete", "completed", "done", "success", "succeeded", "finished"];
+    let msg_type = json
+        .get("type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_lowercase();
+    let msg_status = json
+        .get("status")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_lowercase();
+    let done_types = [
+        "complete",
+        "completed",
+        "done",
+        "finished",
+        "end",
+        "billing",
+    ];
+    let done_statuses = [
+        "complete",
+        "completed",
+        "done",
+        "success",
+        "succeeded",
+        "finished",
+    ];
     done_types.contains(&msg_type.as_str()) || done_statuses.contains(&msg_status.as_str())
 }
 
@@ -169,7 +192,11 @@ where
 
     let expected = item.expect_status;
     let result_status = if expected > 0 {
-        if status_code == expected { Status::Success } else { Status::Failed }
+        if status_code == expected {
+            Status::Success
+        } else {
+            Status::Failed
+        }
     } else if is_success {
         Status::Success
     } else {
@@ -185,11 +212,30 @@ where
         status: result_status.as_str().to_string(),
         response: Some(HttpResponse {
             status: status_code,
-            status_text: if is_success { "OK".into() } else { "Failed".into() },
+            status_text: if is_success {
+                "OK".into()
+            } else {
+                "Failed".into()
+            },
             headers: vec![
-                KeyValuePair { key: "x-ws-binary-bytes".into(), value: total_binary.to_string(), enabled: true, field_type: String::new() },
-                KeyValuePair { key: "x-ws-text-messages".into(), value: total_text.to_string(), enabled: true, field_type: String::new() },
-                KeyValuePair { key: "x-ws-steps".into(), value: total.to_string(), enabled: true, field_type: String::new() },
+                KeyValuePair {
+                    key: "x-ws-binary-bytes".into(),
+                    value: total_binary.to_string(),
+                    enabled: true,
+                    field_type: String::new(),
+                },
+                KeyValuePair {
+                    key: "x-ws-text-messages".into(),
+                    value: total_text.to_string(),
+                    enabled: true,
+                    field_type: String::new(),
+                },
+                KeyValuePair {
+                    key: "x-ws-steps".into(),
+                    value: total.to_string(),
+                    enabled: true,
+                    field_type: String::new(),
+                },
             ],
             body,
             time_ms,
@@ -219,7 +265,11 @@ where
             Err(_) => {
                 // 超时：最后一步无数据视为错误，其余情况正常结束
                 if !stop_on_first_text && received.is_empty() && binary_bytes == 0 {
-                    return (received, binary_bytes, Some(format!("接收超时 ({}s)", timeout_secs)));
+                    return (
+                        received,
+                        binary_bytes,
+                        Some(format!("接收超时 ({}s)", timeout_secs)),
+                    );
                 }
                 break;
             }
@@ -234,7 +284,11 @@ where
                 Message::Text(text) => {
                     if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
                         if is_error_message(&json) {
-                            let err = json.get("error").and_then(|v| v.as_str()).unwrap_or(&text).to_string();
+                            let err = json
+                                .get("error")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or(&text)
+                                .to_string();
                             received.push(json);
                             return (received, binary_bytes, Some(err));
                         }
@@ -278,8 +332,16 @@ where
             if let Message::Text(text) = msg {
                 if let Ok(data) = serde_json::from_str::<serde_json::Value>(&text) {
                     if data.get("status").and_then(|v| v.as_str()) != Some("authenticated") {
-                        let err = data.get("error").and_then(|v| v.as_str()).unwrap_or("未知认证错误");
-                        return Ok(make_error_result(&execution_id, item, start, &format!("认证失败: {}", err)));
+                        let err = data
+                            .get("error")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("未知认证错误");
+                        return Ok(make_error_result(
+                            &execution_id,
+                            item,
+                            start,
+                            &format!("认证失败: {}", err),
+                        ));
                     }
                 }
             }
@@ -294,7 +356,8 @@ where
     }
 
     // 收集响应
-    let (text_messages, total_binary_bytes, fail_reason) = collect_responses(&mut ws, 30, false).await;
+    let (text_messages, total_binary_bytes, fail_reason) =
+        collect_responses(&mut ws, 30, false).await;
     let _ = ws.close().await;
     let time_ms = start.elapsed().as_millis() as u64;
 
@@ -331,7 +394,11 @@ where
 
     let expected = item.expect_status;
     let result_status = if expected > 0 {
-        if status_code == expected { Status::Success } else { Status::Failed }
+        if status_code == expected {
+            Status::Success
+        } else {
+            Status::Failed
+        }
     } else if is_success {
         Status::Success
     } else {
@@ -347,21 +414,44 @@ where
         status: result_status.as_str().to_string(),
         response: Some(HttpResponse {
             status: status_code,
-            status_text: if is_success { "OK".into() } else { "No Data".into() },
+            status_text: if is_success {
+                "OK".into()
+            } else {
+                "No Data".into()
+            },
             headers: vec![
-                KeyValuePair { key: "x-ws-binary-bytes".into(), value: total_binary_bytes.to_string(), enabled: true, field_type: String::new() },
-                KeyValuePair { key: "x-ws-text-messages".into(), value: text_messages.len().to_string(), enabled: true, field_type: String::new() },
+                KeyValuePair {
+                    key: "x-ws-binary-bytes".into(),
+                    value: total_binary_bytes.to_string(),
+                    enabled: true,
+                    field_type: String::new(),
+                },
+                KeyValuePair {
+                    key: "x-ws-text-messages".into(),
+                    value: text_messages.len().to_string(),
+                    enabled: true,
+                    field_type: String::new(),
+                },
             ],
             body,
             time_ms,
             size_bytes: total_binary_bytes,
         }),
         assertion_results: vec![],
-        error_message: if is_success { None } else { Some("未收到数据".into()) },
+        error_message: if is_success {
+            None
+        } else {
+            Some("未收到数据".into())
+        },
     })
 }
 
-fn make_error_result(execution_id: &str, item: &CollectionItem, start: Instant, error: &str) -> ExecutionResult {
+fn make_error_result(
+    execution_id: &str,
+    item: &CollectionItem,
+    start: Instant,
+    error: &str,
+) -> ExecutionResult {
     ExecutionResult {
         execution_id: execution_id.to_string(),
         item_id: item.id.clone(),
@@ -388,8 +478,14 @@ mod tests {
 
     #[test]
     fn test_to_ws_url() {
-        assert_eq!(to_ws_url("http://localhost:8080/api/ws"), "ws://localhost:8080/api/ws");
-        assert_eq!(to_ws_url("https://api.example.com/ws"), "wss://api.example.com/ws");
+        assert_eq!(
+            to_ws_url("http://localhost:8080/api/ws"),
+            "ws://localhost:8080/api/ws"
+        );
+        assert_eq!(
+            to_ws_url("https://api.example.com/ws"),
+            "wss://api.example.com/ws"
+        );
         assert_eq!(to_ws_url("ws://already.ws/path"), "ws://already.ws/path");
     }
 

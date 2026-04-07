@@ -33,7 +33,9 @@ pub fn parse_curl(input: &str) -> Result<CurlParseResult, String> {
         match token.as_str() {
             "-X" | "--request" => {
                 i += 1;
-                if i < tokens.len() { method = tokens[i].to_uppercase(); }
+                if i < tokens.len() {
+                    method = tokens[i].to_uppercase();
+                }
             }
             "-H" | "--header" => {
                 i += 1;
@@ -50,11 +52,15 @@ pub fn parse_curl(input: &str) -> Result<CurlParseResult, String> {
             }
             "-d" | "--data" | "--data-raw" | "--data-binary" => {
                 i += 1;
-                if i < tokens.len() { data = Some(tokens[i].clone()); }
+                if i < tokens.len() {
+                    data = Some(tokens[i].clone());
+                }
             }
             "--data-urlencode" => {
                 i += 1;
-                if i < tokens.len() { data = Some(tokens[i].clone()); }
+                if i < tokens.len() {
+                    data = Some(tokens[i].clone());
+                }
             }
             "-F" | "--form" => {
                 i += 1;
@@ -69,7 +75,11 @@ pub fn parse_curl(input: &str) -> Result<CurlParseResult, String> {
                             key: key.to_string(),
                             value: actual_value,
                             enabled: true,
-                            field_type: if is_file { "file".to_string() } else { String::new() },
+                            field_type: if is_file {
+                                "file".to_string()
+                            } else {
+                                String::new()
+                            },
                         });
                     }
                 }
@@ -79,7 +89,8 @@ pub fn parse_curl(input: &str) -> Result<CurlParseResult, String> {
             | "--compressed" | "-i" | "--include" | "-S" | "--show-error" => {}
             // 跳过带参数的 flag
             "-o" | "--output" | "-w" | "--write-out" | "--connect-timeout" | "--max-time"
-            | "-u" | "--user" | "--cacert" | "--cert" | "-b" | "--cookie" | "-c" | "--cookie-jar" => {
+            | "-u" | "--user" | "--cacert" | "--cert" | "-b" | "--cookie" | "-c"
+            | "--cookie-jar" => {
                 i += 1; // 跳过参数值
             }
             _ => {
@@ -94,11 +105,16 @@ pub fn parse_curl(input: &str) -> Result<CurlParseResult, String> {
 
     // 推断 method（--form 也隐含 POST）
     if method.is_empty() {
-        method = if data.is_some() || !form_fields.is_empty() { "POST".into() } else { "GET".into() };
+        method = if data.is_some() || !form_fields.is_empty() {
+            "POST".into()
+        } else {
+            "GET".into()
+        };
     }
 
     // 推断 body_type
-    let content_type = headers.iter()
+    let content_type = headers
+        .iter()
         .find(|h| h.key.eq_ignore_ascii_case("content-type"))
         .map(|h| h.value.to_lowercase());
 
@@ -109,7 +125,12 @@ pub fn parse_curl(input: &str) -> Result<CurlParseResult, String> {
     } else if let Some(ref d) = data {
         if content_type.as_deref() == Some("application/x-www-form-urlencoded") {
             ("urlencoded".into(), d.clone())
-        } else if content_type.as_ref().map(|c| c.contains("json")).unwrap_or(false) || d.trim_start().starts_with('{') {
+        } else if content_type
+            .as_ref()
+            .map(|c| c.contains("json"))
+            .unwrap_or(false)
+            || d.trim_start().starts_with('{')
+        {
             ("json".into(), d.clone())
         } else {
             ("raw".into(), d.clone())
@@ -118,7 +139,13 @@ pub fn parse_curl(input: &str) -> Result<CurlParseResult, String> {
         ("none".into(), String::new())
     };
 
-    Ok(CurlParseResult { method, url, headers, body_type, body_content })
+    Ok(CurlParseResult {
+        method,
+        url,
+        headers,
+        body_type,
+        body_content,
+    })
 }
 
 /// 从请求参数生成 curl 命令
@@ -266,8 +293,19 @@ mod tests {
 
     #[test]
     fn test_to_curl_post_json() {
-        let headers = vec![KeyValuePair { key: "Content-Type".into(), value: "application/json".into(), enabled: true, field_type: String::new() }];
-        let curl = to_curl("POST", "https://example.com/api", &headers, "json", r#"{"a":1}"#);
+        let headers = vec![KeyValuePair {
+            key: "Content-Type".into(),
+            value: "application/json".into(),
+            enabled: true,
+            field_type: String::new(),
+        }];
+        let curl = to_curl(
+            "POST",
+            "https://example.com/api",
+            &headers,
+            "json",
+            r#"{"a":1}"#,
+        );
         assert!(curl.contains("-X POST"));
         assert!(curl.contains("-H 'Content-Type: application/json'"));
         assert!(curl.contains("-d"));

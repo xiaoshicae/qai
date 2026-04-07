@@ -16,7 +16,11 @@ pub fn create_environment(db: State<'_, DbState>, name: String) -> Result<Enviro
 }
 
 #[tauri::command]
-pub fn update_environment(db: State<'_, DbState>, id: String, name: String) -> Result<Environment, String> {
+pub fn update_environment(
+    db: State<'_, DbState>,
+    id: String,
+    name: String,
+) -> Result<Environment, String> {
     let conn = db.conn()?;
     crate::db::environment::update(&conn, &id, &name).map_err(|e| e.to_string())
 }
@@ -34,15 +38,26 @@ pub fn set_active_environment(db: State<'_, DbState>, id: String) -> Result<(), 
 }
 
 #[tauri::command]
-pub fn get_environment_with_vars(db: State<'_, DbState>, id: String) -> Result<EnvironmentWithVars, String> {
+pub fn get_environment_with_vars(
+    db: State<'_, DbState>,
+    id: String,
+) -> Result<EnvironmentWithVars, String> {
     let conn = db.conn()?;
     let env = crate::db::environment::get(&conn, &id).map_err(|e| e.to_string())?;
     let vars = crate::db::environment::list_variables(&conn, &id).map_err(|e| e.to_string())?;
-    Ok(EnvironmentWithVars { environment: env, variables: vars })
+    Ok(EnvironmentWithVars {
+        environment: env,
+        variables: vars,
+    })
 }
 
 #[tauri::command]
-pub fn save_env_variables(db: State<'_, DbState>, environment_id: String, variables: Vec<EnvVariable>) -> Result<(), String> {
+pub fn save_env_variables(
+    db: State<'_, DbState>,
+    environment_id: String,
+    variables: Vec<EnvVariable>,
+) -> Result<(), String> {
     let conn = db.conn()?;
-    crate::db::environment::save_variables(&conn, &environment_id, &variables).map_err(|e| e.to_string())
+    crate::db::environment::save_variables(&conn, &environment_id, &variables)
+        .map_err(|e| e.to_string())
 }

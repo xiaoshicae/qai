@@ -6,15 +6,15 @@
 //! - 换行分隔 JSON（Claude Code 使用此格式）
 //! - Content-Length 帧协议（标准 MCP/LSP 格式）
 
-use std::io::{self, BufRead, Write};
 use rusqlite::Connection;
+use std::io::{self, BufRead, Write};
 
+#[path = "handlers.rs"]
+mod handlers;
 #[path = "protocol.rs"]
 mod protocol;
 #[path = "server.rs"]
 mod server;
-#[path = "handlers.rs"]
-mod handlers;
 #[path = "tools.rs"]
 mod tools;
 
@@ -29,7 +29,9 @@ fn main() {
         std::process::exit(1);
     });
 
-    if let Err(e) = conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;") {
+    if let Err(e) = conn
+        .execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;")
+    {
         eprintln!("Failed to set PRAGMA: {e}");
         std::process::exit(1);
     }
@@ -56,18 +58,26 @@ fn main() {
     loop {
         let mut line = String::new();
         match reader.read_line(&mut line) {
-            Ok(0) => { eprintln!("[qai-mcp] stdin closed"); return; }
+            Ok(0) => {
+                eprintln!("[qai-mcp] stdin closed");
+                return;
+            }
             Err(_) => return,
             _ => {}
         }
 
         let trimmed = line.trim();
-        if trimmed.is_empty() { continue; }
+        if trimmed.is_empty() {
+            continue;
+        }
 
         // 检测传输格式：Content-Length 帧 vs 换行分隔 JSON
         if trimmed.starts_with("Content-Length:") {
             // Content-Length 帧协议：读取空行分隔，再读 body
-            let len: usize = match trimmed.strip_prefix("Content-Length:").and_then(|s| s.trim().parse().ok()) {
+            let len: usize = match trimmed
+                .strip_prefix("Content-Length:")
+                .and_then(|s| s.trim().parse().ok())
+            {
                 Some(l) => l,
                 None => continue,
             };
@@ -76,7 +86,9 @@ fn main() {
             let _ = reader.read_line(&mut blank);
             // 读取 body
             let mut body = vec![0u8; len];
-            if io::Read::read_exact(&mut reader, &mut body).is_err() { break; }
+            if io::Read::read_exact(&mut reader, &mut body).is_err() {
+                break;
+            }
             let json_str = match String::from_utf8(body) {
                 Ok(s) => s,
                 Err(_) => continue,
@@ -98,7 +110,10 @@ fn main() {
 fn write_content_length(out: &mut impl Write, resp: &protocol::JsonRpcResponse) {
     let json = match serde_json::to_string(resp) {
         Ok(j) => j,
-        Err(e) => { eprintln!("[qai-mcp] serialize error: {e}"); return; }
+        Err(e) => {
+            eprintln!("[qai-mcp] serialize error: {e}");
+            return;
+        }
     };
     let bytes = json.as_bytes();
     if write!(out, "Content-Length: {}\r\n\r\n", bytes.len()).is_err()
@@ -113,7 +128,10 @@ fn write_content_length(out: &mut impl Write, resp: &protocol::JsonRpcResponse) 
 fn write_newline_json(out: &mut impl Write, resp: &protocol::JsonRpcResponse) {
     let json = match serde_json::to_string(resp) {
         Ok(j) => j,
-        Err(e) => { eprintln!("[qai-mcp] serialize error: {e}"); return; }
+        Err(e) => {
+            eprintln!("[qai-mcp] serialize error: {e}");
+            return;
+        }
     };
     if writeln!(out, "{json}").is_err() || out.flush().is_err() {
         eprintln!("[qai-mcp] stdout write failed");

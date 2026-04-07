@@ -1,8 +1,8 @@
+use base64::Engine;
+use portable_pty::{CommandBuilder, MasterPty, NativePtySystem, PtySize, PtySystem};
 use std::io::{Read, Write};
 use std::sync::Mutex;
-use portable_pty::{CommandBuilder, NativePtySystem, PtySize, PtySystem, MasterPty};
 use tauri::{AppHandle, Emitter};
-use base64::Engine;
 
 pub struct PtyState {
     writer: Mutex<Option<Box<dyn Write + Send>>>,
@@ -29,7 +29,12 @@ impl PtyState {
 
         let pty_system = NativePtySystem::default();
         let pair = pty_system
-            .openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
+            .openpty(PtySize {
+                rows,
+                cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
             .map_err(|e| format!("{e}"))?;
 
         // 明确指定 shell 路径
@@ -42,7 +47,10 @@ impl PtyState {
         if let Ok(path) = std::env::var("PATH") {
             cmd.env("PATH", path);
         } else {
-            cmd.env("PATH", "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin");
+            cmd.env(
+                "PATH",
+                "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin",
+            );
         }
         if let Ok(home) = std::env::var("HOME") {
             cmd.env("HOME", &home);
@@ -80,7 +88,12 @@ impl PtyState {
         let guard = self.master.lock().unwrap();
         if let Some(ref master) = *guard {
             master
-                .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
+                .resize(PtySize {
+                    rows,
+                    cols,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                })
                 .map_err(|e| format!("{e}"))?;
         }
         Ok(())

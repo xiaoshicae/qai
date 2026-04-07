@@ -108,7 +108,8 @@ pub fn list_filtered(
         limit_idx, offset_idx
     ));
 
-    let params_refs: Vec<&dyn rusqlite::types::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+        params_vec.iter().map(|p| p.as_ref()).collect();
     let mut stmt = conn.prepare(&sql)?;
     let rows = stmt.query_map(params_refs.as_slice(), |row| {
         Ok(HistoryEntry {
@@ -164,7 +165,11 @@ pub fn clear_all(conn: &Connection) -> Result<u64, rusqlite::Error> {
     Ok(deleted as u64)
 }
 
-pub fn list_by_item(conn: &Connection, item_id: &str, limit: u32) -> Result<Vec<RunRecord>, rusqlite::Error> {
+pub fn list_by_item(
+    conn: &Connection,
+    item_id: &str,
+    limit: u32,
+) -> Result<Vec<RunRecord>, rusqlite::Error> {
     let mut stmt = conn.prepare(
         "SELECT id, status, request_url, request_method, response_status, response_headers, response_body, response_time_ms, response_size, assertion_results, error_message, executed_at
          FROM executions WHERE item_id = ?1 ORDER BY executed_at DESC LIMIT ?2",
@@ -188,7 +193,10 @@ pub fn list_by_item(conn: &Connection, item_id: &str, limit: u32) -> Result<Vec<
     rows.collect()
 }
 
-pub fn get_last_status_for_collection(conn: &Connection, collection_id: &str) -> Result<Vec<ItemLastStatus>, rusqlite::Error> {
+pub fn get_last_status_for_collection(
+    conn: &Connection,
+    collection_id: &str,
+) -> Result<Vec<ItemLastStatus>, rusqlite::Error> {
     let mut stmt = conn.prepare(
         "SELECT e.item_id, e.status, e.executed_at, e.response_time_ms, e.assertion_results
          FROM executions e
@@ -217,7 +225,10 @@ pub fn get_last_status_for_collection(conn: &Connection, collection_id: &str) ->
 pub(crate) fn count_assertions(json: &str) -> (u32, u32) {
     if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(json) {
         let total = arr.len() as u32;
-        let passed = arr.iter().filter(|a| a.get("passed").and_then(|v| v.as_bool()).unwrap_or(false)).count() as u32;
+        let passed = arr
+            .iter()
+            .filter(|a| a.get("passed").and_then(|v| v.as_bool()).unwrap_or(false))
+            .count() as u32;
         (total, passed)
     } else {
         (0, 0)
@@ -342,7 +353,11 @@ mod tests {
     #[test]
     fn test_list_filtered_by_status() {
         let (conn, cid, iid) = setup_with_item();
-        save(&conn, &make_exec(&iid, &cid, "success", "http://a.com", 100)).unwrap();
+        save(
+            &conn,
+            &make_exec(&iid, &cid, "success", "http://a.com", 100),
+        )
+        .unwrap();
         save(&conn, &make_exec(&iid, &cid, "failed", "http://b.com", 200)).unwrap();
         let success = list_filtered(&conn, Some("success"), None, None, 50, 0).unwrap();
         assert_eq!(success.len(), 1);
@@ -353,8 +368,16 @@ mod tests {
     #[test]
     fn test_list_filtered_by_keyword() {
         let (conn, cid, iid) = setup_with_item();
-        save(&conn, &make_exec(&iid, &cid, "success", "http://api.example.com/users", 100)).unwrap();
-        save(&conn, &make_exec(&iid, &cid, "success", "http://api.example.com/orders", 200)).unwrap();
+        save(
+            &conn,
+            &make_exec(&iid, &cid, "success", "http://api.example.com/users", 100),
+        )
+        .unwrap();
+        save(
+            &conn,
+            &make_exec(&iid, &cid, "success", "http://api.example.com/orders", 200),
+        )
+        .unwrap();
         let found = list_filtered(&conn, None, None, Some("users"), 50, 0).unwrap();
         assert_eq!(found.len(), 1);
     }
@@ -363,7 +386,11 @@ mod tests {
     fn test_list_filtered_pagination() {
         let (conn, cid, iid) = setup_with_item();
         for i in 0..5 {
-            save(&conn, &make_exec(&iid, &cid, "success", &format!("http://a.com/{i}"), 100)).unwrap();
+            save(
+                &conn,
+                &make_exec(&iid, &cid, "success", &format!("http://a.com/{i}"), 100),
+            )
+            .unwrap();
         }
         let page1 = list_filtered(&conn, None, None, None, 2, 0).unwrap();
         assert_eq!(page1.len(), 2);
@@ -376,8 +403,16 @@ mod tests {
     #[test]
     fn test_get_stats() {
         let (conn, cid, iid) = setup_with_item();
-        save(&conn, &make_exec(&iid, &cid, "success", "http://a.com", 100)).unwrap();
-        save(&conn, &make_exec(&iid, &cid, "success", "http://b.com", 200)).unwrap();
+        save(
+            &conn,
+            &make_exec(&iid, &cid, "success", "http://a.com", 100),
+        )
+        .unwrap();
+        save(
+            &conn,
+            &make_exec(&iid, &cid, "success", "http://b.com", 200),
+        )
+        .unwrap();
         save(&conn, &make_exec(&iid, &cid, "failed", "http://c.com", 300)).unwrap();
         save(&conn, &make_exec(&iid, &cid, "error", "http://d.com", 400)).unwrap();
         let stats = get_stats(&conn).unwrap();
@@ -408,7 +443,11 @@ mod tests {
     #[test]
     fn test_clear_all() {
         let (conn, cid, iid) = setup_with_item();
-        save(&conn, &make_exec(&iid, &cid, "success", "http://a.com", 100)).unwrap();
+        save(
+            &conn,
+            &make_exec(&iid, &cid, "success", "http://a.com", 100),
+        )
+        .unwrap();
         save(&conn, &make_exec(&iid, &cid, "failed", "http://b.com", 200)).unwrap();
         let deleted = clear_all(&conn).unwrap();
         assert_eq!(deleted, 2);
@@ -419,8 +458,16 @@ mod tests {
     fn test_list_by_item() {
         let (conn, cid, iid) = setup_with_item();
         let item2 = crate::db::item::create(&conn, &cid, None, "request", "R2", "POST").unwrap();
-        save(&conn, &make_exec(&iid, &cid, "success", "http://a.com", 100)).unwrap();
-        save(&conn, &make_exec(&item2.id, &cid, "success", "http://b.com", 200)).unwrap();
+        save(
+            &conn,
+            &make_exec(&iid, &cid, "success", "http://a.com", 100),
+        )
+        .unwrap();
+        save(
+            &conn,
+            &make_exec(&item2.id, &cid, "success", "http://b.com", 200),
+        )
+        .unwrap();
         let runs = list_by_item(&conn, &iid, 10).unwrap();
         assert_eq!(runs.len(), 1);
     }
@@ -462,7 +509,11 @@ mod tests {
     #[test]
     fn test_list_filtered_joins_item_name() {
         let (conn, cid, iid) = setup_with_item();
-        save(&conn, &make_exec(&iid, &cid, "success", "http://a.com", 100)).unwrap();
+        save(
+            &conn,
+            &make_exec(&iid, &cid, "success", "http://a.com", 100),
+        )
+        .unwrap();
         let list = list_filtered(&conn, None, None, None, 10, 0).unwrap();
         assert_eq!(list[0].item_name, "R");
     }

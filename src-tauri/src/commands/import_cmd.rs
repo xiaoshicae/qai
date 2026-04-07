@@ -2,8 +2,8 @@ use std::path::PathBuf;
 use tauri::State;
 
 use crate::db::init::DbState;
-use crate::import::yaml::{ImportResult, YamlCase};
 use crate::import::postman::PostmanImportResult;
+use crate::import::yaml::{ImportResult, YamlCase};
 
 #[tauri::command]
 pub fn import_yaml_cases(
@@ -37,13 +37,17 @@ pub fn import_yaml_cases(
     }
 
     for path in &yaml_files {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| format!("读取文件失败 {:?}: {}", path, e))?;
+        let content =
+            std::fs::read_to_string(path).map_err(|e| format!("读取文件失败 {:?}: {}", path, e))?;
         let case: YamlCase = serde_yaml::from_str(&content)
             .map_err(|e| format!("解析 YAML 失败 {:?}: {}", path, e))?;
 
         let assets_dir = path.parent().unwrap_or(&base).join("../assets");
-        let assets_dir = if assets_dir.exists() { assets_dir } else { base.join("assets") };
+        let assets_dir = if assets_dir.exists() {
+            assets_dir
+        } else {
+            base.join("assets")
+        };
         crate::import::yaml::import_single_case(&conn, &case, &mut result, &assets_dir)
             .map_err(|e| format!("导入 {} 失败: {}", case.name, e))?;
     }

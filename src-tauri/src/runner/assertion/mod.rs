@@ -6,7 +6,10 @@ use crate::models::assertion::{Assertion, AssertionResult};
 use crate::models::execution::ExecutionResult;
 use crate::models::item::HttpResponse;
 
-pub fn evaluate_assertions(assertions: &[Assertion], response: &HttpResponse) -> Vec<AssertionResult> {
+pub fn evaluate_assertions(
+    assertions: &[Assertion],
+    response: &HttpResponse,
+) -> Vec<AssertionResult> {
     assertions
         .iter()
         .filter(|a| a.enabled)
@@ -30,10 +33,10 @@ pub fn apply_assertions(result: &mut ExecutionResult, assertions: &[Assertion]) 
 
 #[cfg(test)]
 mod tests {
+    use super::compare::compare;
+    use super::json_path::{extract_json_path, value_to_string};
     use super::*;
     use crate::models::item::KeyValuePair;
-    use super::json_path::{extract_json_path, value_to_string};
-    use super::compare::compare;
     use serde_json::Value;
 
     fn make_assertion(atype: &str, expr: &str, op: &str, expected: &str) -> Assertion {
@@ -50,7 +53,12 @@ mod tests {
         }
     }
 
-    fn make_response(status: u16, body: &str, time_ms: u64, headers: Vec<KeyValuePair>) -> HttpResponse {
+    fn make_response(
+        status: u16,
+        body: &str,
+        time_ms: u64,
+        headers: Vec<KeyValuePair>,
+    ) -> HttpResponse {
         HttpResponse {
             status,
             status_text: "OK".into(),
@@ -66,15 +74,27 @@ mod tests {
     #[test]
     fn test_json_path_simple() {
         let json: Value = serde_json::json!({"name": "test", "data": {"id": 1}});
-        assert_eq!(extract_json_path(&json, "$.name"), Some(Value::String("test".to_string())));
-        assert_eq!(extract_json_path(&json, "$.data.id"), Some(serde_json::json!(1)));
+        assert_eq!(
+            extract_json_path(&json, "$.name"),
+            Some(Value::String("test".to_string()))
+        );
+        assert_eq!(
+            extract_json_path(&json, "$.data.id"),
+            Some(serde_json::json!(1))
+        );
     }
 
     #[test]
     fn test_json_path_array() {
         let json: Value = serde_json::json!({"items": [{"name": "a"}, {"name": "b"}]});
-        assert_eq!(extract_json_path(&json, "$.items[0].name"), Some(Value::String("a".to_string())));
-        assert_eq!(extract_json_path(&json, "$.items[1].name"), Some(Value::String("b".to_string())));
+        assert_eq!(
+            extract_json_path(&json, "$.items[0].name"),
+            Some(Value::String("a".to_string()))
+        );
+        assert_eq!(
+            extract_json_path(&json, "$.items[1].name"),
+            Some(Value::String("b".to_string()))
+        );
     }
 
     #[test]
@@ -86,7 +106,10 @@ mod tests {
     #[test]
     fn test_json_path_deeply_nested() {
         let json: Value = serde_json::json!({"a": {"b": {"c": {"d": "deep"}}}});
-        assert_eq!(extract_json_path(&json, "$.a.b.c.d"), Some(Value::String("deep".into())));
+        assert_eq!(
+            extract_json_path(&json, "$.a.b.c.d"),
+            Some(Value::String("deep".into()))
+        );
     }
 
     #[test]
@@ -98,7 +121,10 @@ mod tests {
     #[test]
     fn test_json_path_without_dollar() {
         let json: Value = serde_json::json!({"name": "test"});
-        assert_eq!(extract_json_path(&json, "name"), Some(Value::String("test".into())));
+        assert_eq!(
+            extract_json_path(&json, "name"),
+            Some(Value::String("test".into()))
+        );
     }
 
     #[test]
@@ -333,9 +359,17 @@ mod tests {
     #[test]
     fn test_eval_header_exists() {
         let a = make_assertion("header_contains", "X-Custom", "exists", "");
-        let r = make_response(200, "", 0, vec![KeyValuePair {
-            key: "x-custom".into(), value: "val".into(), enabled: true, field_type: String::new(),
-        }]);
+        let r = make_response(
+            200,
+            "",
+            0,
+            vec![KeyValuePair {
+                key: "x-custom".into(),
+                value: "val".into(),
+                enabled: true,
+                field_type: String::new(),
+            }],
+        );
         let results = evaluate_assertions(&[a], &r);
         assert!(results[0].passed);
     }
@@ -359,9 +393,17 @@ mod tests {
     #[test]
     fn test_eval_header_case_insensitive() {
         let a = make_assertion("header_contains", "Content-Type", "contains", "json");
-        let r = make_response(200, "", 0, vec![KeyValuePair {
-            key: "content-type".into(), value: "application/json".into(), enabled: true, field_type: String::new(),
-        }]);
+        let r = make_response(
+            200,
+            "",
+            0,
+            vec![KeyValuePair {
+                key: "content-type".into(),
+                value: "application/json".into(),
+                enabled: true,
+                field_type: String::new(),
+            }],
+        );
         let results = evaluate_assertions(&[a], &r);
         assert!(results[0].passed);
     }

@@ -3,7 +3,8 @@ use uuid::Uuid;
 
 use crate::models::assertion::Assertion;
 
-const ASSERTION_COLS: &str = "id, item_id, type, expression, operator, expected, enabled, sort_order, created_at";
+const ASSERTION_COLS: &str =
+    "id, item_id, type, expression, operator, expected, enabled, sort_order, created_at";
 
 fn assertion_from_row(row: &Row) -> Result<Assertion, rusqlite::Error> {
     Ok(Assertion {
@@ -20,27 +21,36 @@ fn assertion_from_row(row: &Row) -> Result<Assertion, rusqlite::Error> {
 }
 
 pub fn list_by_item(conn: &Connection, item_id: &str) -> Result<Vec<Assertion>, rusqlite::Error> {
-    let mut stmt = conn.prepare(
-        &format!("SELECT {} FROM assertions WHERE item_id = ?1 ORDER BY sort_order", ASSERTION_COLS),
-    )?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {} FROM assertions WHERE item_id = ?1 ORDER BY sort_order",
+        ASSERTION_COLS
+    ))?;
     let rows = stmt.query_map(params![item_id], assertion_from_row)?;
     rows.collect()
 }
 
 /// 批量获取多个 item 的断言（消除 N+1 查询）
-pub fn list_by_items(conn: &Connection, item_ids: &[String]) -> Result<std::collections::HashMap<String, Vec<Assertion>>, rusqlite::Error> {
+pub fn list_by_items(
+    conn: &Connection,
+    item_ids: &[String],
+) -> Result<std::collections::HashMap<String, Vec<Assertion>>, rusqlite::Error> {
     if item_ids.is_empty() {
         return Ok(std::collections::HashMap::new());
     }
     let placeholders: Vec<String> = (1..=item_ids.len()).map(|i| format!("?{}", i)).collect();
     let sql = format!(
         "SELECT {} FROM assertions WHERE item_id IN ({}) ORDER BY sort_order",
-        ASSERTION_COLS, placeholders.join(", ")
+        ASSERTION_COLS,
+        placeholders.join(", ")
     );
     let mut stmt = conn.prepare(&sql)?;
-    let params: Vec<&dyn rusqlite::types::ToSql> = item_ids.iter().map(|id| id as &dyn rusqlite::types::ToSql).collect();
+    let params: Vec<&dyn rusqlite::types::ToSql> = item_ids
+        .iter()
+        .map(|id| id as &dyn rusqlite::types::ToSql)
+        .collect();
     let rows = stmt.query_map(params.as_slice(), assertion_from_row)?;
-    let mut map: std::collections::HashMap<String, Vec<Assertion>> = std::collections::HashMap::new();
+    let mut map: std::collections::HashMap<String, Vec<Assertion>> =
+        std::collections::HashMap::new();
     for row in rows {
         let a = row?;
         map.entry(a.item_id.clone()).or_default().push(a);
@@ -49,12 +59,15 @@ pub fn list_by_items(conn: &Connection, item_ids: &[String]) -> Result<std::coll
 }
 
 /// 按集合批量获取每个 item 的断言数量
-pub fn count_by_collection(conn: &Connection, collection_id: &str) -> Result<std::collections::HashMap<String, i32>, rusqlite::Error> {
+pub fn count_by_collection(
+    conn: &Connection,
+    collection_id: &str,
+) -> Result<std::collections::HashMap<String, i32>, rusqlite::Error> {
     let mut stmt = conn.prepare(
         "SELECT a.item_id, COUNT(*) FROM assertions a \
          JOIN collection_items ci ON ci.id = a.item_id \
          WHERE ci.collection_id = ?1 \
-         GROUP BY a.item_id"
+         GROUP BY a.item_id",
     )?;
     let rows = stmt.query_map(params![collection_id], |row| {
         Ok((row.get::<_, String>(0)?, row.get::<_, i32>(1)?))
@@ -113,7 +126,11 @@ pub fn update(
 
 /// 同步 status_code 断言的 expected 值（当 expect_status 变更时调用）
 /// 如果存在 status_code 类型的断言，更新其 expected；如果不存在，创建一条。
-pub fn sync_status_code_assertion(conn: &Connection, item_id: &str, expect_status: u16) -> Result<(), rusqlite::Error> {
+pub fn sync_status_code_assertion(
+    conn: &Connection,
+    item_id: &str,
+    expect_status: u16,
+) -> Result<(), rusqlite::Error> {
     let expected = expect_status.to_string();
     // 查找已有的 status_code 断言
     let existing: Option<String> = conn
@@ -201,7 +218,16 @@ mod tests {
     fn test_update() {
         let (conn, item_id) = setup();
         let a = create(&conn, &item_id, "status_code", "", "eq", "200").unwrap();
-        let updated = update(&conn, &a.id, Some("json_path"), Some("$.id"), Some("exists"), Some(""), None).unwrap();
+        let updated = update(
+            &conn,
+            &a.id,
+            Some("json_path"),
+            Some("$.id"),
+            Some("exists"),
+            Some(""),
+            None,
+        )
+        .unwrap();
         assert_eq!(updated.assertion_type, "json_path");
         assert_eq!(updated.expression, "$.id");
     }

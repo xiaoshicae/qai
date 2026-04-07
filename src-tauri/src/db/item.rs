@@ -60,24 +60,35 @@ pub fn get(conn: &Connection, id: &str) -> Result<CollectionItem, rusqlite::Erro
     )
 }
 
-pub fn list_by_collection(conn: &Connection, collection_id: &str) -> Result<Vec<CollectionItem>, rusqlite::Error> {
-    let mut stmt = conn.prepare(
-        &format!("SELECT {} FROM collection_items WHERE collection_id = ?1 ORDER BY sort_order", ITEM_COLS),
-    )?;
+pub fn list_by_collection(
+    conn: &Connection,
+    collection_id: &str,
+) -> Result<Vec<CollectionItem>, rusqlite::Error> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {} FROM collection_items WHERE collection_id = ?1 ORDER BY sort_order",
+        ITEM_COLS
+    ))?;
     let rows = stmt.query_map(params![collection_id], item_from_row)?;
     rows.collect()
 }
 
-pub fn list_by_parent(conn: &Connection, parent_id: &str) -> Result<Vec<CollectionItem>, rusqlite::Error> {
-    let mut stmt = conn.prepare(
-        &format!("SELECT {} FROM collection_items WHERE parent_id = ?1 ORDER BY sort_order", ITEM_COLS),
-    )?;
+pub fn list_by_parent(
+    conn: &Connection,
+    parent_id: &str,
+) -> Result<Vec<CollectionItem>, rusqlite::Error> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {} FROM collection_items WHERE parent_id = ?1 ORDER BY sort_order",
+        ITEM_COLS
+    ))?;
     let rows = stmt.query_map(params![parent_id], item_from_row)?;
     rows.collect()
 }
 
 /// 列出集合中所有 type=request 的项（忽略 folder/chain 容器）
-pub fn list_requests_by_collection(conn: &Connection, collection_id: &str) -> Result<Vec<CollectionItem>, rusqlite::Error> {
+pub fn list_requests_by_collection(
+    conn: &Connection,
+    collection_id: &str,
+) -> Result<Vec<CollectionItem>, rusqlite::Error> {
     let mut stmt = conn.prepare(
         &format!("SELECT {} FROM collection_items WHERE collection_id = ?1 AND type = 'request' ORDER BY sort_order", ITEM_COLS),
     )?;
@@ -110,7 +121,10 @@ pub fn update(
 }
 
 /// 轻量级列表查询 — 不取 body_content/headers/query_params 等大字段，用于树/列表展示
-pub fn list_summary_by_collection(conn: &Connection, collection_id: &str) -> Result<Vec<CollectionItem>, rusqlite::Error> {
+pub fn list_summary_by_collection(
+    conn: &Connection,
+    collection_id: &str,
+) -> Result<Vec<CollectionItem>, rusqlite::Error> {
     let mut stmt = conn.prepare(
         "SELECT id, collection_id, parent_id, type, name, sort_order, method, url, \
          '' as headers, '' as query_params, body_type, '' as body_content, \
@@ -150,18 +164,39 @@ fn duplicate_in_tx(conn: &Connection, id: &str) -> Result<CollectionItem, rusqli
             |row| row.get(0),
         )
         .unwrap_or(-1);
-    duplicate_single(conn, &src, &new_id, &new_name, src.parent_id.as_deref(), max_sort + 1)?;
+    duplicate_single(
+        conn,
+        &src,
+        &new_id,
+        &new_name,
+        src.parent_id.as_deref(),
+        max_sort + 1,
+    )?;
     // 递归复制子项（chain/folder 下的 steps）
     let children = list_by_parent(conn, id)?;
     for child in &children {
         let child_new_id = Uuid::new_v4().to_string();
-        duplicate_single(conn, child, &child_new_id, &child.name, Some(&new_id), child.sort_order)?;
+        duplicate_single(
+            conn,
+            child,
+            &child_new_id,
+            &child.name,
+            Some(&new_id),
+            child.sort_order,
+        )?;
     }
     get(conn, &new_id)
 }
 
 /// 复制单个 item 及其断言（不递归）
-fn duplicate_single(conn: &Connection, src: &CollectionItem, new_id: &str, new_name: &str, parent_id: Option<&str>, sort_order: i32) -> Result<(), rusqlite::Error> {
+fn duplicate_single(
+    conn: &Connection,
+    src: &CollectionItem,
+    new_id: &str,
+    new_name: &str,
+    parent_id: Option<&str>,
+    sort_order: i32,
+) -> Result<(), rusqlite::Error> {
     conn.execute(
         &format!(
             "INSERT INTO collection_items ({}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17, datetime('now','localtime'), datetime('now','localtime'))",

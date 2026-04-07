@@ -44,8 +44,14 @@ pub async fn ai_generate_tests(
         let conn = db.conn()?;
         for tc in &test_cases {
             let item = crate::db::item::create(
-                &conn, &collection_id, None, "request", &tc.name, &tc.method,
-            ).map_err(|e| e.to_string())?;
+                &conn,
+                &collection_id,
+                None,
+                "request",
+                &tc.name,
+                &tc.method,
+            )
+            .map_err(|e| e.to_string())?;
 
             crate::db::item::update(
                 &conn,
@@ -58,7 +64,8 @@ pub async fn ai_generate_tests(
                     body_content: Some(tc.body_content.clone()),
                     ..Default::default()
                 },
-            ).map_err(|e| e.to_string())?;
+            )
+            .map_err(|e| e.to_string())?;
 
             for assertion in &tc.assertions {
                 crate::db::assertion::create(
@@ -68,7 +75,8 @@ pub async fn ai_generate_tests(
                     &assertion.expression,
                     &assertion.operator,
                     &assertion.expected,
-                ).map_err(|e| e.to_string())?;
+                )
+                .map_err(|e| e.to_string())?;
             }
         }
     }
@@ -99,10 +107,7 @@ pub async fn ai_suggest_assertions(
 }
 
 #[tauri::command]
-pub async fn ai_chat(
-    db: State<'_, DbState>,
-    message: String,
-) -> Result<String, String> {
+pub async fn ai_chat(db: State<'_, DbState>, message: String) -> Result<String, String> {
     let (api_key, model) = {
         let conn = db.conn()?;
         get_ai_config(&conn)?
@@ -150,7 +155,11 @@ pub async fn test_ai_connection(
                 "max_tokens": 5,
                 "messages": [{"role": "user", "content": "hi"}]
             });
-            (url, vec![("Authorization", format!("Bearer {}", api_key))], body)
+            (
+                url,
+                vec![("Authorization", format!("Bearer {}", api_key))],
+                body,
+            )
         }
         "gemini" => {
             let url = format!(
@@ -170,10 +179,14 @@ pub async fn test_ai_connection(
                 "max_tokens": 5,
                 "messages": [{"role": "user", "content": "hi"}]
             });
-            (url, vec![
-                ("x-api-key", api_key.clone()),
-                ("anthropic-version", "2023-06-01".to_string()),
-            ], body)
+            (
+                url,
+                vec![
+                    ("x-api-key", api_key.clone()),
+                    ("anthropic-version", "2023-06-01".to_string()),
+                ],
+                body,
+            )
         }
     };
 
@@ -182,7 +195,11 @@ pub async fn test_ai_connection(
         req = req.header(*k, v);
     }
 
-    let resp = req.json(&body).send().await.map_err(|e| format!("连接失败: {}", e))?;
+    let resp = req
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("连接失败: {}", e))?;
     let status = resp.status();
 
     if status.is_success() {

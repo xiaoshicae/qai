@@ -82,21 +82,30 @@ pub fn get_active(conn: &Connection) -> Result<Option<EnvironmentWithVars>, rusq
         }
     };
     let vars = list_variables(conn, &env.id)?;
-    Ok(Some(EnvironmentWithVars { environment: env, variables: vars }))
+    Ok(Some(EnvironmentWithVars {
+        environment: env,
+        variables: vars,
+    }))
 }
 
 /// 获取当前活跃环境的变量映射（便捷方法）
 /// 如果没有活跃环境或发生错误，返回空的 HashMap
 pub fn get_active_var_map(conn: &Connection) -> HashMap<String, String> {
     get_active(conn)
-        .map_err(|e| { log::warn!("获取活跃环境失败: {e}"); e })
+        .map_err(|e| {
+            log::warn!("获取活跃环境失败: {e}");
+            e
+        })
         .ok()
         .flatten()
         .map(|env| crate::http::vars::build_var_map(&env.variables))
         .unwrap_or_default()
 }
 
-pub fn list_variables(conn: &Connection, environment_id: &str) -> Result<Vec<EnvVariable>, rusqlite::Error> {
+pub fn list_variables(
+    conn: &Connection,
+    environment_id: &str,
+) -> Result<Vec<EnvVariable>, rusqlite::Error> {
     let mut stmt = conn.prepare(
         "SELECT id, environment_id, key, value, enabled, sort_order FROM env_variables WHERE environment_id = ?1 ORDER BY sort_order",
     )?;
@@ -104,11 +113,22 @@ pub fn list_variables(conn: &Connection, environment_id: &str) -> Result<Vec<Env
     rows.collect()
 }
 
-pub fn save_variables(conn: &Connection, environment_id: &str, variables: &[EnvVariable]) -> Result<(), rusqlite::Error> {
+pub fn save_variables(
+    conn: &Connection,
+    environment_id: &str,
+    variables: &[EnvVariable],
+) -> Result<(), rusqlite::Error> {
     let tx = conn.unchecked_transaction()?;
-    tx.execute("DELETE FROM env_variables WHERE environment_id = ?1", params![environment_id])?;
+    tx.execute(
+        "DELETE FROM env_variables WHERE environment_id = ?1",
+        params![environment_id],
+    )?;
     for (i, v) in variables.iter().enumerate() {
-        let id = if v.id.is_empty() { Uuid::new_v4().to_string() } else { v.id.clone() };
+        let id = if v.id.is_empty() {
+            Uuid::new_v4().to_string()
+        } else {
+            v.id.clone()
+        };
         tx.execute(
             "INSERT INTO env_variables (id, environment_id, key, value, enabled, sort_order) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![id, environment_id, v.key, v.value, v.enabled as i32, i as i32],
@@ -186,8 +206,22 @@ mod tests {
         let env = create(&conn, "E").unwrap();
         set_active(&conn, &env.id).unwrap();
         let vars = vec![
-            EnvVariable { id: String::new(), environment_id: env.id.clone(), key: "base_url".into(), value: "http://localhost".into(), enabled: true, sort_order: 0 },
-            EnvVariable { id: String::new(), environment_id: env.id.clone(), key: "token".into(), value: "abc123".into(), enabled: true, sort_order: 1 },
+            EnvVariable {
+                id: String::new(),
+                environment_id: env.id.clone(),
+                key: "base_url".into(),
+                value: "http://localhost".into(),
+                enabled: true,
+                sort_order: 0,
+            },
+            EnvVariable {
+                id: String::new(),
+                environment_id: env.id.clone(),
+                key: "token".into(),
+                value: "abc123".into(),
+                enabled: true,
+                sort_order: 1,
+            },
         ];
         save_variables(&conn, &env.id, &vars).unwrap();
         let active = get_active(&conn).unwrap().unwrap();
@@ -200,13 +234,34 @@ mod tests {
     fn test_save_variables_replaces() {
         let conn = create_test_db();
         let env = create(&conn, "E").unwrap();
-        let v1 = vec![EnvVariable { id: String::new(), environment_id: env.id.clone(), key: "a".into(), value: "1".into(), enabled: true, sort_order: 0 }];
+        let v1 = vec![EnvVariable {
+            id: String::new(),
+            environment_id: env.id.clone(),
+            key: "a".into(),
+            value: "1".into(),
+            enabled: true,
+            sort_order: 0,
+        }];
         save_variables(&conn, &env.id, &v1).unwrap();
         assert_eq!(list_variables(&conn, &env.id).unwrap().len(), 1);
 
         let v2 = vec![
-            EnvVariable { id: String::new(), environment_id: env.id.clone(), key: "b".into(), value: "2".into(), enabled: true, sort_order: 0 },
-            EnvVariable { id: String::new(), environment_id: env.id.clone(), key: "c".into(), value: "3".into(), enabled: false, sort_order: 1 },
+            EnvVariable {
+                id: String::new(),
+                environment_id: env.id.clone(),
+                key: "b".into(),
+                value: "2".into(),
+                enabled: true,
+                sort_order: 0,
+            },
+            EnvVariable {
+                id: String::new(),
+                environment_id: env.id.clone(),
+                key: "c".into(),
+                value: "3".into(),
+                enabled: false,
+                sort_order: 1,
+            },
         ];
         save_variables(&conn, &env.id, &v2).unwrap();
         let loaded = list_variables(&conn, &env.id).unwrap();
@@ -219,7 +274,14 @@ mod tests {
     fn test_cascade_delete_env_vars() {
         let conn = create_test_db();
         let env = create(&conn, "E").unwrap();
-        let vars = vec![EnvVariable { id: String::new(), environment_id: env.id.clone(), key: "k".into(), value: "v".into(), enabled: true, sort_order: 0 }];
+        let vars = vec![EnvVariable {
+            id: String::new(),
+            environment_id: env.id.clone(),
+            key: "k".into(),
+            value: "v".into(),
+            enabled: true,
+            sort_order: 0,
+        }];
         save_variables(&conn, &env.id, &vars).unwrap();
         delete(&conn, &env.id).unwrap();
         let loaded = list_variables(&conn, &env.id).unwrap();

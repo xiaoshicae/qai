@@ -1,6 +1,6 @@
+use regex::Regex;
 use std::collections::HashMap;
 use std::sync::OnceLock;
-use regex::Regex;
 
 use crate::models::environment::EnvVariable;
 use crate::models::item::{CollectionItem, ExtractRule, HttpResponse, KeyValuePair};
@@ -26,7 +26,9 @@ pub fn replace_vars(text: &str, vars: &HashMap<String, String>) -> String {
     let re = var_regex();
     re.replace_all(text, |caps: &regex::Captures| {
         let key = &caps[1];
-        vars.get(key).cloned().unwrap_or_else(|| caps[0].to_string())
+        vars.get(key)
+            .cloned()
+            .unwrap_or_else(|| caps[0].to_string())
     })
     .to_string()
 }
@@ -70,7 +72,10 @@ pub fn apply_vars(req: &CollectionItem, vars: &HashMap<String, String>) -> Colle
 }
 
 /// 从响应中按规则提取变量
-pub fn extract_variables(rules: &[ExtractRule], response: &HttpResponse) -> HashMap<String, String> {
+pub fn extract_variables(
+    rules: &[ExtractRule],
+    response: &HttpResponse,
+) -> HashMap<String, String> {
     let mut vars = HashMap::new();
 
     for rule in rules {
@@ -87,14 +92,12 @@ pub fn extract_variables(rules: &[ExtractRule], response: &HttpResponse) -> Hash
                     None
                 }
             }
-            "header" => {
-                response.headers.iter()
-                    .find(|h| h.key.eq_ignore_ascii_case(&rule.expression))
-                    .map(|h| h.value.clone())
-            }
-            "status_code" => {
-                Some(response.status.to_string())
-            }
+            "header" => response
+                .headers
+                .iter()
+                .find(|h| h.key.eq_ignore_ascii_case(&rule.expression))
+                .map(|h| h.value.clone()),
+            "status_code" => Some(response.status.to_string()),
             _ => None,
         };
 
@@ -151,10 +154,16 @@ mod tests {
     #[test]
     fn test_replace_vars() {
         let mut vars = HashMap::new();
-        vars.insert("base_url".to_string(), "https://api.example.com".to_string());
+        vars.insert(
+            "base_url".to_string(),
+            "https://api.example.com".to_string(),
+        );
         vars.insert("token".to_string(), "abc123".to_string());
 
-        assert_eq!(replace_vars("{{base_url}}/users", &vars), "https://api.example.com/users");
+        assert_eq!(
+            replace_vars("{{base_url}}/users", &vars),
+            "https://api.example.com/users"
+        );
         assert_eq!(replace_vars("Bearer {{token}}", &vars), "Bearer abc123");
         assert_eq!(replace_vars("no vars here", &vars), "no vars here");
         assert_eq!(replace_vars("{{unknown}}", &vars), "{{unknown}}");
@@ -163,7 +172,10 @@ mod tests {
     #[test]
     fn test_replace_vars_empty() {
         let vars = HashMap::new();
-        assert_eq!(replace_vars("{{base_url}}/users", &vars), "{{base_url}}/users");
+        assert_eq!(
+            replace_vars("{{base_url}}/users", &vars),
+            "{{base_url}}/users"
+        );
     }
 
     #[test]
@@ -284,9 +296,12 @@ mod tests {
             expression: "$.data.token".into(),
         }];
         let response = HttpResponse {
-            status: 200, status_text: "OK".into(),
-            headers: vec![], body: r#"{"data":{"token":"abc123"}}"#.into(),
-            time_ms: 50, size_bytes: 30,
+            status: 200,
+            status_text: "OK".into(),
+            headers: vec![],
+            body: r#"{"data":{"token":"abc123"}}"#.into(),
+            time_ms: 50,
+            size_bytes: 30,
         };
         let vars = extract_variables(&rules, &response);
         assert_eq!(vars["token"], "abc123");
@@ -300,9 +315,17 @@ mod tests {
             expression: "X-Request-Id".into(),
         }];
         let response = HttpResponse {
-            status: 200, status_text: "OK".into(),
-            headers: vec![KeyValuePair { key: "x-request-id".into(), value: "rid-123".into(), enabled: true, field_type: String::new() }],
-            body: String::new(), time_ms: 50, size_bytes: 0,
+            status: 200,
+            status_text: "OK".into(),
+            headers: vec![KeyValuePair {
+                key: "x-request-id".into(),
+                value: "rid-123".into(),
+                enabled: true,
+                field_type: String::new(),
+            }],
+            body: String::new(),
+            time_ms: 50,
+            size_bytes: 0,
         };
         let vars = extract_variables(&rules, &response);
         assert_eq!(vars["req_id"], "rid-123");
@@ -316,8 +339,12 @@ mod tests {
             expression: String::new(),
         }];
         let response = HttpResponse {
-            status: 201, status_text: "Created".into(),
-            headers: vec![], body: String::new(), time_ms: 50, size_bytes: 0,
+            status: 201,
+            status_text: "Created".into(),
+            headers: vec![],
+            body: String::new(),
+            time_ms: 50,
+            size_bytes: 0,
         };
         let vars = extract_variables(&rules, &response);
         assert_eq!(vars["code"], "201");
@@ -331,8 +358,12 @@ mod tests {
             expression: String::new(),
         }];
         let response = HttpResponse {
-            status: 200, status_text: "OK".into(),
-            headers: vec![], body: String::new(), time_ms: 0, size_bytes: 0,
+            status: 200,
+            status_text: "OK".into(),
+            headers: vec![],
+            body: String::new(),
+            time_ms: 0,
+            size_bytes: 0,
         };
         let vars = extract_variables(&rules, &response);
         assert!(vars.is_empty());
@@ -346,8 +377,12 @@ mod tests {
             expression: "$.id".into(),
         }];
         let response = HttpResponse {
-            status: 200, status_text: "OK".into(),
-            headers: vec![], body: "not json".into(), time_ms: 0, size_bytes: 0,
+            status: 200,
+            status_text: "OK".into(),
+            headers: vec![],
+            body: "not json".into(),
+            time_ms: 0,
+            size_bytes: 0,
         };
         let vars = extract_variables(&rules, &response);
         assert!(vars.is_empty());
@@ -361,9 +396,12 @@ mod tests {
             expression: "data.name".into(),
         }];
         let response = HttpResponse {
-            status: 200, status_text: "OK".into(),
-            headers: vec![], body: r#"{"data":{"name":"test"}}"#.into(),
-            time_ms: 0, size_bytes: 0,
+            status: 200,
+            status_text: "OK".into(),
+            headers: vec![],
+            body: r#"{"data":{"name":"test"}}"#.into(),
+            time_ms: 0,
+            size_bytes: 0,
         };
         let vars = extract_variables(&rules, &response);
         assert_eq!(vars["name"], "test");

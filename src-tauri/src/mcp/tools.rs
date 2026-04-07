@@ -19,7 +19,6 @@ pub fn list_tools() -> Vec<Value> {
                 "required": ["keyword"]
             }
         }),
-
         // ─── Collection ────────────────────────────────────────
         json!({
             "name": "list_collections",
@@ -70,7 +69,6 @@ pub fn list_tools() -> Vec<Value> {
                 "required": ["id"]
             }
         }),
-
         // ─── Item (test case / folder / chain) ─────────────────
         json!({
             "name": "create_item",
@@ -134,7 +132,6 @@ pub fn list_tools() -> Vec<Value> {
                 "required": ["id"]
             }
         }),
-
         // ─── Assertion ─────────────────────────────────────────
         json!({
             "name": "create_assertion",
@@ -185,7 +182,6 @@ pub fn list_tools() -> Vec<Value> {
                 "required": ["id"]
             }
         }),
-
         // ─── Execution ─────────────────────────────────────────
         json!({
             "name": "send_request",
@@ -224,7 +220,6 @@ pub fn list_tools() -> Vec<Value> {
                 "required": ["collection_id"]
             }
         }),
-
         // ─── Environment Variables ──────────────────────────────
         json!({
             "name": "list_environments",
@@ -287,7 +282,6 @@ pub fn list_tools() -> Vec<Value> {
                 "required": ["id"]
             }
         }),
-
         // ─── History ────────────────────────────────────────────
         json!({
             "name": "list_history",
@@ -319,7 +313,6 @@ pub fn list_tools() -> Vec<Value> {
                 "required": ["item_id"]
             }
         }),
-
         // ─── Group (sidebar organization) ───────────────────────
         json!({
             "name": "list_groups",
@@ -360,13 +353,27 @@ pub fn call_tool(
 ) -> Result<String, String> {
     match name {
         // Search
-        "search" => handlers::search(conn, &get_str(args, "keyword")?, get_opt_str(args, "scope").as_deref()),
+        "search" => handlers::search(
+            conn,
+            &get_str(args, "keyword")?,
+            get_opt_str(args, "scope").as_deref(),
+        ),
 
         // Collection
         "list_collections" => handlers::list_collections(conn),
         "get_collection" => handlers::get_collection(conn, &get_str(args, "collection_id")?),
-        "create_collection" => handlers::create_collection(conn, &get_str(args, "name")?, get_opt_str(args, "description").as_deref(), get_opt_str(args, "group_id").as_deref()),
-        "update_collection" => handlers::update_collection(conn, &get_str(args, "id")?, get_opt_str(args, "name").as_deref(), get_opt_str(args, "description").as_deref()),
+        "create_collection" => handlers::create_collection(
+            conn,
+            &get_str(args, "name")?,
+            get_opt_str(args, "description").as_deref(),
+            get_opt_str(args, "group_id").as_deref(),
+        ),
+        "update_collection" => handlers::update_collection(
+            conn,
+            &get_str(args, "id")?,
+            get_opt_str(args, "name").as_deref(),
+            get_opt_str(args, "description").as_deref(),
+        ),
         "delete_collection" => handlers::delete_collection(conn, &get_str(args, "id")?),
 
         // Item
@@ -376,7 +383,14 @@ pub fn call_tool(
         "delete_item" => handlers::delete_item(conn, &get_str(args, "id")?),
 
         // Assertion
-        "create_assertion" => handlers::create_assertion(conn, &get_str(args, "item_id")?, &get_str(args, "assertion_type")?, get_opt_str(args, "expression").as_deref().unwrap_or(""), &get_str(args, "operator")?, &get_str(args, "expected")?),
+        "create_assertion" => handlers::create_assertion(
+            conn,
+            &get_str(args, "item_id")?,
+            &get_str(args, "assertion_type")?,
+            get_opt_str(args, "expression").as_deref().unwrap_or(""),
+            &get_str(args, "operator")?,
+            &get_str(args, "expected")?,
+        ),
         "list_assertions" => handlers::list_assertions(conn, &get_str(args, "item_id")?),
         "update_assertion" => handlers::update_assertion(conn, args),
         "delete_assertion" => handlers::delete_assertion(conn, &get_str(args, "id")?),
@@ -384,24 +398,50 @@ pub fn call_tool(
         // Execution (async)
         "send_request" => rt.block_on(handlers::send_request(conn, client, &get_str(args, "id")?)),
         "quick_send" => rt.block_on(handlers::quick_send(conn, client, args)),
-        "run_collection" => rt.block_on(handlers::run_collection(conn, client, &get_str(args, "collection_id")?, get_opt_str(args, "parent_id").as_deref(), args.get("concurrency").and_then(|v| v.as_u64()).map(|v| v as usize))),
+        "run_collection" => rt.block_on(handlers::run_collection(
+            conn,
+            client,
+            &get_str(args, "collection_id")?,
+            get_opt_str(args, "parent_id").as_deref(),
+            args.get("concurrency")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize),
+        )),
 
         // Environment
         "list_environments" => handlers::list_environments(conn),
         "create_environment" => handlers::create_environment(conn, &get_str(args, "name")?),
         "set_active_environment" => handlers::set_active_environment(conn, &get_str(args, "id")?),
         "get_active_environment" => handlers::get_active_environment(conn),
-        "save_env_variables" => handlers::save_env_variables(conn, &get_str(args, "environment_id")?, args.get("variables").cloned().unwrap_or(json!([]))),
+        "save_env_variables" => handlers::save_env_variables(
+            conn,
+            &get_str(args, "environment_id")?,
+            args.get("variables").cloned().unwrap_or(json!([])),
+        ),
         "delete_environment" => handlers::delete_environment(conn, &get_str(args, "id")?),
 
         // History
-        "list_history" => handlers::list_history(conn, get_opt_str(args, "status").as_deref(), get_opt_str(args, "method").as_deref(), get_opt_str(args, "keyword").as_deref(), args.get("limit").and_then(|v| v.as_u64()).map(|v| v as u32)),
+        "list_history" => handlers::list_history(
+            conn,
+            get_opt_str(args, "status").as_deref(),
+            get_opt_str(args, "method").as_deref(),
+            get_opt_str(args, "keyword").as_deref(),
+            args.get("limit").and_then(|v| v.as_u64()).map(|v| v as u32),
+        ),
         "get_history_stats" => handlers::get_history_stats(conn),
-        "list_item_runs" => handlers::list_item_runs(conn, &get_str(args, "item_id")?, args.get("limit").and_then(|v| v.as_u64()).map(|v| v as u32)),
+        "list_item_runs" => handlers::list_item_runs(
+            conn,
+            &get_str(args, "item_id")?,
+            args.get("limit").and_then(|v| v.as_u64()).map(|v| v as u32),
+        ),
 
         // Group
         "list_groups" => handlers::list_groups(conn),
-        "create_group" => handlers::create_group(conn, &get_str(args, "name")?, get_opt_str(args, "parent_id").as_deref()),
+        "create_group" => handlers::create_group(
+            conn,
+            &get_str(args, "name")?,
+            get_opt_str(args, "parent_id").as_deref(),
+        ),
         "delete_group" => handlers::delete_group(conn, &get_str(args, "id")?),
 
         _ => Err(format!("Unknown tool: {name}")),
@@ -416,5 +456,7 @@ fn get_str(args: &Value, key: &str) -> Result<String, String> {
 }
 
 fn get_opt_str(args: &Value, key: &str) -> Option<String> {
-    args.get(key).and_then(|v| v.as_str()).map(|s| s.to_string())
+    args.get(key)
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
 }

@@ -20,7 +20,15 @@ fn test_collection_crud() {
     let all = qai_lib::db::collection::list_all(&conn).unwrap();
     assert_eq!(all.len(), 1);
 
-    let updated = qai_lib::db::collection::update(&conn, &col.id, Some("Updated"), Some("new desc"), None, None).unwrap();
+    let updated = qai_lib::db::collection::update(
+        &conn,
+        &col.id,
+        Some("Updated"),
+        Some("new desc"),
+        None,
+        None,
+    )
+    .unwrap();
     assert_eq!(updated.name, "Updated");
     assert_eq!(updated.description, "new desc");
 
@@ -36,13 +44,15 @@ fn test_item_crud() {
     let conn = setup_db();
     let col = qai_lib::db::collection::create(&conn, "Col", "", None).unwrap();
 
-    let item = qai_lib::db::item::create(&conn, &col.id, None, "request", "Get Users", "GET").unwrap();
+    let item =
+        qai_lib::db::item::create(&conn, &col.id, None, "request", "Get Users", "GET").unwrap();
     assert_eq!(item.method, "GET");
     assert_eq!(item.name, "Get Users");
     assert_eq!(item.item_type, "request");
 
     let updated = qai_lib::db::item::update(
-        &conn, &item.id,
+        &conn,
+        &item.id,
         &qai_lib::models::item::UpdateItemPayload {
             name: Some("List Users".into()),
             method: Some("POST".into()),
@@ -51,7 +61,8 @@ fn test_item_crud() {
             body_content: Some(r#"{"page":1}"#.into()),
             ..Default::default()
         },
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(updated.name, "List Users");
     assert_eq!(updated.method, "POST");
     assert_eq!(updated.url, "http://example.com/users");
@@ -73,11 +84,21 @@ fn test_assertion_crud() {
     let col = qai_lib::db::collection::create(&conn, "Col", "", None).unwrap();
     let item = qai_lib::db::item::create(&conn, &col.id, None, "request", "Req", "GET").unwrap();
 
-    let a = qai_lib::db::assertion::create(&conn, &item.id, "status_code", "", "eq", "200").unwrap();
+    let a =
+        qai_lib::db::assertion::create(&conn, &item.id, "status_code", "", "eq", "200").unwrap();
     assert!(a.enabled);
     assert_eq!(a.operator, "eq");
 
-    let updated = qai_lib::db::assertion::update(&conn, &a.id, None, None, Some("neq"), Some("404"), Some(false)).unwrap();
+    let updated = qai_lib::db::assertion::update(
+        &conn,
+        &a.id,
+        None,
+        None,
+        Some("neq"),
+        Some("404"),
+        Some(false),
+    )
+    .unwrap();
     assert_eq!(updated.operator, "neq");
     assert_eq!(updated.expected, "404");
     assert!(!updated.enabled);
@@ -98,7 +119,8 @@ fn test_cascade_delete_collection() {
     let col = qai_lib::db::collection::create(&conn, "Col", "", None).unwrap();
     let item = qai_lib::db::item::create(&conn, &col.id, None, "request", "Req", "GET").unwrap();
     qai_lib::db::assertion::create(&conn, &item.id, "status_code", "", "eq", "200").unwrap();
-    let folder = qai_lib::db::item::create(&conn, &col.id, None, "folder", "Folder", "GET").unwrap();
+    let folder =
+        qai_lib::db::item::create(&conn, &col.id, None, "folder", "Folder", "GET").unwrap();
     qai_lib::db::item::create(&conn, &col.id, Some(&folder.id), "request", "Req2", "POST").unwrap();
 
     qai_lib::db::collection::delete(&conn, &col.id).unwrap();
@@ -121,7 +143,11 @@ fn test_cascade_delete_item_deletes_assertions() {
     qai_lib::db::item::delete(&conn, &item.id).unwrap();
 
     let assertions = qai_lib::db::assertion::list_by_item(&conn, &item.id).unwrap();
-    assert_eq!(assertions.len(), 0, "assertions should be cascade deleted with item");
+    assert_eq!(
+        assertions.len(),
+        0,
+        "assertions should be cascade deleted with item"
+    );
 }
 
 // ─── Collection Tree ────────────────────────────────────────
@@ -131,7 +157,8 @@ fn test_collection_tree_structure() {
     let conn = setup_db();
     let col = qai_lib::db::collection::create(&conn, "My API", "", None).unwrap();
     let folder = qai_lib::db::item::create(&conn, &col.id, None, "folder", "Auth", "GET").unwrap();
-    qai_lib::db::item::create(&conn, &col.id, Some(&folder.id), "request", "Login", "POST").unwrap();
+    qai_lib::db::item::create(&conn, &col.id, Some(&folder.id), "request", "Login", "POST")
+        .unwrap();
     qai_lib::db::item::create(&conn, &col.id, None, "request", "Health Check", "GET").unwrap();
 
     let tree = qai_lib::db::collection::get_tree(&conn, &col.id).unwrap();
@@ -143,7 +170,11 @@ fn test_collection_tree_structure() {
     assert_eq!(folder_node.children[0].name, "Login");
     assert_eq!(folder_node.children[0].method.as_deref(), Some("POST"));
 
-    let req_node = tree.children.iter().find(|c| c.name == "Health Check").unwrap();
+    let req_node = tree
+        .children
+        .iter()
+        .find(|c| c.name == "Health Check")
+        .unwrap();
     assert_eq!(req_node.method.as_deref(), Some("GET"));
     assert!(req_node.children.is_empty());
 }
@@ -161,7 +192,8 @@ fn test_collection_tree_nested_folders() {
     let conn = setup_db();
     let col = qai_lib::db::collection::create(&conn, "API", "", None).unwrap();
     let f1 = qai_lib::db::item::create(&conn, &col.id, None, "folder", "Level1", "GET").unwrap();
-    let f2 = qai_lib::db::item::create(&conn, &col.id, Some(&f1.id), "folder", "Level2", "GET").unwrap();
+    let f2 =
+        qai_lib::db::item::create(&conn, &col.id, Some(&f1.id), "folder", "Level2", "GET").unwrap();
     qai_lib::db::item::create(&conn, &col.id, Some(&f2.id), "request", "Deep", "GET").unwrap();
 
     let tree = qai_lib::db::collection::get_tree(&conn, &col.id).unwrap();
@@ -175,12 +207,16 @@ fn test_collection_tree_nested_folders() {
 fn test_collection_tree_chain_type() {
     let conn = setup_db();
     let col = qai_lib::db::collection::create(&conn, "API", "", None).unwrap();
-    let chain = qai_lib::db::item::create(&conn, &col.id, None, "chain", "Login Flow", "GET").unwrap();
+    let chain =
+        qai_lib::db::item::create(&conn, &col.id, None, "chain", "Login Flow", "GET").unwrap();
     qai_lib::db::item::create(&conn, &col.id, Some(&chain.id), "request", "Step1", "POST").unwrap();
 
     let tree = qai_lib::db::collection::get_tree(&conn, &col.id).unwrap();
     let chain_node = &tree.children[0];
-    assert!(matches!(chain_node.node_type, qai_lib::models::collection::TreeNodeType::Chain));
+    assert!(matches!(
+        chain_node.node_type,
+        qai_lib::models::collection::TreeNodeType::Chain
+    ));
     assert_eq!(chain_node.children.len(), 1);
 }
 
@@ -193,12 +229,14 @@ fn test_item_partial_update() {
     let item = qai_lib::db::item::create(&conn, &col.id, None, "request", "Req", "GET").unwrap();
 
     let updated = qai_lib::db::item::update(
-        &conn, &item.id,
+        &conn,
+        &item.id,
         &qai_lib::models::item::UpdateItemPayload {
             url: Some("http://test.com".into()),
             ..Default::default()
         },
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(updated.name, "Req");
     assert_eq!(updated.method, "GET");
     assert_eq!(updated.url, "http://test.com");
@@ -246,17 +284,25 @@ fn test_assertion_body_contains_chinese() {
     use qai_lib::models::item::HttpResponse;
 
     let assertion = Assertion {
-        id: "a1".into(), item_id: "r1".into(),
-        assertion_type: "body_contains".into(), expression: "".into(),
-        operator: "contains".into(), expected: "成功".into(),
-        enabled: true, sort_order: 0, created_at: "".into(),
+        id: "a1".into(),
+        item_id: "r1".into(),
+        assertion_type: "body_contains".into(),
+        expression: "".into(),
+        operator: "contains".into(),
+        expected: "成功".into(),
+        enabled: true,
+        sort_order: 0,
+        created_at: "".into(),
     };
 
     let long_body = "操作成功".repeat(50);
     let response = HttpResponse {
-        status: 200, status_text: "OK".into(),
-        headers: vec![], body: long_body,
-        time_ms: 100, size_bytes: 600,
+        status: 200,
+        status_text: "OK".into(),
+        headers: vec![],
+        body: long_body,
+        time_ms: 100,
+        size_bytes: 600,
     };
 
     let results = qai_lib::runner::assertion::evaluate_assertions(&[assertion], &response);
@@ -272,16 +318,29 @@ fn test_assertion_header_case_insensitive() {
     use qai_lib::models::item::{HttpResponse, KeyValuePair};
 
     let assertion = Assertion {
-        id: "a1".into(), item_id: "r1".into(),
-        assertion_type: "header_contains".into(), expression: "Content-Type".into(),
-        operator: "contains".into(), expected: "json".into(),
-        enabled: true, sort_order: 0, created_at: "".into(),
+        id: "a1".into(),
+        item_id: "r1".into(),
+        assertion_type: "header_contains".into(),
+        expression: "Content-Type".into(),
+        operator: "contains".into(),
+        expected: "json".into(),
+        enabled: true,
+        sort_order: 0,
+        created_at: "".into(),
     };
 
     let response = HttpResponse {
-        status: 200, status_text: "OK".into(),
-        headers: vec![KeyValuePair { key: "content-type".into(), value: "application/json".into(), enabled: true, field_type: String::new() }],
-        body: "{}".into(), time_ms: 50, size_bytes: 2,
+        status: 200,
+        status_text: "OK".into(),
+        headers: vec![KeyValuePair {
+            key: "content-type".into(),
+            value: "application/json".into(),
+            enabled: true,
+            field_type: String::new(),
+        }],
+        body: "{}".into(),
+        time_ms: 50,
+        size_bytes: 2,
     };
 
     let results = qai_lib::runner::assertion::evaluate_assertions(&[assertion], &response);
@@ -296,16 +355,24 @@ fn test_assertion_response_time() {
     use qai_lib::models::item::HttpResponse;
 
     let assertion = Assertion {
-        id: "a1".into(), item_id: "r1".into(),
-        assertion_type: "response_time".into(), expression: "".into(),
-        operator: "lt".into(), expected: "500".into(),
-        enabled: true, sort_order: 0, created_at: "".into(),
+        id: "a1".into(),
+        item_id: "r1".into(),
+        assertion_type: "response_time".into(),
+        expression: "".into(),
+        operator: "lt".into(),
+        expected: "500".into(),
+        enabled: true,
+        sort_order: 0,
+        created_at: "".into(),
     };
 
     let response = HttpResponse {
-        status: 200, status_text: "OK".into(),
-        headers: vec![], body: "{}".into(),
-        time_ms: 120, size_bytes: 2,
+        status: 200,
+        status_text: "OK".into(),
+        headers: vec![],
+        body: "{}".into(),
+        time_ms: 120,
+        size_bytes: 2,
     };
 
     let results = qai_lib::runner::assertion::evaluate_assertions(&[assertion], &response);
@@ -321,23 +388,36 @@ fn test_disabled_assertions_skipped() {
 
     let assertions = vec![
         Assertion {
-            id: "a1".into(), item_id: "r1".into(),
-            assertion_type: "status_code".into(), expression: "".into(),
-            operator: "eq".into(), expected: "999".into(),
-            enabled: false, sort_order: 0, created_at: "".into(),
+            id: "a1".into(),
+            item_id: "r1".into(),
+            assertion_type: "status_code".into(),
+            expression: "".into(),
+            operator: "eq".into(),
+            expected: "999".into(),
+            enabled: false,
+            sort_order: 0,
+            created_at: "".into(),
         },
         Assertion {
-            id: "a2".into(), item_id: "r1".into(),
-            assertion_type: "status_code".into(), expression: "".into(),
-            operator: "eq".into(), expected: "200".into(),
-            enabled: true, sort_order: 1, created_at: "".into(),
+            id: "a2".into(),
+            item_id: "r1".into(),
+            assertion_type: "status_code".into(),
+            expression: "".into(),
+            operator: "eq".into(),
+            expected: "200".into(),
+            enabled: true,
+            sort_order: 1,
+            created_at: "".into(),
         },
     ];
 
     let response = HttpResponse {
-        status: 200, status_text: "OK".into(),
-        headers: vec![], body: "".into(),
-        time_ms: 50, size_bytes: 0,
+        status: 200,
+        status_text: "OK".into(),
+        headers: vec![],
+        body: "".into(),
+        time_ms: 50,
+        size_bytes: 0,
     };
 
     let results = qai_lib::runner::assertion::evaluate_assertions(&assertions, &response);
@@ -399,14 +479,20 @@ fn test_environment_save_variables() {
 
     let vars = vec![
         EnvVariable {
-            id: String::new(), environment_id: env.id.clone(),
-            key: "HOST".into(), value: "localhost".into(),
-            enabled: true, sort_order: 0,
+            id: String::new(),
+            environment_id: env.id.clone(),
+            key: "HOST".into(),
+            value: "localhost".into(),
+            enabled: true,
+            sort_order: 0,
         },
         EnvVariable {
-            id: String::new(), environment_id: env.id.clone(),
-            key: "PORT".into(), value: "8080".into(),
-            enabled: true, sort_order: 1,
+            id: String::new(),
+            environment_id: env.id.clone(),
+            key: "PORT".into(),
+            value: "8080".into(),
+            enabled: true,
+            sort_order: 1,
         },
     ];
     qai_lib::db::environment::save_variables(&conn, &env.id, &vars).unwrap();
@@ -417,9 +503,12 @@ fn test_environment_save_variables() {
     assert_eq!(loaded[1].key, "PORT");
 
     let new_vars = vec![EnvVariable {
-        id: String::new(), environment_id: env.id.clone(),
-        key: "TOKEN".into(), value: "abc".into(),
-        enabled: true, sort_order: 0,
+        id: String::new(),
+        environment_id: env.id.clone(),
+        key: "TOKEN".into(),
+        value: "abc".into(),
+        enabled: true,
+        sort_order: 0,
     }];
     qai_lib::db::environment::save_variables(&conn, &env.id, &new_vars).unwrap();
     let loaded = qai_lib::db::environment::list_variables(&conn, &env.id).unwrap();
@@ -437,14 +526,21 @@ fn test_execution_save_and_list() {
     let item = qai_lib::db::item::create(&conn, &col.id, None, "request", "Req", "GET").unwrap();
 
     let exec = Execution {
-        id: "exec-001".into(), item_id: item.id.clone(),
-        collection_id: col.id.clone(), batch_id: None,
-        status: "success".into(), request_url: "http://example.com".into(),
-        request_method: "GET".into(), response_status: Some(200),
-        response_headers: "{}".into(), response_body: Some("ok".into()),
-        response_time_ms: 50, response_size: 2,
+        id: "exec-001".into(),
+        item_id: item.id.clone(),
+        collection_id: col.id.clone(),
+        batch_id: None,
+        status: "success".into(),
+        request_url: "http://example.com".into(),
+        request_method: "GET".into(),
+        response_status: Some(200),
+        response_headers: "{}".into(),
+        response_body: Some("ok".into()),
+        response_time_ms: 50,
+        response_size: 2,
         assertion_results: r#"[{"passed":true,"actual":"200","message":"ok"}]"#.into(),
-        error_message: None, executed_at: "2024-01-01 00:00:00".into(),
+        error_message: None,
+        executed_at: "2024-01-01 00:00:00".into(),
     };
     qai_lib::db::execution::save(&conn, &exec).unwrap();
 
@@ -463,13 +559,20 @@ fn test_execution_cleanup() {
 
     for i in 0..5 {
         let exec = Execution {
-            id: format!("exec-{:03}", i), item_id: item.id.clone(),
-            collection_id: col.id.clone(), batch_id: None,
-            status: "success".into(), request_url: "http://example.com".into(),
-            request_method: "GET".into(), response_status: Some(200),
-            response_headers: "{}".into(), response_body: None,
-            response_time_ms: 50, response_size: 0,
-            assertion_results: "[]".into(), error_message: None,
+            id: format!("exec-{:03}", i),
+            item_id: item.id.clone(),
+            collection_id: col.id.clone(),
+            batch_id: None,
+            status: "success".into(),
+            request_url: "http://example.com".into(),
+            request_method: "GET".into(),
+            response_status: Some(200),
+            response_headers: "{}".into(),
+            response_body: None,
+            response_time_ms: 50,
+            response_size: 0,
+            assertion_results: "[]".into(),
+            error_message: None,
             executed_at: format!("2024-01-01 00:00:0{}", i),
         };
         qai_lib::db::execution::save(&conn, &exec).unwrap();
@@ -500,20 +603,28 @@ fn test_execution_get_last_status() {
         ("e3", item2.id.as_str(), "success", "2024-01-01 00:00:00"),
     ] {
         let exec = Execution {
-            id: id.into(), item_id: item_id.into(),
-            collection_id: col.id.clone(), batch_id: None,
-            status: status.into(), request_url: "http://x.com".into(),
-            request_method: "GET".into(), response_status: Some(200),
-            response_headers: "{}".into(), response_body: None,
-            response_time_ms: 50, response_size: 0,
+            id: id.into(),
+            item_id: item_id.into(),
+            collection_id: col.id.clone(),
+            batch_id: None,
+            status: status.into(),
+            request_url: "http://x.com".into(),
+            request_method: "GET".into(),
+            response_status: Some(200),
+            response_headers: "{}".into(),
+            response_body: None,
+            response_time_ms: 50,
+            response_size: 0,
             assertion_results: r#"[{"passed":true}]"#.into(),
-            error_message: None, executed_at: String::new(),
+            error_message: None,
+            executed_at: String::new(),
         };
         qai_lib::db::execution::save(&conn, &exec).unwrap();
         conn.execute(
             "UPDATE executions SET executed_at = ?1 WHERE id = ?2",
             rusqlite::params![time, id],
-        ).unwrap();
+        )
+        .unwrap();
     }
 
     let statuses = qai_lib::db::execution::get_last_status_for_collection(&conn, &col.id).unwrap();
@@ -531,7 +642,8 @@ fn test_execution_get_last_status() {
 fn test_item_protocol_default_http() {
     let conn = setup_db();
     let col = qai_lib::db::collection::create(&conn, "Col", "", None).unwrap();
-    let item = qai_lib::db::item::create(&conn, &col.id, None, "request", "HTTP Req", "GET").unwrap();
+    let item =
+        qai_lib::db::item::create(&conn, &col.id, None, "request", "HTTP Req", "GET").unwrap();
     assert_eq!(item.protocol, "http");
 }
 
@@ -539,11 +651,13 @@ fn test_item_protocol_default_http() {
 fn test_item_protocol_update_to_websocket() {
     let conn = setup_db();
     let col = qai_lib::db::collection::create(&conn, "Col", "", None).unwrap();
-    let item = qai_lib::db::item::create(&conn, &col.id, None, "request", "WS Test", "GET").unwrap();
+    let item =
+        qai_lib::db::item::create(&conn, &col.id, None, "request", "WS Test", "GET").unwrap();
     assert_eq!(item.protocol, "http");
 
     let updated = qai_lib::db::item::update(
-        &conn, &item.id,
+        &conn,
+        &item.id,
         &qai_lib::models::item::UpdateItemPayload {
             url: Some("wss://api.example.com/ws".into()),
             body_type: Some("json".into()),
@@ -551,7 +665,8 @@ fn test_item_protocol_update_to_websocket() {
             protocol: Some("websocket".into()),
             ..Default::default()
         },
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(updated.protocol, "websocket");
     assert_eq!(updated.url, "wss://api.example.com/ws");
     assert_eq!(updated.body_type, "json");
@@ -564,12 +679,14 @@ fn test_item_protocol_persists_on_reload() {
     let item = qai_lib::db::item::create(&conn, &col.id, None, "request", "WS", "GET").unwrap();
 
     qai_lib::db::item::update(
-        &conn, &item.id,
+        &conn,
+        &item.id,
         &qai_lib::models::item::UpdateItemPayload {
             protocol: Some("websocket".into()),
             ..Default::default()
         },
-    ).unwrap();
+    )
+    .unwrap();
 
     // 重新读取验证持久化
     let reloaded = qai_lib::db::item::get(&conn, &item.id).unwrap();
@@ -584,21 +701,25 @@ fn test_item_protocol_unaffected_by_other_updates() {
 
     // 先设为 websocket
     qai_lib::db::item::update(
-        &conn, &item.id,
+        &conn,
+        &item.id,
         &qai_lib::models::item::UpdateItemPayload {
             protocol: Some("websocket".into()),
             ..Default::default()
         },
-    ).unwrap();
+    )
+    .unwrap();
 
     // 只更新 name，不传 protocol
     let updated = qai_lib::db::item::update(
-        &conn, &item.id,
+        &conn,
+        &item.id,
         &qai_lib::models::item::UpdateItemPayload {
             name: Some("Renamed".into()),
             ..Default::default()
         },
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(updated.name, "Renamed");
     assert_eq!(updated.protocol, "websocket"); // protocol 不变
 }
@@ -610,15 +731,18 @@ fn test_websocket_item_in_collection_tree() {
 
     // 创建一个 HTTP 请求和一个 WebSocket 请求
     qai_lib::db::item::create(&conn, &col.id, None, "request", "HTTP Health", "GET").unwrap();
-    let ws_item = qai_lib::db::item::create(&conn, &col.id, None, "request", "WS TTS", "GET").unwrap();
+    let ws_item =
+        qai_lib::db::item::create(&conn, &col.id, None, "request", "WS TTS", "GET").unwrap();
     qai_lib::db::item::update(
-        &conn, &ws_item.id,
+        &conn,
+        &ws_item.id,
         &qai_lib::models::item::UpdateItemPayload {
             url: Some("wss://api.example.com/ws".into()),
             protocol: Some("websocket".into()),
             ..Default::default()
         },
-    ).unwrap();
+    )
+    .unwrap();
 
     let tree = qai_lib::db::collection::get_tree(&conn, &col.id).unwrap();
     assert_eq!(tree.children.len(), 2);

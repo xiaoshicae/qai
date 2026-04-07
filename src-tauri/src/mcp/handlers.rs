@@ -10,19 +10,24 @@ pub fn search(conn: &Connection, keyword: &str, scope: Option<&str>) -> Result<S
 
     if scope == "all" || scope == "groups" {
         let groups = qai_lib::db::group::list_all(conn).map_err(|e| e.to_string())?;
-        let matched: Vec<_> = groups.into_iter()
+        let matched: Vec<_> = groups
+            .into_iter()
             .filter(|g| g.name.to_lowercase().contains(&kw))
             .collect();
         if !matched.is_empty() {
             // 同时列出每个 group 下的 collections
             let all_cols = qai_lib::db::collection::list_all(conn).map_err(|e| e.to_string())?;
-            let group_results: Vec<Value> = matched.iter().map(|g| {
-                let cols: Vec<_> = all_cols.iter()
-                    .filter(|c| c.group_id.as_deref() == Some(&g.id))
-                    .map(|c| json!({ "id": c.id, "name": c.name }))
-                    .collect();
-                json!({ "id": g.id, "name": g.name, "type": "group", "collections": cols })
-            }).collect();
+            let group_results: Vec<Value> = matched
+                .iter()
+                .map(|g| {
+                    let cols: Vec<_> = all_cols
+                        .iter()
+                        .filter(|c| c.group_id.as_deref() == Some(&g.id))
+                        .map(|c| json!({ "id": c.id, "name": c.name }))
+                        .collect();
+                    json!({ "id": g.id, "name": g.name, "type": "group", "collections": cols })
+                })
+                .collect();
             results["groups"] = json!(group_results);
         }
     }
@@ -43,7 +48,8 @@ pub fn search(conn: &Connection, keyword: &str, scope: Option<&str>) -> Result<S
         let cols = qai_lib::db::collection::list_all(conn).map_err(|e| e.to_string())?;
         let mut matched: Vec<Value> = Vec::new();
         for col in &cols {
-            let items = qai_lib::db::item::list_by_collection(conn, &col.id).map_err(|e| e.to_string())?;
+            let items =
+                qai_lib::db::item::list_by_collection(conn, &col.id).map_err(|e| e.to_string())?;
             for item in items {
                 if item.name.to_lowercase().contains(&kw) || item.url.to_lowercase().contains(&kw) {
                     matched.push(json!({
@@ -58,7 +64,9 @@ pub fn search(conn: &Connection, keyword: &str, scope: Option<&str>) -> Result<S
                     }));
                 }
             }
-            if matched.len() >= 50 { break; }
+            if matched.len() >= 50 {
+                break;
+            }
         }
         if !matched.is_empty() {
             results["items"] = json!(matched);
@@ -85,13 +93,25 @@ pub fn get_collection(conn: &Connection, id: &str) -> Result<String, String> {
     ok_json(&json!({ "collection": col, "items": items }))
 }
 
-pub fn create_collection(conn: &Connection, name: &str, desc: Option<&str>, group_id: Option<&str>) -> Result<String, String> {
-    let col = qai_lib::db::collection::create(conn, name, desc.unwrap_or(""), group_id).map_err(|e| e.to_string())?;
+pub fn create_collection(
+    conn: &Connection,
+    name: &str,
+    desc: Option<&str>,
+    group_id: Option<&str>,
+) -> Result<String, String> {
+    let col = qai_lib::db::collection::create(conn, name, desc.unwrap_or(""), group_id)
+        .map_err(|e| e.to_string())?;
     ok_json(&col)
 }
 
-pub fn update_collection(conn: &Connection, id: &str, name: Option<&str>, desc: Option<&str>) -> Result<String, String> {
-    let col = qai_lib::db::collection::update(conn, id, name, desc, None, None).map_err(|e| e.to_string())?;
+pub fn update_collection(
+    conn: &Connection,
+    id: &str,
+    name: Option<&str>,
+    desc: Option<&str>,
+) -> Result<String, String> {
+    let col = qai_lib::db::collection::update(conn, id, name, desc, None, None)
+        .map_err(|e| e.to_string())?;
     ok_json(&col)
 }
 
@@ -109,8 +129,15 @@ pub fn create_item(conn: &Connection, args: &Value) -> Result<String, String> {
     let method = opt_str(args, "method").unwrap_or_else(|| "GET".into());
     let parent_id = opt_str(args, "parent_id");
 
-    let item = qai_lib::db::item::create(conn, &collection_id, parent_id.as_deref(), &item_type, &name, &method)
-        .map_err(|e| e.to_string())?;
+    let item = qai_lib::db::item::create(
+        conn,
+        &collection_id,
+        parent_id.as_deref(),
+        &item_type,
+        &name,
+        &method,
+    )
+    .map_err(|e| e.to_string())?;
 
     let payload = qai_lib::models::item::UpdateItemPayload {
         url: opt_str(args, "url"),
@@ -120,7 +147,10 @@ pub fn create_item(conn: &Connection, args: &Value) -> Result<String, String> {
         body_content: opt_str(args, "body_content"),
         description: opt_str(args, "description"),
         extract_rules: opt_str(args, "extract_rules"),
-        expect_status: args.get("expect_status").and_then(|v| v.as_u64()).map(|v| v as u16),
+        expect_status: args
+            .get("expect_status")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u16),
         ..Default::default()
     };
 
@@ -145,7 +175,10 @@ pub fn update_item(conn: &Connection, args: &Value) -> Result<String, String> {
         body_content: opt_str(args, "body_content"),
         description: opt_str(args, "description"),
         extract_rules: opt_str(args, "extract_rules"),
-        expect_status: args.get("expect_status").and_then(|v| v.as_u64()).map(|v| v as u16),
+        expect_status: args
+            .get("expect_status")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u16),
         ..Default::default()
     };
     let updated = qai_lib::db::item::update(conn, &id, &payload).map_err(|e| e.to_string())?;
@@ -159,8 +192,16 @@ pub fn delete_item(conn: &Connection, id: &str) -> Result<String, String> {
 
 // ─── Assertion ─────────────────────────────────────────────────
 
-pub fn create_assertion(conn: &Connection, item_id: &str, atype: &str, expression: &str, operator: &str, expected: &str) -> Result<String, String> {
-    let a = qai_lib::db::assertion::create(conn, item_id, atype, expression, operator, expected).map_err(|e| e.to_string())?;
+pub fn create_assertion(
+    conn: &Connection,
+    item_id: &str,
+    atype: &str,
+    expression: &str,
+    operator: &str,
+    expected: &str,
+) -> Result<String, String> {
+    let a = qai_lib::db::assertion::create(conn, item_id, atype, expression, operator, expected)
+        .map_err(|e| e.to_string())?;
     ok_json(&a)
 }
 
@@ -172,13 +213,15 @@ pub fn list_assertions(conn: &Connection, item_id: &str) -> Result<String, Strin
 pub fn update_assertion(conn: &Connection, args: &Value) -> Result<String, String> {
     let id = req_str(args, "id")?;
     let a = qai_lib::db::assertion::update(
-        conn, &id,
+        conn,
+        &id,
         opt_str(args, "assertion_type").as_deref(),
         opt_str(args, "expression").as_deref(),
         opt_str(args, "operator").as_deref(),
         opt_str(args, "expected").as_deref(),
         args.get("enabled").and_then(|v| v.as_bool()),
-    ).map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
     ok_json(&a)
 }
 
@@ -189,13 +232,20 @@ pub fn delete_assertion(conn: &Connection, id: &str) -> Result<String, String> {
 
 // ─── Execution ─────────────────────────────────────────────────
 
-pub async fn send_request(conn: &Connection, client: &reqwest::Client, item_id: &str) -> Result<String, String> {
+pub async fn send_request(
+    conn: &Connection,
+    client: &reqwest::Client,
+    item_id: &str,
+) -> Result<String, String> {
     let raw_item = qai_lib::db::item::get(conn, item_id).map_err(|e| e.to_string())?;
-    let assertions = qai_lib::db::assertion::list_by_item(conn, item_id).map_err(|e| e.to_string())?;
+    let assertions =
+        qai_lib::db::assertion::list_by_item(conn, item_id).map_err(|e| e.to_string())?;
 
     let item = apply_env_vars(conn, &raw_item);
 
-    let mut result = qai_lib::http::client::execute(client, &item).await.map_err(|e| e.to_string())?;
+    let mut result = qai_lib::http::client::execute(client, &item)
+        .await
+        .map_err(|e| e.to_string())?;
     qai_lib::runner::assertion::apply_assertions(&mut result, &assertions);
 
     let exec = qai_lib::http::client::to_execution(&item, &result);
@@ -206,7 +256,11 @@ pub async fn send_request(conn: &Connection, client: &reqwest::Client, item_id: 
     ok_json(&result)
 }
 
-pub async fn quick_send(conn: &Connection, client: &reqwest::Client, args: &Value) -> Result<String, String> {
+pub async fn quick_send(
+    conn: &Connection,
+    client: &reqwest::Client,
+    args: &Value,
+) -> Result<String, String> {
     let item = qai_lib::models::item::CollectionItem {
         id: String::new(),
         collection_id: String::new(),
@@ -230,7 +284,9 @@ pub async fn quick_send(conn: &Connection, client: &reqwest::Client, args: &Valu
     };
 
     let item = apply_env_vars(conn, &item);
-    let result = qai_lib::http::client::execute(client, &item).await.map_err(|e| e.to_string())?;
+    let result = qai_lib::http::client::execute(client, &item)
+        .await
+        .map_err(|e| e.to_string())?;
     ok_json(&result)
 }
 
@@ -253,47 +309,72 @@ pub async fn run_collection(
 
     // 识别 chain 容器
     let mut chain_names: HashMap<String, String> = HashMap::new();
-    let chain_ids: HashSet<String> = all_items.iter()
+    let chain_ids: HashSet<String> = all_items
+        .iter()
         .filter(|i| i.item_type == qai_lib::models::item_type::CHAIN)
-        .map(|i| { chain_names.insert(i.id.clone(), i.name.clone()); i.id.clone() })
+        .map(|i| {
+            chain_names.insert(i.id.clone(), i.name.clone());
+            i.id.clone()
+        })
         .collect();
 
     // 加载 chain 子请求
     let mut extra_children = Vec::new();
     for cid in &chain_ids {
-        if !all_items.iter().any(|i| i.parent_id.as_deref() == Some(cid)) {
-            let children = qai_lib::db::item::list_by_parent(conn, cid).map_err(|e| e.to_string())?;
+        if !all_items
+            .iter()
+            .any(|i| i.parent_id.as_deref() == Some(cid))
+        {
+            let children =
+                qai_lib::db::item::list_by_parent(conn, cid).map_err(|e| e.to_string())?;
             extra_children.extend(children);
         }
     }
 
     // 批量加载断言
-    let mut all_request_refs: Vec<&qai_lib::models::item::CollectionItem> = all_items.iter()
-        .filter(|i| i.item_type == qai_lib::models::item_type::REQUEST).collect();
-    all_request_refs.extend(extra_children.iter().filter(|i| i.item_type == qai_lib::models::item_type::REQUEST));
+    let mut all_request_refs: Vec<&qai_lib::models::item::CollectionItem> = all_items
+        .iter()
+        .filter(|i| i.item_type == qai_lib::models::item_type::REQUEST)
+        .collect();
+    all_request_refs.extend(
+        extra_children
+            .iter()
+            .filter(|i| i.item_type == qai_lib::models::item_type::REQUEST),
+    );
     let req_ids: Vec<String> = all_request_refs.iter().map(|i| i.id.clone()).collect();
-    let mut assertions_map = qai_lib::db::assertion::list_by_items(conn, &req_ids).map_err(|e| e.to_string())?;
+    let mut assertions_map =
+        qai_lib::db::assertion::list_by_items(conn, &req_ids).map_err(|e| e.to_string())?;
 
     // 分类 chain vs normal
     let mut normal = Vec::new();
     let mut chains: HashMap<String, Vec<_>> = HashMap::new();
 
     for item in &all_items {
-        if item.item_type != qai_lib::models::item_type::REQUEST || item.url.is_empty() { continue; }
+        if item.item_type != qai_lib::models::item_type::REQUEST || item.url.is_empty() {
+            continue;
+        }
         let assertions = assertions_map.remove(&item.id).unwrap_or_default();
         if let Some(ref pid) = item.parent_id {
             if chain_ids.contains(pid) {
-                chains.entry(pid.clone()).or_default().push((item.clone(), assertions));
+                chains
+                    .entry(pid.clone())
+                    .or_default()
+                    .push((item.clone(), assertions));
                 continue;
             }
         }
         normal.push((qai_lib::http::vars::apply_vars(item, &var_map), assertions));
     }
     for child in &extra_children {
-        if child.item_type != qai_lib::models::item_type::REQUEST || child.url.is_empty() { continue; }
+        if child.item_type != qai_lib::models::item_type::REQUEST || child.url.is_empty() {
+            continue;
+        }
         let assertions = assertions_map.remove(&child.id).unwrap_or_default();
         if let Some(ref pid) = child.parent_id {
-            chains.entry(pid.clone()).or_default().push((child.clone(), assertions));
+            chains
+                .entry(pid.clone())
+                .or_default()
+                .push((child.clone(), assertions));
         }
     }
 
@@ -308,20 +389,51 @@ pub async fn run_collection(
     // 执行 chains
     for (chain_id, steps) in &chains {
         let name = chain_names.get(chain_id).cloned().unwrap_or_default();
-        let cr = qai_lib::runner::chain::run_chain(client, steps.clone(), var_map.clone(), chain_id.clone(), name, None, |_| {}, None, false).await;
-        for step in cr.steps { all_results.push(step.execution_result); }
+        let cr = qai_lib::runner::chain::run_chain(
+            client,
+            steps.clone(),
+            var_map.clone(),
+            chain_id.clone(),
+            name,
+            None,
+            |_| {},
+            None,
+            false,
+        )
+        .await;
+        for step in cr.steps {
+            all_results.push(step.execution_result);
+        }
     }
 
     // 并行执行普通请求
     if !normal.is_empty() {
-        let br = qai_lib::runner::batch::run_batch(client, normal, concurrency.unwrap_or(qai_lib::DEFAULT_CONCURRENCY), std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)), |_| {}, |_| {}, false).await;
+        let br = qai_lib::runner::batch::run_batch(
+            client,
+            normal,
+            concurrency.unwrap_or(qai_lib::DEFAULT_CONCURRENCY),
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            |_| {},
+            |_| {},
+            false,
+        )
+        .await;
         all_results.extend(br.results);
     }
 
     let total_time = start.elapsed().as_millis() as u64;
-    let passed = all_results.iter().filter(|r| r.status == qai_lib::models::status::SUCCESS).count();
-    let failed = all_results.iter().filter(|r| r.status == qai_lib::models::status::FAILED).count();
-    let errors = all_results.iter().filter(|r| r.status == qai_lib::models::status::ERROR).count();
+    let passed = all_results
+        .iter()
+        .filter(|r| r.status == qai_lib::models::status::SUCCESS)
+        .count();
+    let failed = all_results
+        .iter()
+        .filter(|r| r.status == qai_lib::models::status::FAILED)
+        .count();
+    let errors = all_results
+        .iter()
+        .filter(|r| r.status == qai_lib::models::status::ERROR)
+        .count();
 
     // 保存执行记录
     for result in &all_results {
@@ -383,20 +495,35 @@ pub fn get_active_environment(conn: &Connection) -> Result<String, String> {
     }
 }
 
-pub fn save_env_variables(conn: &Connection, env_id: &str, vars_json: Value) -> Result<String, String> {
+pub fn save_env_variables(
+    conn: &Connection,
+    env_id: &str,
+    vars_json: Value,
+) -> Result<String, String> {
     let arr = vars_json.as_array().ok_or("variables must be an array")?;
-    let variables: Vec<qai_lib::models::environment::EnvVariable> = arr.iter().enumerate().map(|(i, v)| {
-        qai_lib::models::environment::EnvVariable {
+    let variables: Vec<qai_lib::models::environment::EnvVariable> = arr
+        .iter()
+        .enumerate()
+        .map(|(i, v)| qai_lib::models::environment::EnvVariable {
             id: String::new(),
             environment_id: env_id.to_string(),
-            key: v.get("key").and_then(|k| k.as_str()).unwrap_or("").to_string(),
-            value: v.get("value").and_then(|k| k.as_str()).unwrap_or("").to_string(),
+            key: v
+                .get("key")
+                .and_then(|k| k.as_str())
+                .unwrap_or("")
+                .to_string(),
+            value: v
+                .get("value")
+                .and_then(|k| k.as_str())
+                .unwrap_or("")
+                .to_string(),
             enabled: v.get("enabled").and_then(|k| k.as_bool()).unwrap_or(true),
             sort_order: i as i32,
-        }
-    }).collect();
+        })
+        .collect();
 
-    qai_lib::db::environment::save_variables(conn, env_id, &variables).map_err(|e| e.to_string())?;
+    qai_lib::db::environment::save_variables(conn, env_id, &variables)
+        .map_err(|e| e.to_string())?;
     Ok(format!("Saved {} variables", variables.len()))
 }
 
@@ -407,8 +534,22 @@ pub fn delete_environment(conn: &Connection, id: &str) -> Result<String, String>
 
 // ─── History ───────────────────────────────────────────────────
 
-pub fn list_history(conn: &Connection, status: Option<&str>, method: Option<&str>, keyword: Option<&str>, limit: Option<u32>) -> Result<String, String> {
-    let list = qai_lib::db::execution::list_filtered(conn, status, method, keyword, limit.unwrap_or(qai_lib::DEFAULT_HISTORY_LIMIT), 0).map_err(|e| e.to_string())?;
+pub fn list_history(
+    conn: &Connection,
+    status: Option<&str>,
+    method: Option<&str>,
+    keyword: Option<&str>,
+    limit: Option<u32>,
+) -> Result<String, String> {
+    let list = qai_lib::db::execution::list_filtered(
+        conn,
+        status,
+        method,
+        keyword,
+        limit.unwrap_or(qai_lib::DEFAULT_HISTORY_LIMIT),
+        0,
+    )
+    .map_err(|e| e.to_string())?;
     ok_json(&list)
 }
 
@@ -417,8 +558,17 @@ pub fn get_history_stats(conn: &Connection) -> Result<String, String> {
     ok_json(&stats)
 }
 
-pub fn list_item_runs(conn: &Connection, item_id: &str, limit: Option<u32>) -> Result<String, String> {
-    let runs = qai_lib::db::execution::list_by_item(conn, item_id, limit.unwrap_or(qai_lib::DEFAULT_ITEM_RUNS_LIMIT)).map_err(|e| e.to_string())?;
+pub fn list_item_runs(
+    conn: &Connection,
+    item_id: &str,
+    limit: Option<u32>,
+) -> Result<String, String> {
+    let runs = qai_lib::db::execution::list_by_item(
+        conn,
+        item_id,
+        limit.unwrap_or(qai_lib::DEFAULT_ITEM_RUNS_LIMIT),
+    )
+    .map_err(|e| e.to_string())?;
     ok_json(&runs)
 }
 
@@ -429,7 +579,11 @@ pub fn list_groups(conn: &Connection) -> Result<String, String> {
     ok_json(&groups)
 }
 
-pub fn create_group(conn: &Connection, name: &str, parent_id: Option<&str>) -> Result<String, String> {
+pub fn create_group(
+    conn: &Connection,
+    name: &str,
+    parent_id: Option<&str>,
+) -> Result<String, String> {
     let g = qai_lib::db::group::create(conn, name, parent_id).map_err(|e| e.to_string())?;
     ok_json(&g)
 }
@@ -446,12 +600,16 @@ fn ok_json(v: &impl serde::Serialize) -> Result<String, String> {
 }
 
 fn req_str(args: &Value, key: &str) -> Result<String, String> {
-    args.get(key).and_then(|v| v.as_str()).map(|s| s.to_string())
+    args.get(key)
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
         .ok_or_else(|| format!("Missing required argument: {key}"))
 }
 
 fn opt_str(args: &Value, key: &str) -> Option<String> {
-    args.get(key).and_then(|v| v.as_str()).map(|s| s.to_string())
+    args.get(key)
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
 }
 
 fn build_env_var_map(conn: &Connection) -> std::collections::HashMap<String, String> {
@@ -462,7 +620,14 @@ fn build_env_var_map(conn: &Connection) -> std::collections::HashMap<String, Str
     }
 }
 
-fn apply_env_vars(conn: &Connection, item: &qai_lib::models::item::CollectionItem) -> qai_lib::models::item::CollectionItem {
+fn apply_env_vars(
+    conn: &Connection,
+    item: &qai_lib::models::item::CollectionItem,
+) -> qai_lib::models::item::CollectionItem {
     let var_map = build_env_var_map(conn);
-    if var_map.is_empty() { item.clone() } else { qai_lib::http::vars::apply_vars(item, &var_map) }
+    if var_map.is_empty() {
+        item.clone()
+    } else {
+        qai_lib::http::vars::apply_vars(item, &var_map)
+    }
 }

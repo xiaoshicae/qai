@@ -39,8 +39,15 @@ pub fn update_collection(
     let conn = db.conn()?;
     let gid = group_id.map(|outer| outer.as_deref().map(|s| s.to_string()));
     let gid_ref = gid.as_ref().map(|o| o.as_deref());
-    crate::db::collection::update(&conn, &id, name.as_deref(), description.as_deref(), gid_ref, sort_order)
-        .map_err(|e| e.to_string())
+    crate::db::collection::update(
+        &conn,
+        &id,
+        name.as_deref(),
+        description.as_deref(),
+        gid_ref,
+        sort_order,
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -50,7 +57,10 @@ pub fn delete_collection(db: State<'_, DbState>, id: String) -> Result<(), Strin
 }
 
 #[tauri::command]
-pub fn get_collection_tree(db: State<'_, DbState>, collection_id: String) -> Result<CollectionTreeNode, String> {
+pub fn get_collection_tree(
+    db: State<'_, DbState>,
+    collection_id: String,
+) -> Result<CollectionTreeNode, String> {
     let conn = db.conn()?;
     crate::db::collection::get_tree(&conn, &collection_id).map_err(|e| e.to_string())
 }
@@ -70,8 +80,7 @@ pub fn create_group(
     parent_id: Option<String>,
 ) -> Result<Group, String> {
     let conn = db.conn()?;
-    crate::db::group::create(&conn, &name, parent_id.as_deref())
-        .map_err(|e| e.to_string())
+    crate::db::group::create(&conn, &name, parent_id.as_deref()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -92,12 +101,17 @@ pub fn update_group(
 /// 设置分组的 parent_id（支持 null → 提升为顶级）
 /// 独立命令，避免 Option<Option<String>> 的 serde null 反序列化问题
 #[tauri::command]
-pub fn set_group_parent(db: State<'_, DbState>, id: String, parent_id: Option<String>) -> Result<Group, String> {
+pub fn set_group_parent(
+    db: State<'_, DbState>,
+    id: String,
+    parent_id: Option<String>,
+) -> Result<Group, String> {
     let conn = db.conn()?;
     conn.execute(
         "UPDATE groups SET parent_id = ?2 WHERE id = ?1",
         rusqlite::params![id, parent_id],
-    ).map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
     crate::db::group::get(&conn, &id).map_err(|e| e.to_string())
 }
 
@@ -131,13 +145,15 @@ pub fn reorder_sidebar(
         conn.execute(
             "UPDATE groups SET sort_order = ?1 WHERE id = ?2",
             rusqlite::params![g.sort_order, g.id],
-        ).map_err(|e| e.to_string())?;
+        )
+        .map_err(|e| e.to_string())?;
     }
     for c in &collections {
         conn.execute(
             "UPDATE collections SET sort_order = ?1, group_id = ?2 WHERE id = ?3",
             rusqlite::params![c.sort_order, c.group_id, c.id],
-        ).map_err(|e| e.to_string())?;
+        )
+        .map_err(|e| e.to_string())?;
     }
     Ok(())
 }

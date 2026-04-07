@@ -17,7 +17,12 @@ fn prepare_request(db: &DbState, id: &str) -> Result<(CollectionItem, Vec<Assert
 }
 
 /// 执行断言 + 保存执行记录
-fn finalize_result(db: &DbState, item: &CollectionItem, result: &mut ExecutionResult, assertions: &[Assertion]) -> Result<(), String> {
+fn finalize_result(
+    db: &DbState,
+    item: &CollectionItem,
+    result: &mut ExecutionResult,
+    assertions: &[Assertion],
+) -> Result<(), String> {
     apply_assertions(result, assertions);
     let conn = db.conn()?;
     let execution = crate::http::client::to_execution(item, result);
@@ -65,8 +70,7 @@ pub fn update_item(
                 .map_err(|e| e.to_string())?;
         }
     }
-    crate::db::item::update(&conn, &id, &payload)
-        .map_err(|e| e.to_string())
+    crate::db::item::update(&conn, &id, &payload).map_err(|e| e.to_string())
 }
 
 #[derive(serde::Deserialize)]
@@ -129,12 +133,20 @@ pub async fn send_request(
     let mut result = if dry_run {
         crate::http::client::mock_execute(&item).await
     } else if item.protocol == "websocket" {
-        crate::websocket::client::execute(&item).await.map_err(|e| e.to_string())?
+        crate::websocket::client::execute(&item)
+            .await
+            .map_err(|e| e.to_string())?
     } else {
         let app_clone = app.clone();
-        crate::http::client::execute_smart(&http.0, &item, Some(Box::new(move |chunk| {
-            let _ = app_clone.emit("stream-chunk", &chunk);
-        }))).await.map_err(|e| e.to_string())?
+        crate::http::client::execute_smart(
+            &http.0,
+            &item,
+            Some(Box::new(move |chunk| {
+                let _ = app_clone.emit("stream-chunk", &chunk);
+            })),
+        )
+        .await
+        .map_err(|e| e.to_string())?
     };
 
     if dry_run {
@@ -163,12 +175,20 @@ pub async fn quick_test(
     }
 
     let mut result = if item.protocol == "websocket" {
-        crate::websocket::client::execute(&item).await.map_err(|e| e.to_string())?
+        crate::websocket::client::execute(&item)
+            .await
+            .map_err(|e| e.to_string())?
     } else {
         let app_clone = app.clone();
-        crate::http::client::execute_smart(&http.0, &item, Some(Box::new(move |chunk| {
-            let _ = app_clone.emit("stream-chunk", &chunk);
-        }))).await.map_err(|e| e.to_string())?
+        crate::http::client::execute_smart(
+            &http.0,
+            &item,
+            Some(Box::new(move |chunk| {
+                let _ = app_clone.emit("stream-chunk", &chunk);
+            })),
+        )
+        .await
+        .map_err(|e| e.to_string())?
     };
 
     result.item_name = item.url.clone();
@@ -198,7 +218,11 @@ pub fn read_file_preview(path: String) -> Result<Option<String>, String> {
         Ok(p) => p,
         Err(_) => return Ok(None),
     };
-    let ext = canonical.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+    let ext = canonical
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
     let mime = match ext.as_str() {
         "png" => "image/png",
         "jpg" | "jpeg" => "image/jpeg",
@@ -238,6 +262,13 @@ pub fn export_curl(db: State<'_, DbState>, id: String) -> Result<String, String>
     // 应用环境变量替换，让导出的 curl 包含实际值
     let var_map = crate::db::environment::get_active_var_map(&conn);
     let item = crate::http::vars::apply_vars(&raw_item, &var_map);
-    let headers: Vec<crate::models::item::KeyValuePair> = serde_json::from_str(&item.headers).unwrap_or_default();
-    Ok(crate::http::curl::to_curl(&item.method, &item.url, &headers, &item.body_type, &item.body_content))
+    let headers: Vec<crate::models::item::KeyValuePair> =
+        serde_json::from_str(&item.headers).unwrap_or_default();
+    Ok(crate::http::curl::to_curl(
+        &item.method,
+        &item.url,
+        &headers,
+        &item.body_type,
+        &item.body_content,
+    ))
 }

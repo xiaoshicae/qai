@@ -7,14 +7,15 @@ const MAX_FILE_SIZE: u64 = 50 * 1024 * 1024;
 /// 防止目录遍历攻击和读取敏感系统文件
 pub fn validate_file_path(path: &str) -> Result<std::path::PathBuf, anyhow::Error> {
     let path = std::path::Path::new(path);
-    
+
     // 检查路径是否为空
     if path.as_os_str().is_empty() {
         return Err(anyhow::anyhow!("文件路径不能为空"));
     }
-    
+
     // 规范化路径（解析 .. 和符号链接）
-    let canonical = path.canonicalize()
+    let canonical = path
+        .canonicalize()
         .map_err(|e| anyhow::anyhow!("文件路径无效: {}", e))?;
 
     // 检查是否尝试读取敏感系统文件（Unix）
@@ -22,40 +23,43 @@ pub fn validate_file_path(path: &str) -> Result<std::path::PathBuf, anyhow::Erro
     {
         let path_str = canonical.to_string_lossy();
         // 阻止读取 /etc/passwd, /etc/shadow 等敏感文件
-        if path_str.starts_with("/etc/passwd") 
+        if path_str.starts_with("/etc/passwd")
             || path_str.starts_with("/etc/shadow")
-            || path_str.starts_with("/etc/sudoers") {
+            || path_str.starts_with("/etc/sudoers")
+        {
             return Err(anyhow::anyhow!("不允许读取系统敏感文件"));
         }
     }
-    
+
     // 检查是否尝试读取敏感系统文件（Windows）
     #[cfg(windows)]
     {
         let path_str = canonical.to_string_lossy().to_lowercase();
         if path_str.contains("\\windows\\system32\\config\\")
-            || path_str.contains("\\windows\\system32\\sam") {
+            || path_str.contains("\\windows\\system32\\sam")
+        {
             return Err(anyhow::anyhow!("不允许读取系统敏感文件"));
         }
     }
-    
+
     Ok(canonical)
 }
 
 /// 检查文件大小是否在限制内
 async fn check_file_size(path: &std::path::Path) -> Result<(), anyhow::Error> {
-    let metadata = tokio::fs::metadata(path).await
+    let metadata = tokio::fs::metadata(path)
+        .await
         .map_err(|e| anyhow::anyhow!("无法获取文件信息: {}", e))?;
     let size = metadata.len();
-    
+
     if size > MAX_FILE_SIZE {
         return Err(anyhow::anyhow!(
-            "文件过大 ({}MB)，已超过 {}MB 限制", 
-            size / 1024 / 1024, 
+            "文件过大 ({}MB)，已超过 {}MB 限制",
+            size / 1024 / 1024,
             MAX_FILE_SIZE / 1024 / 1024
         ));
     }
-    
+
     Ok(())
 }
 
@@ -65,7 +69,8 @@ pub async fn build_request(
     item: &CollectionItem,
 ) -> Result<reqwest::RequestBuilder, anyhow::Error> {
     let headers: Vec<KeyValuePair> = serde_json::from_str(&item.headers).unwrap_or_default();
-    let query_params: Vec<KeyValuePair> = serde_json::from_str(&item.query_params).unwrap_or_default();
+    let query_params: Vec<KeyValuePair> =
+        serde_json::from_str(&item.query_params).unwrap_or_default();
 
     let mut builder = match item.method.to_uppercase().as_str() {
         "POST" => client.post(&item.url),
@@ -78,7 +83,10 @@ pub async fn build_request(
 
     // form-data / json / urlencoded 由 reqwest 自动设置 Content-Type（含 boundary 等），
     // 用户手动设置的 Content-Type 会导致冲突（如 multipart 缺 boundary），因此需要过滤掉
-    let auto_ct = matches!(item.body_type.as_str(), "form-data" | "json" | "form" | "urlencoded");
+    let auto_ct = matches!(
+        item.body_type.as_str(),
+        "form-data" | "json" | "form" | "urlencoded"
+    );
     let mut sent_headers = Vec::new();
     for kv in headers.iter().filter(|kv| kv.enabled) {
         if auto_ct && kv.key.eq_ignore_ascii_case("content-type") {
@@ -96,8 +104,13 @@ pub async fn build_request(
         .collect();
     builder = builder.query(&enabled_params);
 
-    log::info!("[request] {} {} body_type={} headers=[{}]",
-        item.method, item.url, item.body_type, sent_headers.join(", "));
+    log::info!(
+        "[request] {} {} body_type={} headers=[{}]",
+        item.method,
+        item.url,
+        item.body_type,
+        sent_headers.join(", ")
+    );
 
     builder = apply_body(builder, &item.body_type, &item.body_content).await?;
 

@@ -1,7 +1,8 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, State};
+use tokio::sync::Semaphore;
 
 use crate::db::init::{DbState, HttpClient};
 use crate::models::execution::ChainResult;
@@ -92,6 +93,32 @@ pub async fn run_collection(
     result
 }
 
+/// 执行单元：保持表格顺序，chain 和普通请求统一编排
+enum ExecUnit {
+    Single(
+        crate::models::item::CollectionItem,
+        Vec<crate::models::assertion::Assertion>,
+    ),
+    Chain {
+        chain_id: String,
+        name: String,
+        steps: Vec<(
+            crate::models::item::CollectionItem,
+            Vec<crate::models::assertion::Assertion>,
+        )>,
+    },
+}
+
+impl ExecUnit {
+    /// 该执行单元包含的请求数（chain 计子步骤数）
+    fn request_count(&self) -> u32 {
+        match self {
+            ExecUnit::Single(..) => 1,
+            ExecUnit::Chain { steps, .. } => steps.len() as u32,
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn run_collection_inner(
     app: &AppHandle,
@@ -106,18 +133,17 @@ async fn run_collection_inner(
 ) -> Result<BatchResult, String> {
     let excluded: std::collections::HashSet<String> =
         exclude_ids.unwrap_or_default().into_iter().collect();
-    // 分离：chain 类型 item 内的子请求用链式执行，其余并行
-    let (normal_items, chain_groups, chain_names, var_map) = {
+
+    // ── 1. 按表格顺序构建有序执行单元列表 ──
+    let (ordered, var_map) = {
         let conn = db.conn()?;
 
-        // 获取所有 items，排除禁用项（含 chain 容器及其子项）
         let mut all_items = if let Some(ref pid) = parent_id {
             crate::db::item::list_by_parent(&conn, pid).map_err(|e| e.to_string())?
         } else {
             crate::db::item::list_by_collection(&conn, collection_id).map_err(|e| e.to_string())?
         };
         if !excluded.is_empty() {
-            // 排除被禁用的顶层 item（chain 容器或独立 request），以及其子项
             all_items.retain(|item| {
                 !excluded.contains(&item.id)
                     && !item
@@ -129,25 +155,20 @@ async fn run_collection_inner(
 
         let var_map = crate::db::environment::get_active_var_map(&conn);
 
-        // 区分 chain 容器和普通 request，同时记录 chain 名称
-        let mut chain_names: std::collections::HashMap<String, String> =
-            std::collections::HashMap::new();
+        // 识别 chain 容器
         let chain_item_ids: std::collections::HashSet<String> = all_items
             .iter()
             .filter(|i| i.item_type == crate::models::ItemType::Chain.as_str())
-            .map(|i| {
-                chain_names.insert(i.id.clone(), i.name.clone());
-                i.id.clone()
-            })
+            .map(|i| i.id.clone())
             .collect();
 
-        // 收集所有 request items（含 chain 子请求），以及 chain 的嵌套子项
+        // 收集所有 request items 用于批量加载断言
         let mut all_request_items: Vec<&crate::models::item::CollectionItem> = all_items
             .iter()
             .filter(|i| i.item_type == crate::models::ItemType::Request.as_str())
             .collect();
 
-        // chain 下可能有嵌套子 items 不在 all_items 中
+        // chain 子项可能不在 all_items 中（嵌套加载）
         let mut extra_children = Vec::new();
         for chain_id in &chain_item_ids {
             let has_child = all_items
@@ -165,43 +186,41 @@ async fn run_collection_inner(
                 .filter(|i| i.item_type == crate::models::ItemType::Request.as_str()),
         );
 
-        // 批量查询所有 assertions（消除 N+1）
+        // 批量查询断言（消除 N+1）
         let request_ids: Vec<String> = all_request_items.iter().map(|i| i.id.clone()).collect();
         let mut assertions_map =
             crate::db::assertion::list_by_items(&conn, &request_ids).map_err(|e| e.to_string())?;
 
-        let mut normal = Vec::new();
-        let mut chains: std::collections::HashMap<String, Vec<_>> =
-            std::collections::HashMap::new();
+        // 先构建 chain → steps 映射
+        let mut chain_steps: std::collections::HashMap<
+            String,
+            Vec<(
+                crate::models::item::CollectionItem,
+                Vec<crate::models::assertion::Assertion>,
+            )>,
+        > = std::collections::HashMap::new();
 
-        // 分配 items 到 normal 或 chains
         for item in &all_items {
-            if item.item_type == crate::models::ItemType::Request.as_str() {
-                let assertions = assertions_map.remove(&item.id).unwrap_or_default();
-                if item.url.is_empty() {
-                    continue;
+            if item.item_type != crate::models::ItemType::Request.as_str() || item.url.is_empty() {
+                continue;
+            }
+            if let Some(ref pid) = item.parent_id {
+                if chain_item_ids.contains(pid) {
+                    let assertions = assertions_map.remove(&item.id).unwrap_or_default();
+                    chain_steps
+                        .entry(pid.clone())
+                        .or_default()
+                        .push((item.clone(), assertions));
                 }
-                if let Some(ref pid) = item.parent_id {
-                    if chain_item_ids.contains(pid) {
-                        chains
-                            .entry(pid.clone())
-                            .or_default()
-                            .push((item.clone(), assertions));
-                        continue;
-                    }
-                }
-                let item = crate::http::vars::apply_vars(item, &var_map);
-                normal.push((item, assertions));
             }
         }
-
-        // 处理嵌套的 chain 子请求
         for child in &extra_children {
-            if child.item_type == crate::models::ItemType::Request.as_str() && !child.url.is_empty()
+            if child.item_type == crate::models::ItemType::Request.as_str()
+                && !child.url.is_empty()
             {
                 let assertions = assertions_map.remove(&child.id).unwrap_or_default();
                 if let Some(ref pid) = child.parent_id {
-                    chains
+                    chain_steps
                         .entry(pid.clone())
                         .or_default()
                         .push((child.clone(), assertions));
@@ -209,120 +228,246 @@ async fn run_collection_inner(
             }
         }
 
-        (normal, chains, chain_names, var_map)
+        // 按 sort_order 遍历 all_items，构建有序执行单元
+        let mut units: Vec<ExecUnit> = Vec::new();
+        for item in &all_items {
+            if item.item_type == crate::models::ItemType::Chain.as_str() {
+                if let Some(steps) = chain_steps.remove(&item.id) {
+                    if !steps.is_empty() {
+                        units.push(ExecUnit::Chain {
+                            chain_id: item.id.clone(),
+                            name: item.name.clone(),
+                            steps,
+                        });
+                    }
+                }
+            } else if item.item_type == crate::models::ItemType::Request.as_str() {
+                // 跳过 chain 子请求和空 URL
+                if item
+                    .parent_id
+                    .as_ref()
+                    .is_some_and(|pid| chain_item_ids.contains(pid))
+                {
+                    continue;
+                }
+                if item.url.is_empty() {
+                    continue;
+                }
+                let assertions = assertions_map.remove(&item.id).unwrap_or_default();
+                let item = crate::http::vars::apply_vars(item, &var_map);
+                units.push(ExecUnit::Single(item, assertions));
+            }
+        }
+
+        (units, var_map)
     };
 
+    let overall_total: u32 = ordered.iter().map(|u| u.request_count()).sum();
+
     log::info!(
-        "[run_collection] chain_groups={}, normal_items={}",
-        chain_groups.len(),
-        normal_items.len()
+        "[run_collection] units={}, total_requests={}",
+        ordered.len(),
+        overall_total
     );
-    for (cid, steps) in &chain_groups {
-        let name = chain_names.get(cid).cloned().unwrap_or_default();
-        log::info!(
-            "[run_collection] chain '{}' ({}) has {} steps",
+    for unit in &ordered {
+        if let ExecUnit::Chain {
+            chain_id,
             name,
-            cid,
-            steps.len()
-        );
+            steps,
+        } = unit
+        {
+            log::info!(
+                "[run_collection] chain '{}' ({}) has {} steps",
+                name,
+                chain_id,
+                steps.len()
+            );
+        }
     }
 
-    if normal_items.is_empty() && chain_groups.is_empty() {
+    if overall_total == 0 {
         return Err("没有可执行的请求".to_string());
     }
 
+    // ── 2. 按序入队、并发执行 ──
     let batch_id = uuid::Uuid::new_v4().to_string();
-    let mut all_results: Vec<crate::models::execution::ExecutionResult> = Vec::new();
     let start = std::time::Instant::now();
+    let concurrency = concurrency.unwrap_or(crate::DEFAULT_CONCURRENCY);
+    let semaphore = Arc::new(Semaphore::new(concurrency));
+    let completed = Arc::new(AtomicU32::new(0));
 
-    // 1. 先执行所有 chain groups（顺序执行每条链）
-    let overall_total =
-        (normal_items.len() + chain_groups.values().map(|v| v.len()).sum::<usize>()) as u32;
-    for (chain_item_id, steps) in &chain_groups {
+    let mut handles: Vec<
+        tokio::task::JoinHandle<Vec<crate::models::execution::ExecutionResult>>,
+    > = Vec::new();
+
+    for unit in ordered {
         if cancel_token.load(Ordering::Relaxed) {
             break;
         }
-        let name = chain_names.get(chain_item_id).cloned().unwrap_or_default();
-        let step_ids: Vec<String> = steps.iter().map(|(item, _)| item.id.clone()).collect();
-        let step_names: Vec<String> = steps.iter().map(|(item, _)| item.name.clone()).collect();
-        let app_chain = app.clone();
-        let batch_id_chain = batch_id.clone();
-        let chain_offset = all_results.len() as u32;
-        let cancel_chain = cancel_token.clone();
-        let app_result_chain = app.clone();
-        let chain_result = crate::runner::chain::run_chain(
-            &http.0,
-            steps.clone(),
-            var_map.clone(),
-            chain_item_id.clone(),
-            name,
-            Some(cancel_chain),
-            move |progress| {
-                let step_item_id = step_ids
-                    .get(progress.step_index as usize)
-                    .cloned()
-                    .unwrap_or_default();
-                let step_name = step_names
-                    .get(progress.step_index as usize)
-                    .cloned()
-                    .unwrap_or(progress.step_name.clone());
-                let _ = app_chain.emit(
-                    "test-progress",
-                    &batch::TestProgress {
-                        batch_id: batch_id_chain.clone(),
-                        item_id: step_item_id,
-                        item_name: step_name,
-                        status: progress.status.clone(),
-                        current: chain_offset + progress.step_index + 1,
-                        total: overall_total,
-                    },
-                );
-            },
-            Some(Box::new(move |result| {
-                let _ = app_result_chain.emit("execution-result", result);
-            })),
-            dry_run,
-        )
-        .await;
 
-        let chain_failed = chain_result.status != crate::models::Status::Success.as_str();
-        for step in chain_result.steps {
-            all_results.push(step.execution_result);
-        }
-        if chain_failed {
-            break;
+        // 按序获取 permit —— 确保从上往下依次启动
+        let permit = semaphore
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|e| e.to_string())?;
+
+        match unit {
+            ExecUnit::Single(item, assertions) => {
+                let client = http.0.clone();
+                let ct = cancel_token.clone();
+                let app_c = app.clone();
+                let bid = batch_id.clone();
+                let done_counter = completed.clone();
+
+                handles.push(tokio::spawn(async move {
+                    if ct.load(Ordering::Relaxed) {
+                        drop(permit);
+                        return vec![];
+                    }
+
+                    let _ = app_c.emit(
+                        "test-progress",
+                        &batch::TestProgress {
+                            batch_id: bid.clone(),
+                            item_id: item.id.clone(),
+                            item_name: item.name.clone(),
+                            status: crate::models::Status::Running.as_str().to_string(),
+                            current: done_counter.load(Ordering::Relaxed) + 1,
+                            total: overall_total,
+                        },
+                    );
+
+                    let exec_future = if dry_run {
+                        Ok(crate::http::client::mock_execute(&item).await)
+                    } else if item.protocol == "websocket" {
+                        crate::websocket::client::execute(&item).await
+                    } else {
+                        crate::http::client::execute(&client, &item).await
+                    };
+                    let mut result = match exec_future {
+                        Ok(r) => r,
+                        Err(e) => crate::models::execution::ExecutionResult {
+                            execution_id: uuid::Uuid::new_v4().to_string(),
+                            item_id: item.id.clone(),
+                            item_name: item.name.clone(),
+                            request_url: item.url.clone(),
+                            request_method: item.method.clone(),
+                            status: crate::models::Status::Error.as_str().to_string(),
+                            response: None,
+                            assertion_results: vec![],
+                            error_message: Some(e.to_string()),
+                        },
+                    };
+
+                    crate::runner::assertion::apply_assertions(&mut result, &assertions);
+                    let _ = app_c.emit("execution-result", &result);
+
+                    let done = done_counter.fetch_add(1, Ordering::Relaxed) + 1;
+                    let _ = app_c.emit(
+                        "test-progress",
+                        &batch::TestProgress {
+                            batch_id: bid,
+                            item_id: item.id.clone(),
+                            item_name: item.name.clone(),
+                            status: result.status.clone(),
+                            current: done,
+                            total: overall_total,
+                        },
+                    );
+
+                    drop(permit);
+                    vec![result]
+                }));
+            }
+
+            ExecUnit::Chain {
+                chain_id,
+                name,
+                steps,
+            } => {
+                let client = http.0.clone();
+                let ct = cancel_token.clone();
+                let app_c = app.clone();
+                let bid = batch_id.clone();
+                let done_counter = completed.clone();
+                let vm = var_map.clone();
+
+                let step_ids: Vec<String> =
+                    steps.iter().map(|(item, _)| item.id.clone()).collect();
+                let step_names: Vec<String> =
+                    steps.iter().map(|(item, _)| item.name.clone()).collect();
+
+                handles.push(tokio::spawn(async move {
+                    if ct.load(Ordering::Relaxed) {
+                        drop(permit);
+                        return vec![];
+                    }
+
+                    let app_progress = app_c.clone();
+                    let bid_p = bid.clone();
+                    let ids_cb = step_ids.clone();
+                    let names_cb = step_names.clone();
+                    let done_cb = done_counter.clone();
+
+                    let app_result_cb = app_c.clone();
+
+                    let chain_result = crate::runner::chain::run_chain(
+                        &client,
+                        steps,
+                        vm,
+                        chain_id,
+                        name,
+                        Some(ct),
+                        move |progress| {
+                            let sid = ids_cb
+                                .get(progress.step_index as usize)
+                                .cloned()
+                                .unwrap_or_default();
+                            let sname = names_cb
+                                .get(progress.step_index as usize)
+                                .cloned()
+                                .unwrap_or(progress.step_name.clone());
+                            let _ = app_progress.emit(
+                                "test-progress",
+                                &batch::TestProgress {
+                                    batch_id: bid_p.clone(),
+                                    item_id: sid,
+                                    item_name: sname,
+                                    status: progress.status.clone(),
+                                    current: done_cb.load(Ordering::Relaxed)
+                                        + progress.step_index
+                                        + 1,
+                                    total: overall_total,
+                                },
+                            );
+                        },
+                        Some(Box::new(move |result| {
+                            let _ = app_result_cb.emit("execution-result", result);
+                        })),
+                        dry_run,
+                    )
+                    .await;
+
+                    let mut results = Vec::new();
+                    for step in chain_result.steps {
+                        done_counter.fetch_add(1, Ordering::Relaxed);
+                        results.push(step.execution_result);
+                    }
+
+                    drop(permit);
+                    results
+                }));
+            }
         }
     }
 
-    // 2. 并行执行普通请求（链全部成功且未取消时才执行）
-    let any_chain_failed = all_results
-        .iter()
-        .any(|r| r.status != crate::models::Status::Success.as_str());
-    let was_cancelled = cancel_token.load(Ordering::Relaxed);
-    if !normal_items.is_empty() && !any_chain_failed && !was_cancelled {
-        let chain_done = all_results.len() as u32;
-        let total = chain_done + normal_items.len() as u32;
-        let app_clone = app.clone();
-        let app_result_batch = app.clone();
-        let batch_id_clone = batch_id.clone();
-        let normal_result = batch::run_batch(
-            &http.0,
-            normal_items,
-            concurrency.unwrap_or(crate::DEFAULT_CONCURRENCY),
-            cancel_token.clone(),
-            move |mut progress| {
-                progress.batch_id = batch_id_clone.clone();
-                progress.current += chain_done;
-                progress.total = total;
-                let _ = app_clone.emit("test-progress", &progress);
-            },
-            move |result| {
-                let _ = app_result_batch.emit("execution-result", result);
-            },
-            dry_run,
-        )
-        .await;
-        all_results.extend(normal_result.results);
+    // ── 3. 收集结果 ──
+    let mut all_results = Vec::new();
+    for handle in handles {
+        if let Ok(results) = handle.await {
+            all_results.extend(results);
+        }
     }
 
     let total_time = start.elapsed().as_millis() as u64;

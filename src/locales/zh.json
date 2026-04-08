@@ -165,7 +165,17 @@
     "badge_strongest": "最强",
     "badge_fastest": "最快",
     "badge_economy": "经济",
-    "badge_reasoning": "推理"
+    "badge_reasoning": "推理",
+    "about": "关于",
+    "current_version": "当前版本",
+    "check_update": "检查更新",
+    "checking_update": "检查中...",
+    "update_available": "发现新版本 v{{version}}",
+    "update_downloading": "下载中... {{progress}}%",
+    "update_ready": "下载完成，重启生效",
+    "update_restart": "重启更新",
+    "update_latest": "已是最新版本",
+    "update_error": "检查更新失败"
   },
   "ai": {
     "scan_code": "扫描代码生成用例",

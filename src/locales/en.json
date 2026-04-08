@@ -165,7 +165,17 @@
     "badge_strongest": "Strongest",
     "badge_fastest": "Fastest",
     "badge_economy": "Economy",
-    "badge_reasoning": "Reasoning"
+    "badge_reasoning": "Reasoning",
+    "about": "About",
+    "current_version": "Current Version",
+    "check_update": "Check for Updates",
+    "checking_update": "Checking...",
+    "update_available": "New version v{{version}} available",
+    "update_downloading": "Downloading... {{progress}}%",
+    "update_ready": "Download complete, restart to apply",
+    "update_restart": "Restart to Update",
+    "update_latest": "You're up to date",
+    "update_error": "Failed to check for updates"
   },
   "ai": {
     "scan_code": "Scan code for test cases",

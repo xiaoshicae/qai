@@ -10,7 +10,9 @@ pub mod runner;
 pub mod websocket;
 
 use db::init::initialize_database;
-use tauri::{Emitter, Manager};
+use tauri::Manager;
+#[cfg(target_os = "macos")]
+use tauri::Emitter;
 
 // ============================================================================
 // 常量定义

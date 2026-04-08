@@ -10,7 +10,7 @@ pub mod runner;
 pub mod websocket;
 
 use db::init::initialize_database;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 // ============================================================================
 // 常量定义
@@ -51,6 +51,75 @@ pub fn run() {
             app.manage(pty::PtyState::new());
             app.manage(commands::claude_cmd::ClaudeState::new());
             app.manage(commands::runner_cmd::RunnerState::new());
+
+            // macOS 自定义应用菜单：在 About 下方添加 Check for Updates...
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::menu::*;
+                let handle = app.handle();
+                let check_update = MenuItem::with_id(handle, "check_update", "Check for Updates...", true, None::<&str>)?;
+                let app_menu = SubmenuBuilder::new(handle, "QAI")
+                    .about(None)
+                    .item(&check_update)
+                    .separator()
+                    .services()
+                    .separator()
+                    .hide()
+                    .hide_others()
+                    .show_all()
+                    .separator()
+                    .quit()
+                    .build()?;
+                let export_item = MenuItem::with_id(handle, "export_cases", "Export", true, Some("cmdshift+e"))?;
+                let import_replace = MenuItem::with_id(handle, "import_replace", "Replace All", true, None::<&str>)?;
+                let import_merge = MenuItem::with_id(handle, "import_merge", "Merge", true, None::<&str>)?;
+                let import_submenu = SubmenuBuilder::new(handle, "Import")
+                    .item(&import_replace)
+                    .item(&import_merge)
+                    .build()?;
+                let file_menu = SubmenuBuilder::new(handle, "File")
+                    .item(&export_item)
+                    .separator()
+                    .item(&import_submenu)
+                    .build()?;
+
+                let edit_menu = SubmenuBuilder::new(handle, "Edit")
+                    .undo()
+                    .redo()
+                    .separator()
+                    .cut()
+                    .copy()
+                    .paste()
+                    .select_all()
+                    .build()?;
+                let view_menu = SubmenuBuilder::new(handle, "View")
+                    .fullscreen()
+                    .build()?;
+                let window_menu = SubmenuBuilder::new(handle, "Window")
+                    .minimize()
+                    .maximize()
+                    .close_window()
+                    .build()?;
+                let menu = MenuBuilder::new(handle)
+                    .item(&app_menu)
+                    .item(&file_menu)
+                    .item(&edit_menu)
+                    .item(&view_menu)
+                    .item(&window_menu)
+                    .build()?;
+                app.set_menu(menu)?;
+
+                let app_handle_menu = handle.clone();
+                app.on_menu_event(move |_app, event| {
+                    match event.id().as_ref() {
+                        "check_update" => { let _ = app_handle_menu.emit("menu-check-update", ()); }
+                        "export_cases" => { let _ = app_handle_menu.emit("menu-export-cases", ()); }
+                        "import_replace" => { let _ = app_handle_menu.emit("menu-import-cases", "replace"); }
+                        "import_merge" => { let _ = app_handle_menu.emit("menu-import-cases", "merge"); }
+                        _ => {}
+                    }
+                });
+            }
 
             if cfg!(debug_assertions) {
                 app_handle.plugin(
@@ -130,6 +199,8 @@ pub fn run() {
             commands::claude_cmd::claude_check_status,
             commands::import_cmd::import_yaml_cases,
             commands::import_cmd::import_postman_collection,
+            commands::import_cmd::export_all_cases,
+            commands::import_cmd::import_cases,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

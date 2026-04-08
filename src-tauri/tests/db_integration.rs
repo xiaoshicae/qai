@@ -753,3 +753,213 @@ fn test_websocket_item_in_collection_tree() {
     let ws = requests.iter().find(|r| r.name == "WS TTS").unwrap();
     assert_eq!(ws.protocol, "websocket");
 }
+
+// ─── 导出/导入：全量替换 ─────────────────────────────────────
+
+#[test]
+fn test_export_import_replace_roundtrip() {
+    use qai_lib::commands::import_cmd::{ExportData, ImportStats};
+
+    // 1. 准备数据
+    let conn = setup_db();
+    let group = qai_lib::db::group::create(&conn, "TTS", None).unwrap();
+    let col = qai_lib::db::collection::create(&conn, "Qwen3 TTS", "desc", Some(&group.id)).unwrap();
+    let folder = qai_lib::db::item::create(&conn, &col.id, None, "folder", "API Tests", "GET").unwrap();
+    let req = qai_lib::db::item::create(&conn, &col.id, Some(&folder.id), "request", "POST generate", "POST").unwrap();
+    qai_lib::db::item::update(&conn, &req.id, &qai_lib::models::item::UpdateItemPayload {
+        url: Some("http://example.com/api".into()),
+        body_type: Some("json".into()),
+        body_content: Some(r#"{"text":"hello"}"#.into()),
+        ..Default::default()
+    }).unwrap();
+    qai_lib::db::assertion::create(&conn, &req.id, "status_code", "", "eq", "200").unwrap();
+    let env = qai_lib::db::environment::create(&conn, "Production").unwrap();
+    qai_lib::db::environment::save_variables(&conn, &env.id, &[
+        qai_lib::models::environment::EnvVariable { id: String::new(), environment_id: env.id.clone(), key: "base_url".into(), value: "http://prod.example.com".into(), enabled: true, sort_order: 0 },
+    ]).unwrap();
+
+    // 2. 导出
+    let groups = qai_lib::db::group::list_all(&conn).unwrap();
+    let collections = qai_lib::db::collection::list_all(&conn).unwrap();
+    let mut all_items = Vec::new();
+    for c in &collections {
+        all_items.extend(qai_lib::db::item::list_by_collection(&conn, &c.id).unwrap());
+    }
+    let item_ids: Vec<String> = all_items.iter().map(|i| i.id.clone()).collect();
+    let assertions_map = qai_lib::db::assertion::list_by_items(&conn, &item_ids).unwrap();
+    let all_assertions: Vec<_> = assertions_map.into_values().flatten().collect();
+    let environments = qai_lib::db::environment::list_all(&conn).unwrap();
+    let mut all_env_vars = Vec::new();
+    for e in &environments {
+        all_env_vars.extend(qai_lib::db::environment::list_variables(&conn, &e.id).unwrap());
+    }
+
+    let data = ExportData {
+        version: "1.0".into(),
+        exported_at: "2026-04-08T10:00:00".into(),
+        groups,
+        collections,
+        collection_items: all_items,
+        assertions: all_assertions,
+        environments,
+        env_variables: all_env_vars,
+    };
+
+    let json = serde_json::to_string_pretty(&data).unwrap();
+
+    // 3. 全量替换导入到新数据库
+    let conn2 = setup_db();
+    // 先加一些旧数据，验证会被清空
+    qai_lib::db::collection::create(&conn2, "Old Collection", "", None).unwrap();
+
+    let data2: ExportData = serde_json::from_str(&json).unwrap();
+    let tx = conn2.unchecked_transaction().unwrap();
+    let stats = qai_lib::commands::import_cmd::import_replace_pub(&tx, &data2).unwrap();
+    tx.commit().unwrap();
+
+    // 4. 验证
+    assert_eq!(stats.groups, 1);
+    assert_eq!(stats.collections, 1);
+    assert_eq!(stats.items, 2); // folder + request
+    assert_eq!(stats.assertions, 1);
+    assert_eq!(stats.environments, 1);
+    assert_eq!(stats.env_variables, 1);
+
+    // 旧数据被清空
+    let cols = qai_lib::db::collection::list_all(&conn2).unwrap();
+    assert_eq!(cols.len(), 1);
+    assert_eq!(cols[0].name, "Qwen3 TTS");
+
+    // items 父子关系正确
+    let items = qai_lib::db::item::list_by_collection(&conn2, &cols[0].id).unwrap();
+    assert_eq!(items.len(), 2);
+    let imported_folder = items.iter().find(|i| i.item_type == "folder").unwrap();
+    let imported_req = items.iter().find(|i| i.item_type == "request").unwrap();
+    assert_eq!(imported_req.parent_id.as_deref(), Some(imported_folder.id.as_str()));
+    assert_eq!(imported_req.url, "http://example.com/api");
+
+    // assertion 正确
+    let asserts = qai_lib::db::assertion::list_by_item(&conn2, &imported_req.id).unwrap();
+    assert_eq!(asserts.len(), 1);
+    assert_eq!(asserts[0].expected, "200");
+
+    // 环境变量正确
+    let envs = qai_lib::db::environment::list_all(&conn2).unwrap();
+    assert_eq!(envs.len(), 1);
+    let vars = qai_lib::db::environment::list_variables(&conn2, &envs[0].id).unwrap();
+    assert_eq!(vars.len(), 1);
+    assert_eq!(vars[0].key, "base_url");
+}
+
+// ─── 导出/导入：Merge 模式 ──────────────────────────────────
+
+#[test]
+fn test_import_merge_upsert() {
+    use qai_lib::commands::import_cmd::ExportData;
+
+    // 1. 目标数据库已有一些数据
+    let conn = setup_db();
+    let existing_col = qai_lib::db::collection::create(&conn, "Qwen3 TTS", "old desc", None).unwrap();
+    let existing_req = qai_lib::db::item::create(&conn, &existing_col.id, None, "request", "POST generate", "POST").unwrap();
+    qai_lib::db::item::update(&conn, &existing_req.id, &qai_lib::models::item::UpdateItemPayload {
+        url: Some("http://old.example.com".into()),
+        ..Default::default()
+    }).unwrap();
+
+    // 2. 构造导入数据（同名 collection + 同名 request，应更新而非新建）
+    let import_json = serde_json::json!({
+        "version": "1.0",
+        "exportedAt": "2026-04-08T10:00:00",
+        "groups": [],
+        "collections": [{
+            "id": "ext-col-1",
+            "name": "Qwen3 TTS",
+            "description": "new desc",
+            "groupId": null,
+            "sortOrder": 0,
+            "createdAt": "2026-04-08",
+            "updatedAt": "2026-04-08"
+        }],
+        "collectionItems": [{
+            "id": "ext-req-1",
+            "collectionId": "ext-col-1",
+            "parentId": null,
+            "type": "request",
+            "name": "POST generate",
+            "sortOrder": 0,
+            "method": "POST",
+            "url": "http://new.example.com/api",
+            "headers": "[]",
+            "queryParams": "[]",
+            "bodyType": "json",
+            "bodyContent": "{\"text\":\"hello\"}",
+            "extractRules": "[]",
+            "description": "",
+            "expectStatus": 200,
+            "pollConfig": "",
+            "protocol": "http",
+            "createdAt": "2026-04-08",
+            "updatedAt": "2026-04-08"
+        }, {
+            "id": "ext-req-2",
+            "collectionId": "ext-col-1",
+            "parentId": null,
+            "type": "request",
+            "name": "GET health",
+            "sortOrder": 1,
+            "method": "GET",
+            "url": "http://new.example.com/health",
+            "headers": "[]",
+            "queryParams": "[]",
+            "bodyType": "none",
+            "bodyContent": "",
+            "extractRules": "[]",
+            "description": "",
+            "expectStatus": 200,
+            "pollConfig": "",
+            "protocol": "http",
+            "createdAt": "2026-04-08",
+            "updatedAt": "2026-04-08"
+        }],
+        "assertions": [{
+            "id": "ext-a1",
+            "itemId": "ext-req-1",
+            "type": "status_code",
+            "expression": "",
+            "operator": "eq",
+            "expected": "200",
+            "enabled": true,
+            "sortOrder": 0,
+            "createdAt": "2026-04-08"
+        }],
+        "environments": [],
+        "envVariables": []
+    });
+
+    let data: ExportData = serde_json::from_value(import_json).unwrap();
+    let tx = conn.unchecked_transaction().unwrap();
+    let stats = qai_lib::commands::import_cmd::import_merge_pub(&tx, &data).unwrap();
+    tx.commit().unwrap();
+
+    // 3. 验证：collection 没有新建（按名称匹配到已有的）
+    let cols = qai_lib::db::collection::list_all(&conn).unwrap();
+    assert_eq!(cols.len(), 1, "同名 collection 不应重复创建");
+    assert_eq!(cols[0].id, existing_col.id, "应复用已有 collection ID");
+
+    // 4. 验证：已有 request 被更新，新 request 被创建
+    let items = qai_lib::db::item::list_by_collection(&conn, &existing_col.id).unwrap();
+    assert_eq!(items.len(), 2, "应有 1 个已更新 + 1 个新建");
+
+    let updated_req = items.iter().find(|i| i.name == "POST generate").unwrap();
+    assert_eq!(updated_req.url, "http://new.example.com/api", "已有 request 的 URL 应被更新");
+    assert_eq!(updated_req.id, existing_req.id, "应复用已有 request ID");
+
+    let new_req = items.iter().find(|i| i.name == "GET health").unwrap();
+    assert_eq!(new_req.url, "http://new.example.com/health");
+    assert_eq!(stats.items, 1, "只有 GET health 是新建的");
+
+    // 5. 验证：assertion 正确关联到已有 request
+    let asserts = qai_lib::db::assertion::list_by_item(&conn, &updated_req.id).unwrap();
+    assert_eq!(asserts.len(), 1);
+    assert_eq!(asserts[0].expected, "200");
+}

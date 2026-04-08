@@ -16,6 +16,8 @@
     "fs:default",
     "fs:allow-read",
     "fs:allow-write",
+    "fs:allow-write-text-file",
+    "fs:allow-read-text-file",
     "shell:default",
     "updater:default",
     "process:default"

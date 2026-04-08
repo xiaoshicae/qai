@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Moon, Sun, Monitor, Globe, Info, RefreshCw, Download, Loader2, CheckCircle2 } from 'lucide-react'
 import { useThemeStore } from '@/stores/theme-store'
 import { useTranslation } from 'react-i18next'
@@ -28,6 +28,14 @@ export default function SettingsView() {
   const [downloadProgress, setDownloadProgress] = useState(0)
 
   useEffect(() => { getVersion().then(setAppVersion) }, [])
+
+  // macOS 菜单 "Check for Updates..." 触发
+  useEffect(() => {
+    const handler = () => { checkForUpdateRef.current() }
+    window.addEventListener('trigger-update-check', handler)
+    return () => window.removeEventListener('trigger-update-check', handler)
+  }, [])
+  const checkForUpdateRef = useRef<() => void>(() => {})
 
   const checkForUpdate = async () => {
     setUpdateStatus('checking')
@@ -64,6 +72,7 @@ export default function SettingsView() {
       }
     }
   }
+  checkForUpdateRef.current = checkForUpdate
 
   const handleRestart = async () => {
     await relaunch()

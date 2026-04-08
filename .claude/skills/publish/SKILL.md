@@ -49,13 +49,15 @@ git branch --show-current
 
 ## 阶段二：质量校验
 
-### 4. Rust 编译检查
+### 4. Rust 编译检查 + Clippy + 格式化
 
 ```bash
 cd src-tauri && cargo check
+cd src-tauri && cargo clippy -- -D warnings
+cd src-tauri && cargo fmt --check
 ```
 
-失败则终止，输出错误。
+任一失败则终止。如果 `cargo fmt --check` 失败，自动运行 `cargo fmt` 修复并提交。
 
 ### 5. Rust 单元测试
 
@@ -150,7 +152,40 @@ git push origin v{新版本}
 
 推送 tag 后 GitHub Actions 会自动触发 `.github/workflows/release.yml` 构建多平台安装包。
 
-## 阶段六：输出报告
+## 阶段六：监控 CI
+
+### 15. 持续观察 CI 结果
+
+推送后，使用 `gh run list` 轮询 CI 状态，直到所有 workflow 完成：
+
+```bash
+# 每 30 秒检查一次，直到 Release workflow 完成
+gh run list -R {owner}/{repo} --limit 4
+```
+
+轮询策略：
+1. 推送后等待 15 秒让 CI 触发
+2. 使用 `gh run list` 查看最新运行状态
+3. 如果有 `in_progress` 状态，等待 30 秒后重新检查
+4. 直到 Release workflow 显示 `completed`
+
+### 16. 处理 CI 结果
+
+**如果 CI 成功**（`completed` + `success`）：
+```
+==> CI 构建成功！
+    所有平台构建通过，Release draft 已生成。
+    请前往 GitHub Releases 页面 Publish：
+    https://github.com/{owner}/{repo}/releases/tag/v{新版本}
+```
+
+**如果 CI 失败**（`completed` + `failure`）：
+1. 使用 `gh run view {run_id} --log-failed` 获取失败日志
+2. 分析错误原因并输出给用户
+3. 如果是代码问题，提示修复后重新发版
+4. 如果是 CI 环境问题（如 secrets 配置），提示用户检查 GitHub Settings
+
+## 阶段七：输出报告
 
 ```
 ==> 发版报告
@@ -159,11 +194,11 @@ git push origin v{新版本}
     质量检查: ✓ Rust 编译 | ✓ 单元测试 | ✓ 类型检查
     本地构建: ✓ 成功（DMG: xx MB）
     Git: ✓ commit + tag + push
-    CI: GitHub Actions 正在构建多平台安装包...
+    CI: ✓ 全平台构建成功 / ✗ 构建失败（附原因）
     Release: https://github.com/{owner}/{repo}/releases/tag/v{新版本}
 ```
 
-提示用户去 GitHub Releases 页面查看构建进度，构建完成后 Publish draft release。
+CI 成功时提示用户去 GitHub Releases 页面 Publish draft release。
 
 ## 用法
 

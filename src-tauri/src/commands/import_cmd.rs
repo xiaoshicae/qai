@@ -200,10 +200,7 @@ pub fn import_merge_pub(
     import_merge(conn, data)
 }
 
-fn import_replace(
-    conn: &rusqlite::Connection,
-    data: &ExportData,
-) -> Result<ImportStats, String> {
+fn import_replace(conn: &rusqlite::Connection, data: &ExportData) -> Result<ImportStats, String> {
     // 按外键顺序清空
     conn.execute_batch(
         "DELETE FROM executions; DELETE FROM assertions; DELETE FROM collection_items; \
@@ -276,10 +273,7 @@ fn import_replace(
     Ok(stats)
 }
 
-fn import_merge(
-    conn: &rusqlite::Connection,
-    data: &ExportData,
-) -> Result<ImportStats, String> {
+fn import_merge(conn: &rusqlite::Connection, data: &ExportData) -> Result<ImportStats, String> {
     let mut stats = ImportStats {
         created_collections: 0,
         updated_collections: 0,
@@ -363,8 +357,7 @@ fn import_merge(
     // collection_items: 按 (collection_id, name, parent_id) 匹配
     let mut item_id_map: std::collections::HashMap<String, String> =
         std::collections::HashMap::new();
-    let mut new_item_ids: std::collections::HashSet<String> =
-        std::collections::HashSet::new();
+    let mut new_item_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
     for i in &data.collection_items {
         let mapped_col = col_id_map
             .get(&i.collection_id)

@@ -215,8 +215,7 @@ async fn run_collection_inner(
             }
         }
         for child in &extra_children {
-            if child.item_type == crate::models::ItemType::Request.as_str()
-                && !child.url.is_empty()
+            if child.item_type == crate::models::ItemType::Request.as_str() && !child.url.is_empty()
             {
                 let assertions = assertions_map.remove(&child.id).unwrap_or_default();
                 if let Some(ref pid) = child.parent_id {
@@ -296,9 +295,8 @@ async fn run_collection_inner(
     let semaphore = Arc::new(Semaphore::new(concurrency));
     let completed = Arc::new(AtomicU32::new(0));
 
-    let mut handles: Vec<
-        tokio::task::JoinHandle<Vec<crate::models::execution::ExecutionResult>>,
-    > = Vec::new();
+    let mut handles: Vec<tokio::task::JoinHandle<Vec<crate::models::execution::ExecutionResult>>> =
+        Vec::new();
 
     for unit in ordered {
         if cancel_token.load(Ordering::Relaxed) {
@@ -393,8 +391,7 @@ async fn run_collection_inner(
                 let done_counter = completed.clone();
                 let vm = var_map.clone();
 
-                let step_ids: Vec<String> =
-                    steps.iter().map(|(item, _)| item.id.clone()).collect();
+                let step_ids: Vec<String> = steps.iter().map(|(item, _)| item.id.clone()).collect();
                 let step_names: Vec<String> =
                     steps.iter().map(|(item, _)| item.name.clone()).collect();
 

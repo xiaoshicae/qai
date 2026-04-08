@@ -57,7 +57,13 @@ pub fn run() {
             {
                 use tauri::menu::*;
                 let handle = app.handle();
-                let check_update = MenuItem::with_id(handle, "check_update", "Check for Updates...", true, None::<&str>)?;
+                let check_update = MenuItem::with_id(
+                    handle,
+                    "check_update",
+                    "Check for Updates...",
+                    true,
+                    None::<&str>,
+                )?;
                 let app_menu = SubmenuBuilder::new(handle, "QAI")
                     .about(None)
                     .item(&check_update)
@@ -70,9 +76,12 @@ pub fn run() {
                     .separator()
                     .quit()
                     .build()?;
-                let export_item = MenuItem::with_id(handle, "export_cases", "Export", true, Some("cmdshift+e"))?;
-                let import_replace = MenuItem::with_id(handle, "import_replace", "Replace All", true, None::<&str>)?;
-                let import_merge = MenuItem::with_id(handle, "import_merge", "Merge", true, None::<&str>)?;
+                let export_item =
+                    MenuItem::with_id(handle, "export_cases", "Export", true, Some("cmdshift+e"))?;
+                let import_replace =
+                    MenuItem::with_id(handle, "import_replace", "Replace All", true, None::<&str>)?;
+                let import_merge =
+                    MenuItem::with_id(handle, "import_merge", "Merge", true, None::<&str>)?;
                 let import_submenu = SubmenuBuilder::new(handle, "Import")
                     .item(&import_replace)
                     .item(&import_merge)
@@ -92,9 +101,7 @@ pub fn run() {
                     .paste()
                     .select_all()
                     .build()?;
-                let view_menu = SubmenuBuilder::new(handle, "View")
-                    .fullscreen()
-                    .build()?;
+                let view_menu = SubmenuBuilder::new(handle, "View").fullscreen().build()?;
                 let window_menu = SubmenuBuilder::new(handle, "Window")
                     .minimize()
                     .maximize()
@@ -110,14 +117,20 @@ pub fn run() {
                 app.set_menu(menu)?;
 
                 let app_handle_menu = handle.clone();
-                app.on_menu_event(move |_app, event| {
-                    match event.id().as_ref() {
-                        "check_update" => { let _ = app_handle_menu.emit("menu-check-update", ()); }
-                        "export_cases" => { let _ = app_handle_menu.emit("menu-export-cases", ()); }
-                        "import_replace" => { let _ = app_handle_menu.emit("menu-import-cases", "replace"); }
-                        "import_merge" => { let _ = app_handle_menu.emit("menu-import-cases", "merge"); }
-                        _ => {}
+                app.on_menu_event(move |_app, event| match event.id().as_ref() {
+                    "check_update" => {
+                        let _ = app_handle_menu.emit("menu-check-update", ());
                     }
+                    "export_cases" => {
+                        let _ = app_handle_menu.emit("menu-export-cases", ());
+                    }
+                    "import_replace" => {
+                        let _ = app_handle_menu.emit("menu-import-cases", "replace");
+                    }
+                    "import_merge" => {
+                        let _ = app_handle_menu.emit("menu-import-cases", "merge");
+                    }
+                    _ => {}
                 });
             }
 

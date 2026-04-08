@@ -150,6 +150,8 @@ git push origin main
 git push origin v{新版本}
 ```
 
+**重要：如果推送后 CI 失败需要修复，禁止删除/重建同名 tag。必须升新版本号（如 0.1.6 → 0.1.7）重新走发版流程。** 原因：同名 tag 重建会触发多个 Release workflow，后完成的旧构建会覆盖新构建的产物。
+
 推送 tag 后 GitHub Actions 会自动触发 `.github/workflows/release.yml` 构建多平台安装包。
 
 ## 阶段六：监控 CI

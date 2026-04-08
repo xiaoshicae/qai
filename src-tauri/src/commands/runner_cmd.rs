@@ -94,6 +94,7 @@ pub async fn run_collection(
 }
 
 /// 执行单元：保持表格顺序，chain 和普通请求统一编排
+#[allow(clippy::large_enum_variant)]
 enum ExecUnit {
     Single(
         crate::models::item::CollectionItem,

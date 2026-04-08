@@ -184,22 +184,6 @@ pub fn import_cases(
     Ok(stats)
 }
 
-/// 全量替换导入（测试用公开入口）
-pub fn import_replace_pub(
-    conn: &rusqlite::Connection,
-    data: &ExportData,
-) -> Result<ImportStats, String> {
-    import_replace(conn, data)
-}
-
-/// Merge 导入（测试用公开入口）
-pub fn import_merge_pub(
-    conn: &rusqlite::Connection,
-    data: &ExportData,
-) -> Result<ImportStats, String> {
-    import_merge(conn, data)
-}
-
 fn import_replace(conn: &rusqlite::Connection, data: &ExportData) -> Result<ImportStats, String> {
     // 按外键顺序清空
     conn.execute_batch(

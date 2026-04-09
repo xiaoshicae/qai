@@ -67,8 +67,8 @@ jobs:
             |----------|------|-------|
             | macOS (Apple Silicon) | `.dmg` aarch64 | Right-click → Open on first launch |
             | macOS (Intel) | `.dmg` x64 | Right-click → Open on first launch |
-            | Windows | `.msi` or `.nsis.exe` | Click "More info" → "Run anyway" if SmartScreen appears |
-            | Linux | `.deb` / `.AppImage` | `chmod +x` for AppImage |
+            | Windows | `.msi` | Click "More info" → "Run anyway" if SmartScreen appears |
+            | Linux | `.AppImage` | `chmod +x` before running |
 
             > **macOS users**: The app is not code-signed. On first open, macOS will block it. Right-click the app → "Open" → confirm. You only need to do this once. Alternatively, run `xattr -cr /Applications/QAI.app` in Terminal.
           releaseDraft: true

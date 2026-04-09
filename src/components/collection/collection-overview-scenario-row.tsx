@@ -5,6 +5,7 @@ import {
   Play, Trash2, Pencil, Copy, ChevronDown, ChevronRight, Loader2, CheckCircle2, XCircle, AlertCircle, Circle, XCircle as XCircleIcon, GripVertical,
 } from 'lucide-react'
 import { JsonHighlight } from '@/components/ui/json-highlight'
+import { useBodySearch, BodySearchBar } from '@/components/ui/body-search-bar'
 import { VarHighlight } from '@/components/ui/var-highlight'
 import { formatDuration, formatSize } from '@/lib/formatters'
 import { extractBase64Media, redactBase64Fields } from '@/lib/media'
@@ -23,7 +24,7 @@ interface RunRecordRow {
   error_message?: string | null
 }
 
-function ResponseBody({ resp }: { resp: HttpResponse | null | undefined }) {
+function ResponseBody({ resp, searchTerm, activeMatchIndex, onMatchCount }: { resp: HttpResponse | null | undefined; searchTerm?: string; activeMatchIndex?: number; onMatchCount?: (count: number) => void }) {
   const { t } = useTranslation()
   if (!resp) return <div className="px-3 py-6 text-center text-xs text-muted-foreground/40">{t('scenario.not_run')}</div>
 
@@ -113,14 +114,14 @@ function ResponseBody({ resp }: { resp: HttpResponse | null | undefined }) {
               </div>
             ))}
           </div>
-          <JsonHighlight code={JSON.stringify(redacted, null, 2)} className="px-3 py-2.5" />
+          <JsonHighlight code={JSON.stringify(redacted, null, 2)} className="px-3 py-2.5" searchTerm={searchTerm} activeMatchIndex={activeMatchIndex} onMatchCount={onMatchCount} />
         </div>
       )
     }
-    return <JsonHighlight code={JSON.stringify(parsed, null, 2)} className="px-3 py-2.5 max-h-52 overflow-y-auto" />
+    return <JsonHighlight code={JSON.stringify(parsed, null, 2)} className="px-3 py-2.5 max-h-52 overflow-y-auto" searchTerm={searchTerm} activeMatchIndex={activeMatchIndex} onMatchCount={onMatchCount} />
   }
 
-  return <JsonHighlight code={resp.body} className="px-3 py-2.5 max-h-52 overflow-y-auto" />
+  return <JsonHighlight code={resp.body} className="px-3 py-2.5 max-h-52 overflow-y-auto" searchTerm={searchTerm} activeMatchIndex={activeMatchIndex} onMatchCount={onMatchCount} />
 }
 
 function FilePreviewThumb({ path }: { path: string }) {
@@ -203,6 +204,7 @@ export function ScenarioRow({ r, stepLabel, indent, envVars = {}, assertionCount
   const [reqTab, setReqTab] = useState<'body' | 'headers'>('body')
   const streamScrollRef = useRef<HTMLDivElement>(null)
   const [respTab, setRespTab] = useState<'body' | 'headers'>('body')
+  const bodySearch = useBodySearch()
   const result = getResult(r.id)
   const prog = progress.find((p) => p.item_id === r.id)
   const old = statuses[r.id]
@@ -344,7 +346,7 @@ export function ScenarioRow({ r, stepLabel, indent, envVars = {}, assertionCount
         </span>
       </div>
       {expanded && (
-        <div className={`bg-overlay/[0.03] px-4 py-4 space-y-4 border-t border-overlay/[0.04] ${indent ? 'ml-6' : ''}`}>
+        <div className={`bg-overlay/[0.02] px-4 py-4 space-y-4 border-t border-overlay/[0.04] ${indent ? 'ml-6' : ''}`}>
           <div className="grid grid-cols-2 gap-4">
             <div className="rounded-lg border border-overlay/[0.06] overflow-hidden">
               <div className="flex items-center justify-between border-b border-overlay/[0.04] px-3">
@@ -434,20 +436,29 @@ export function ScenarioRow({ r, stepLabel, indent, envVars = {}, assertionCount
                 )}
               </div>
               {respTab === 'body' ? (
-                isRunning ? (
-                  <div ref={streamScrollRef} className="px-3 py-2.5 max-h-52 overflow-y-auto">
-                    {streamingContent ? (
-                      <pre className="font-mono text-xs leading-relaxed whitespace-pre-wrap break-all text-foreground/80">
-                        {streamingContent}<span className="animate-pulse text-primary">|</span>
-                      </pre>
-                    ) : (
-                      <div className="flex items-center gap-2 py-6 justify-center">
-                        <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-                        <span className="text-xs text-muted-foreground">{t('scenario.waiting')}</span>
-                      </div>
-                    )}
-                  </div>
-                ) : <ResponseBody resp={resp} />
+                <div className="relative" {...bodySearch.containerHandlers}>
+                  {bodySearch.isOpen && (
+                    <div className="absolute right-1.5 top-1.5 z-10">
+                      <BodySearchBar matchCount={bodySearch.matchCount} activeIndex={bodySearch.activeIndex} onSearch={bodySearch.updateTerm} onNext={bodySearch.next} onPrev={bodySearch.prev} onClose={bodySearch.close} />
+                    </div>
+                  )}
+                  {isRunning ? (
+                    <div ref={streamScrollRef} className="px-3 py-2.5 max-h-52 overflow-y-auto">
+                      {streamingContent ? (
+                        <pre className="font-mono text-xs leading-relaxed whitespace-pre-wrap break-all text-foreground/80">
+                          {streamingContent}<span className="animate-pulse text-primary">|</span>
+                        </pre>
+                      ) : (
+                        <div className="flex items-center gap-2 py-6 justify-center">
+                          <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                          <span className="text-xs text-muted-foreground">{t('scenario.waiting')}</span>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <ResponseBody resp={resp} searchTerm={bodySearch.term} activeMatchIndex={bodySearch.activeIndex} onMatchCount={bodySearch.handleMatchCount} />
+                  )}
+                </div>
               ) : (
                 <div className="max-h-52 overflow-y-auto">
                   {resp && resp.headers.length > 0 ? (

@@ -11,7 +11,9 @@
     "send_hint": "Send a request to see the response",
     "request_failed": "Request Failed",
     "passed": "{{passed}}/{{total}} passed",
-    "failed": "{{count}} failed"
+    "failed": "{{count}} failed",
+    "search_placeholder": "Search response...",
+    "no_matches": "No matches"
   },
   "sidebar": {
     "search": "Search...  ⌘K",

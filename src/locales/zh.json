@@ -11,7 +11,9 @@
     "send_hint": "发送请求查看响应",
     "request_failed": "请求失败",
     "passed": "{{passed}}/{{total}} 通过",
-    "failed": "{{count}} 失败"
+    "failed": "{{count}} 失败",
+    "search_placeholder": "搜索响应内容...",
+    "no_matches": "无匹配"
   },
   "sidebar": {
     "search": "搜索...  ⌘K",

@@ -5,6 +5,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useRequestStore } from '@/stores/request-store'
+import { JsonHighlight } from '@/components/ui/json-highlight'
+import { useBodySearch, BodySearchBar } from '@/components/ui/body-search-bar'
 import AssertionResult from '@/components/assertion/assertion-result'
 import { save } from '@tauri-apps/plugin-dialog'
 import { writeFile } from '@tauri-apps/plugin-fs'
@@ -138,6 +140,7 @@ export default function ResponsePanel() {
   const { currentRequest, currentResponse, streaming, streamContent, streamChunks } = useRequestStore()
   const isWebSocket = currentRequest?.protocol === 'websocket'
   const [activeTab, setActiveTab] = useState('body')
+  const bodySearch = useBodySearch()
 
   const response = currentResponse?.response
   const assertionResults = currentResponse?.assertion_results ?? []
@@ -271,7 +274,12 @@ export default function ResponsePanel() {
           ) : isMediaResponse ? (
             <MediaPreview body={response.body} sizeBytes={response.size_bytes} />
           ) : (
-            <div>
+            <div className="relative" {...bodySearch.containerHandlers}>
+              {bodySearch.isOpen && (
+                <div className="absolute right-2 top-2 z-10">
+                  <BodySearchBar matchCount={bodySearch.matchCount} activeIndex={bodySearch.activeIndex} onSearch={bodySearch.updateTerm} onNext={bodySearch.next} onPrev={bodySearch.prev} onClose={bodySearch.close} />
+                </div>
+              )}
               {embeddedMedia.length > 0 && (
                 <div className="space-y-2 mb-3">
                   {embeddedMedia.map((m, i) => (
@@ -287,9 +295,13 @@ export default function ResponsePanel() {
                   ))}
                 </div>
               )}
-              <pre className="font-mono text-xs leading-relaxed whitespace-pre-wrap break-all max-h-[400px] overflow-y-auto bg-card p-4 rounded-xl border border-overlay/[0.06]">
-                {prettyBody}
-              </pre>
+              <JsonHighlight
+                code={prettyBody}
+                className="leading-relaxed whitespace-pre-wrap break-all max-h-[400px] overflow-y-auto bg-card p-4 rounded-xl border border-overlay/[0.06]"
+                searchTerm={bodySearch.term}
+                activeMatchIndex={bodySearch.activeIndex}
+                onMatchCount={bodySearch.handleMatchCount}
+              />
             </div>
           )}
         </TabsContent>

@@ -17,6 +17,9 @@ interface Options {
   tableItems: TableItem[]
 }
 
+/** 最小 loading 展示时间，避免极快请求导致页面闪烁 */
+const MIN_LOADING_MS = 400
+
 export function useCollectionRunner({ collectionId, allRequests, tableItems }: Options) {
   const [statuses, setStatuses] = useState<Record<string, ItemLastStatus>>({})
   const [running, setRunning] = useState(false)
@@ -112,6 +115,7 @@ export function useCollectionRunner({ collectionId, allRequests, tableItems }: O
       return
     }
     abortRef.current = false
+    const startTime = Date.now()
     setRunning(true); setProgress([]); setBatchResult(null); setSingleResults({}); setError(null); setStatuses({})
 
     if (runMode === 'sequential') {
@@ -212,6 +216,8 @@ export function useCollectionRunner({ collectionId, allRequests, tableItems }: O
         unlisten()
         unlistenRef.current = null
         setStreamingContents({})
+        const elapsed = Date.now() - startTime
+        if (elapsed < MIN_LOADING_MS) await new Promise((r) => setTimeout(r, MIN_LOADING_MS - elapsed))
         setRunning(false)
         if (!dryRun) loadStatuses()
         useRunQueueStore.getState().finishRun()
@@ -239,6 +245,8 @@ export function useCollectionRunner({ collectionId, allRequests, tableItems }: O
         if (!abortRef.current) { setBatchResult(result); if (!dryRun) loadStatuses() }
       } catch (e: unknown) { if (!abortRef.current) setError(invokeErrorMessage(e)) }
       finally {
+        const elapsed = Date.now() - startTime
+        if (elapsed < MIN_LOADING_MS) await new Promise((r) => setTimeout(r, MIN_LOADING_MS - elapsed))
         setRunning(false)
         unlistenRef.current?.(); unlistenRef.current = null
         useRunQueueStore.getState().finishRun()

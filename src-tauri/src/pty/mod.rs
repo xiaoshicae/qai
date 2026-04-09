@@ -36,9 +36,7 @@ impl PtyState {
     }
 
     fn lock_inner(&self) -> Result<std::sync::MutexGuard<'_, PtyInner>, AppError> {
-        self.0
-            .lock()
-            .map_err(|e| AppError::Generic(e.to_string()))
+        self.0.lock().map_err(|e| AppError::Generic(e.to_string()))
     }
 
     pub fn spawn(&self, app: AppHandle, cols: u16, rows: u16) -> Result<(), AppError> {
@@ -107,8 +105,7 @@ impl PtyState {
         if let Some(ref mut w) = inner.writer {
             w.write_all(data)
                 .map_err(|e| AppError::Generic(format!("{e}")))?;
-            w.flush()
-                .map_err(|e| AppError::Generic(format!("{e}")))?;
+            w.flush().map_err(|e| AppError::Generic(format!("{e}")))?;
         }
         Ok(())
     }

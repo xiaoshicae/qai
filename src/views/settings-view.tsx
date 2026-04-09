@@ -38,28 +38,16 @@ export default function SettingsView() {
   }, [])
   const checkForUpdateRef = useRef<() => void>(() => {})
 
+  const pendingUpdateRef = useRef<Awaited<ReturnType<typeof check>>>(null)
+
   const checkForUpdate = async () => {
     setUpdateStatus('checking')
     try {
       const update = await check()
       if (update) {
+        pendingUpdateRef.current = update
         setNewVersion(update.version)
         setUpdateStatus('available')
-
-        let downloaded = 0
-        let total = 0
-        await update.downloadAndInstall((event) => {
-          if (event.event === 'Started' && event.data.contentLength) {
-            total = event.data.contentLength
-            setUpdateStatus('downloading')
-          } else if (event.event === 'Progress') {
-            downloaded += event.data.chunkLength
-            if (total > 0) setDownloadProgress(Math.round((downloaded / total) * 100))
-          } else if (event.event === 'Finished') {
-            setUpdateStatus('ready')
-          }
-        })
-        setUpdateStatus('ready')
       } else {
         setUpdateStatus('latest')
       }
@@ -74,6 +62,30 @@ export default function SettingsView() {
     }
   }
   checkForUpdateRef.current = checkForUpdate
+
+  const confirmUpdate = async () => {
+    const update = pendingUpdateRef.current
+    if (!update) return
+    try {
+      let downloaded = 0
+      let total = 0
+      await update.downloadAndInstall((event) => {
+        if (event.event === 'Started' && event.data.contentLength) {
+          total = event.data.contentLength
+          setUpdateStatus('downloading')
+        } else if (event.event === 'Progress') {
+          downloaded += event.data.chunkLength
+          if (total > 0) setDownloadProgress(Math.round((downloaded / total) * 100))
+        } else if (event.event === 'Finished') {
+          setUpdateStatus('ready')
+        }
+      })
+      setUpdateStatus('ready')
+    } catch (e: unknown) {
+      setUpdateStatus('error')
+      setErrorDetail(String(e))
+    }
+  }
 
   const handleRestart = async () => {
     await relaunch()
@@ -187,9 +199,15 @@ export default function SettingsView() {
             </div>
 
             {updateStatus === 'available' && (
-              <div className="flex items-center gap-2 text-xs text-info">
-                <Download className="h-3.5 w-3.5" />
-                {t('settings.update_available', { version: newVersion })}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs text-info">
+                  <Download className="h-3.5 w-3.5" />
+                  {t('settings.update_available', { version: newVersion })}
+                </div>
+                <Button size="sm" onClick={confirmUpdate} className="gap-1.5">
+                  <Download className="h-3.5 w-3.5" />
+                  {t('settings.update_download')}
+                </Button>
               </div>
             )}
             {updateStatus === 'downloading' && (

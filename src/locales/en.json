@@ -178,6 +178,7 @@
     "check_update": "Check for Updates",
     "checking_update": "Checking...",
     "update_available": "New version v{{version}} available",
+    "update_download": "Download Update",
     "update_downloading": "Downloading... {{progress}}%",
     "update_ready": "Download complete, restart to apply",
     "update_restart": "Restart to Update",

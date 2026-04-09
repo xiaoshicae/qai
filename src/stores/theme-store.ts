@@ -52,18 +52,19 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     applyTheme(resolved)
     set({ mode, resolved })
 
-    // 监听系统主题变化（防止重复注册）
+    // 监听系统主题变化（单例 store，生命周期与 app 一致，无需 remove）
     if (!mqListenerAttached) {
       mqListenerAttached = true
       const mq = window.matchMedia('(prefers-color-scheme: dark)')
-      mq.addEventListener('change', () => {
+      const handler = () => {
         const { mode: currentMode } = get()
         if (currentMode === 'system') {
           const newResolved = resolveTheme('system')
           applyTheme(newResolved)
           set({ resolved: newResolved })
         }
-      })
+      }
+      mq.addEventListener('change', handler)
     }
   },
 }))

@@ -1,16 +1,17 @@
 use tauri::{AppHandle, Emitter, State};
 
 use crate::db::init::{DbState, HttpClient};
+use crate::errors::AppError;
 use crate::models::assertion::Assertion;
 use crate::models::execution::ExecutionResult;
 use crate::models::item::CollectionItem;
 use crate::runner::assertion::apply_assertions;
 
 /// 从 DB 加载 item + assertions，并应用环境变量替换
-fn prepare_request(db: &DbState, id: &str) -> Result<(CollectionItem, Vec<Assertion>), String> {
+fn prepare_request(db: &DbState, id: &str) -> Result<(CollectionItem, Vec<Assertion>), AppError> {
     let conn = db.conn()?;
-    let raw_item = crate::db::item::get(&conn, id).map_err(|e| e.to_string())?;
-    let assertions = crate::db::assertion::list_by_item(&conn, id).map_err(|e| e.to_string())?;
+    let raw_item = crate::db::item::get(&conn, id)?;
+    let assertions = crate::db::assertion::list_by_item(&conn, id)?;
     let var_map = crate::db::environment::get_active_var_map(&conn);
     let item = crate::http::vars::apply_vars(&raw_item, &var_map);
     Ok((item, assertions))
@@ -22,11 +23,11 @@ fn finalize_result(
     item: &CollectionItem,
     result: &mut ExecutionResult,
     assertions: &[Assertion],
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     apply_assertions(result, assertions);
     let conn = db.conn()?;
     let execution = crate::http::client::to_execution(item, result);
-    crate::db::execution::save(&conn, &execution).map_err(|e| e.to_string())?;
+    crate::db::execution::save(&conn, &execution)?;
     Ok(())
 }
 
@@ -38,18 +39,24 @@ pub fn create_item(
     item_type: Option<String>,
     name: String,
     method: Option<String>,
-) -> Result<CollectionItem, String> {
+) -> Result<CollectionItem, AppError> {
     let conn = db.conn()?;
     let itype = item_type.as_deref().unwrap_or("request");
     let m = method.as_deref().unwrap_or("GET");
-    crate::db::item::create(&conn, &collection_id, parent_id.as_deref(), itype, &name, m)
-        .map_err(|e| e.to_string())
+    Ok(crate::db::item::create(
+        &conn,
+        &collection_id,
+        parent_id.as_deref(),
+        itype,
+        &name,
+        m,
+    )?)
 }
 
 #[tauri::command]
-pub fn get_item(db: State<'_, DbState>, id: String) -> Result<CollectionItem, String> {
+pub fn get_item(db: State<'_, DbState>, id: String) -> Result<CollectionItem, AppError> {
     let conn = db.conn()?;
-    crate::db::item::get(&conn, &id).map_err(|e| e.to_string())
+    Ok(crate::db::item::get(&conn, &id)?)
 }
 
 #[tauri::command]
@@ -57,7 +64,7 @@ pub fn update_item(
     db: State<'_, DbState>,
     id: String,
     payload: crate::models::item::UpdateItemPayload,
-) -> Result<CollectionItem, String> {
+) -> Result<CollectionItem, AppError> {
     let conn = db.conn()?;
     // expect_status 同步由断言编辑器的 update_assertion 反向驱动，
     // 此处仅在显式传入且与当前值不同时才同步，避免覆盖用户在断言编辑器中的修改
@@ -66,11 +73,10 @@ pub fn update_item(
             .map(|item| item.expect_status)
             .unwrap_or(0);
         if es != current {
-            crate::db::assertion::sync_status_code_assertion(&conn, &id, es)
-                .map_err(|e| e.to_string())?;
+            crate::db::assertion::sync_status_code_assertion(&conn, &id, es)?;
         }
     }
-    crate::db::item::update(&conn, &id, &payload).map_err(|e| e.to_string())
+    Ok(crate::db::item::update(&conn, &id, &payload)?)
 }
 
 #[derive(serde::Deserialize)]
@@ -80,30 +86,29 @@ pub struct ItemOrder {
 }
 
 #[tauri::command]
-pub fn reorder_items(db: State<'_, DbState>, items: Vec<ItemOrder>) -> Result<(), String> {
+pub fn reorder_items(db: State<'_, DbState>, items: Vec<ItemOrder>) -> Result<(), AppError> {
     let mut conn = db.conn()?;
-    let tx = conn.transaction().map_err(|e| e.to_string())?;
+    let tx = conn.transaction()?;
     for item in &items {
         tx.execute(
             "UPDATE collection_items SET sort_order = ?1 WHERE id = ?2",
             rusqlite::params![item.sort_order, item.id],
-        )
-        .map_err(|e| e.to_string())?;
+        )?;
     }
-    tx.commit().map_err(|e| e.to_string())?;
+    tx.commit()?;
     Ok(())
 }
 
 #[tauri::command]
-pub fn duplicate_item(db: State<'_, DbState>, id: String) -> Result<CollectionItem, String> {
+pub fn duplicate_item(db: State<'_, DbState>, id: String) -> Result<CollectionItem, AppError> {
     let mut conn = db.conn()?;
-    crate::db::item::duplicate(&mut conn, &id).map_err(|e| e.to_string())
+    Ok(crate::db::item::duplicate(&mut conn, &id)?)
 }
 
 #[tauri::command]
-pub fn delete_item(db: State<'_, DbState>, id: String) -> Result<(), String> {
+pub fn delete_item(db: State<'_, DbState>, id: String) -> Result<(), AppError> {
     let conn = db.conn()?;
-    crate::db::item::delete(&conn, &id).map_err(|e| e.to_string())
+    Ok(crate::db::item::delete(&conn, &id)?)
 }
 
 /// 保留旧命令名以兼容前端，但内部统一用 execute_smart
@@ -114,7 +119,7 @@ pub async fn send_request_stream(
     http: State<'_, HttpClient>,
     id: String,
     dry_run: Option<bool>,
-) -> Result<ExecutionResult, String> {
+) -> Result<ExecutionResult, AppError> {
     send_request(app, db, http, id, dry_run).await
 }
 
@@ -126,16 +131,14 @@ pub async fn send_request(
     http: State<'_, HttpClient>,
     id: String,
     dry_run: Option<bool>,
-) -> Result<ExecutionResult, String> {
+) -> Result<ExecutionResult, AppError> {
     let dry_run = dry_run.unwrap_or(false);
     let (item, assertions) = prepare_request(&db, &id)?;
 
     let mut result = if dry_run {
         crate::http::client::mock_execute(&item).await
     } else if item.protocol == "websocket" {
-        crate::websocket::client::execute(&item)
-            .await
-            .map_err(|e| e.to_string())?
+        crate::websocket::client::execute(&item).await?
     } else {
         let app_clone = app.clone();
         crate::http::client::execute_smart(
@@ -145,8 +148,7 @@ pub async fn send_request(
                 let _ = app_clone.emit("stream-chunk", &chunk);
             })),
         )
-        .await
-        .map_err(|e| e.to_string())?
+        .await?
     };
 
     if dry_run {
@@ -165,7 +167,7 @@ pub async fn quick_test(
     db: State<'_, DbState>,
     http: State<'_, HttpClient>,
     payload: crate::models::item::QuickTestPayload,
-) -> Result<ExecutionResult, String> {
+) -> Result<ExecutionResult, AppError> {
     let mut item = payload.to_temp_item();
 
     {
@@ -175,9 +177,7 @@ pub async fn quick_test(
     }
 
     let mut result = if item.protocol == "websocket" {
-        crate::websocket::client::execute(&item)
-            .await
-            .map_err(|e| e.to_string())?
+        crate::websocket::client::execute(&item).await?
     } else {
         let app_clone = app.clone();
         crate::http::client::execute_smart(
@@ -187,8 +187,7 @@ pub async fn quick_test(
                 let _ = app_clone.emit("stream-chunk", &chunk);
             })),
         )
-        .await
-        .map_err(|e| e.to_string())?
+        .await?
     };
 
     result.item_name = item.url.clone();
@@ -203,7 +202,7 @@ pub async fn quick_test_stream(
     db: State<'_, DbState>,
     http: State<'_, HttpClient>,
     payload: crate::models::item::QuickTestPayload,
-) -> Result<ExecutionResult, String> {
+) -> Result<ExecutionResult, AppError> {
     quick_test(app, db, http, payload).await
 }
 
@@ -212,7 +211,7 @@ const MAX_PREVIEW_SIZE: u64 = 20 * 1024 * 1024;
 
 /// 读取本地图片文件，返回 data URI（base64）用于前端缩略图预览
 #[tauri::command]
-pub fn read_file_preview(path: String) -> Result<Option<String>, String> {
+pub fn read_file_preview(path: String) -> Result<Option<String>, AppError> {
     // 验证路径安全性
     let canonical = match crate::http::request_builder::validate_file_path(&path) {
         Ok(p) => p,
@@ -240,25 +239,25 @@ pub fn read_file_preview(path: String) -> Result<Option<String>, String> {
         _ => return Ok(None),
     };
     // 检查文件大小
-    let metadata = std::fs::metadata(&canonical).map_err(|e| e.to_string())?;
+    let metadata = std::fs::metadata(&canonical)?;
     if metadata.len() > MAX_PREVIEW_SIZE {
-        return Err(format!("文件过大 ({}MB)", metadata.len() / 1024 / 1024));
+        return Err(format!("文件过大 ({}MB)", metadata.len() / 1024 / 1024).into());
     }
-    let bytes = std::fs::read(&canonical).map_err(|e| e.to_string())?;
+    let bytes = std::fs::read(&canonical)?;
     use base64::Engine;
     let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
     Ok(Some(format!("data:{};base64,{}", mime, encoded)))
 }
 
 #[tauri::command]
-pub fn parse_curl(curl_command: String) -> Result<crate::http::curl::CurlParseResult, String> {
-    crate::http::curl::parse_curl(&curl_command)
+pub fn parse_curl(curl_command: String) -> Result<crate::http::curl::CurlParseResult, AppError> {
+    Ok(crate::http::curl::parse_curl(&curl_command)?)
 }
 
 #[tauri::command]
-pub fn export_curl(db: State<'_, DbState>, id: String) -> Result<String, String> {
+pub fn export_curl(db: State<'_, DbState>, id: String) -> Result<String, AppError> {
     let conn = db.conn()?;
-    let raw_item = crate::db::item::get(&conn, &id).map_err(|e| e.to_string())?;
+    let raw_item = crate::db::item::get(&conn, &id)?;
     // 应用环境变量替换，让导出的 curl 包含实际值
     let var_map = crate::db::environment::get_active_var_map(&conn);
     let item = crate::http::vars::apply_vars(&raw_item, &var_map);

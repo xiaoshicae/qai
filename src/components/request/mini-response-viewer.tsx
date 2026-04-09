@@ -33,7 +33,7 @@ export function MiniResponseViewer({ result, className = '' }: Props) {
           </RespTab>
         </div>
         <div className="flex items-center gap-2">
-          <span className={`font-mono font-medium ${result.status === 'success' ? 'text-emerald-500' : 'text-destructive'}`}>
+          <span className={`font-mono font-medium ${result.status === 'success' ? 'text-success' : 'text-destructive'}`}>
             {resp ? `${resp.status}` : result.status}
           </span>
           {resp && (
@@ -45,8 +45,9 @@ export function MiniResponseViewer({ result, className = '' }: Props) {
                 onClick={copyBody}
                 className="p-1 rounded-md text-muted-foreground/50 hover:text-foreground hover:bg-overlay/[0.06] cursor-pointer transition-colors"
                 title="Copy response body"
+                aria-label="Copy response body"
               >
-                {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+                {copied ? <Check className="h-3 w-3 text-success" /> : <Copy className="h-3 w-3" />}
               </button>
             </>
           )}

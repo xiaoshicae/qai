@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Send, Loader2, Braces, Copy, Check, Plug } from 'lucide-react'
+import { Send, Loader2, Braces, Copy, Check, Plug, Cloud } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
 import { CodeEditor } from '@/components/ui/code-editor'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useRequestStore } from '@/stores/request-store'
+import { useConfirmStore } from '@/components/ui/confirm-dialog'
 import { useEnvVars } from '@/hooks/use-env-vars'
 import KeyValueTable from './key-value-table'
 import { BodyTypeSelector } from './body-type-selector'
@@ -15,29 +16,19 @@ import ExtractRulesEditor from './extract-rules-editor'
 import RunsTab from './runs-tab'
 import type { KeyValuePair } from '@/types'
 import { safeJsonParse } from '@/lib/utils'
+import { METHOD_COLORS } from '@/lib/styles'
+import { VarInput } from '@/components/ui/var-input'
 
-const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD'] as const
-const METHOD_OPTIONS = METHODS.map((m) => ({ value: m, label: m }))
-
-const METHOD_COLORS: Record<string, string> = {
-  GET: 'text-method-get',
-  POST: 'text-method-post',
-  PUT: 'text-method-put',
-  DELETE: 'text-method-delete',
-  PATCH: 'text-method-patch',
-  HEAD: 'text-method-head',
-}
-
-const PROTOCOL_OPTIONS = [
-  { value: 'http', label: 'HTTP' },
-  { value: 'websocket', label: 'WS' },
-]
+import { METHOD_OPTIONS, PROTOCOL_OPTIONS } from '@/lib/constants'
 
 export default function RequestPanel() {
   const { t } = useTranslation()
   const { currentRequest, loading, updateRequest, sendRequest } = useRequestStore()
+  const confirmFn = useConfirmStore((s) => s.confirm)
   const [name, setName] = useState('')
   const nameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [nameSaveStatus, setNameSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
+  const nameSaveIndicatorRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [method, setMethod] = useState('GET')
   const [url, setUrl] = useState('')
   const [headers, setHeaders] = useState<KeyValuePair[]>([])
@@ -95,8 +86,12 @@ export default function RequestPanel() {
   const handleNameChange = (value: string) => {
     setName(value)
     if (nameTimerRef.current) clearTimeout(nameTimerRef.current)
-    nameTimerRef.current = setTimeout(() => {
-      updateRequest({ name: value })
+    nameTimerRef.current = setTimeout(async () => {
+      setNameSaveStatus('saving')
+      await updateRequest({ name: value })
+      setNameSaveStatus('saved')
+      if (nameSaveIndicatorRef.current) clearTimeout(nameSaveIndicatorRef.current)
+      nameSaveIndicatorRef.current = setTimeout(() => setNameSaveStatus('idle'), 1500)
     }, 500)
   }
 
@@ -117,12 +112,17 @@ export default function RequestPanel() {
   useEffect(() => { requestRef.current = currentRequest }, [currentRequest])
   useEffect(() => () => {
     if (nameTimerRef.current) clearTimeout(nameTimerRef.current)
+    if (nameSaveIndicatorRef.current) clearTimeout(nameSaveIndicatorRef.current)
     if (requestRef.current && nameRef.current !== requestRef.current.name) {
       useRequestStore.getState().updateRequest({ name: nameRef.current })
     }
   }, [])
 
-  const handleProtocolChange = (newProtocol: string) => {
+  const handleProtocolChange = async (newProtocol: string) => {
+    if (newProtocol === 'websocket' && bodyType !== 'none' && bodyType !== 'json' && bodyContent.trim()) {
+      const ok = await confirmFn(t('request.protocol_switch_warning'), { title: t('request.protocol_switch'), kind: 'warning' })
+      if (!ok) return
+    }
     setProtocol(newProtocol)
     if (newProtocol === 'websocket') {
       setBodyType('json')
@@ -131,6 +131,13 @@ export default function RequestPanel() {
   }
 
   const handleSend = async () => {
+    if (unresolvedUrlVars.length > 0) {
+      const ok = await confirmFn(
+        t('request.unresolved_vars_confirm', { vars: unresolvedUrlVars.join(', ') }),
+        { title: t('request.send'), kind: 'warning' },
+      )
+      if (!ok) return
+    }
     await updateRequest({
       method,
       url,
@@ -181,6 +188,12 @@ export default function RequestPanel() {
             className="text-sm font-medium bg-transparent border-0 outline-none text-foreground flex-1 min-w-[120px] px-0 placeholder:text-muted-foreground focus:ring-0"
             placeholder={t('request.name_placeholder')}
           />
+          {nameSaveStatus !== 'idle' && (
+            <span className="flex items-center gap-1 text-[10px] text-muted-foreground/60 shrink-0">
+              <Cloud className={`h-3 w-3 ${nameSaveStatus === 'saving' ? 'animate-pulse' : 'text-success'}`} />
+              {nameSaveStatus === 'saved' && t('env.saved')}
+            </span>
+          )}
           {activeEnvName && (
             <span className="text-[10px] text-muted-foreground shrink-0">
               {t('request.active_env')}: <span className="text-success/90 font-medium">{activeEnvName}</span>
@@ -200,12 +213,13 @@ export default function RequestPanel() {
         ) : (
           <Select value={method} onChange={setMethod} options={METHOD_OPTIONS} className={`w-28 ${METHOD_COLORS[method] ?? ''}`} />
         )}
-        <input
+        <VarInput
           data-request-url=""
           value={url}
-          onChange={(e) => setUrl(e.target.value)}
+          onChange={setUrl}
           placeholder={isWebSocket ? t('request.ws_url_placeholder') : t('request.url_placeholder')}
-          className="flex-1 h-8 rounded-lg border border-input bg-transparent px-3 text-sm font-mono placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 outline-none transition-colors"
+          envVars={envVars}
+          className="flex-1 h-8"
           onBlur={() => updateRequest({ url })}
           onKeyDown={(e) => { if (e.key === 'Enter' && !(e.metaKey || e.ctrlKey)) void handleSend() }}
         />

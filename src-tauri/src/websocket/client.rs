@@ -96,6 +96,9 @@ fn is_error_message(json: &serde_json::Value) -> bool {
     json.get("error").is_some() || json.get("type").and_then(|v| v.as_str()) == Some("error")
 }
 
+/// WebSocket 连接超时时间
+const WS_CONNECT_TIMEOUT_SECS: u64 = 15;
+
 /// 执行 WebSocket 请求
 /// - body_content 为 JSON 数组时：多步模式（用户完全控制每条消息内容）
 /// - body_content 为 JSON 对象时：单步模式（自动认证 + 发送 payload）
@@ -104,9 +107,14 @@ pub async fn execute(item: &CollectionItem) -> Result<ExecutionResult, anyhow::E
     let execution_id = Uuid::new_v4().to_string();
     let start = Instant::now();
 
-    let (ws, _) = connect_async(&ws_url)
-        .await
-        .map_err(|e| anyhow::anyhow!("WebSocket 连接失败: {}", e))?;
+    // 带超时的连接，防止慢服务器无限挂起
+    let (ws, _) = tokio::time::timeout(
+        std::time::Duration::from_secs(WS_CONNECT_TIMEOUT_SECS),
+        connect_async(&ws_url),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("WebSocket 连接超时 ({}s)", WS_CONNECT_TIMEOUT_SECS))?
+    .map_err(|e| anyhow::anyhow!("WebSocket 连接失败: {}", e))?;
 
     if is_multi_step_body(&item.body_content) {
         let messages = parse_messages(&item.body_content);
@@ -146,7 +154,7 @@ where
         if let Err(e) = ws.send(Message::Text(msg_str.into())).await {
             steps.push(serde_json::json!({
                 "step": step_num, "sent": msg, "received": [],
-                "binary_bytes": 0, "status": "error",
+                "binary_bytes": 0, "status": crate::models::status::ERROR,
                 "error": format!("发送失败: {}", e),
                 "time_ms": step_start.elapsed().as_millis() as u64,
             }));
@@ -163,7 +171,7 @@ where
 
         total_binary += bytes;
         total_text += received.len();
-        let status = if err.is_some() { "error" } else { "success" };
+        let status = if err.is_some() { crate::models::status::ERROR } else { crate::models::status::SUCCESS };
 
         steps.push(serde_json::json!({
             "step": step_num, "sent": msg, "received": received,
@@ -335,6 +343,8 @@ where
                         .get("error")
                         .and_then(|v| v.as_str())
                         .unwrap_or("未知认证错误");
+                    // 认证失败时关闭 socket，防止资源泄漏
+                    let _ = ws.close().await;
                     return Ok(make_error_result(
                         &execution_id,
                         item,

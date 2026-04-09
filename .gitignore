@@ -43,3 +43,4 @@ coverage/
 /*.jpg
 /*.jpeg
 .playwright-mcp/
+tsconfig.tsbuildinfo

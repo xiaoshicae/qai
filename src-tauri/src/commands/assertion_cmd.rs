@@ -1,21 +1,22 @@
 use tauri::State;
 
 use crate::db::init::DbState;
+use crate::errors::AppError;
 use crate::models::assertion::Assertion;
 
 #[tauri::command]
-pub fn list_assertions(db: State<'_, DbState>, item_id: String) -> Result<Vec<Assertion>, String> {
+pub fn list_assertions(db: State<'_, DbState>, item_id: String) -> Result<Vec<Assertion>, AppError> {
     let conn = db.conn()?;
-    crate::db::assertion::list_by_item(&conn, &item_id).map_err(|e| e.to_string())
+    Ok(crate::db::assertion::list_by_item(&conn, &item_id)?)
 }
 
 #[tauri::command]
 pub fn get_assertion_counts(
     db: State<'_, DbState>,
     collection_id: String,
-) -> Result<std::collections::HashMap<String, i32>, String> {
+) -> Result<std::collections::HashMap<String, i32>, AppError> {
     let conn = db.conn()?;
-    crate::db::assertion::count_by_collection(&conn, &collection_id).map_err(|e| e.to_string())
+    Ok(crate::db::assertion::count_by_collection(&conn, &collection_id)?)
 }
 
 #[tauri::command]
@@ -26,17 +27,16 @@ pub fn create_assertion(
     expression: String,
     operator: String,
     expected: String,
-) -> Result<Assertion, String> {
+) -> Result<Assertion, AppError> {
     let conn = db.conn()?;
-    crate::db::assertion::create(
+    Ok(crate::db::assertion::create(
         &conn,
         &item_id,
         &assertion_type,
         &expression,
         &operator,
         &expected,
-    )
-    .map_err(|e| e.to_string())
+    )?)
 }
 
 #[tauri::command]
@@ -48,7 +48,7 @@ pub fn update_assertion(
     operator: Option<String>,
     expected: Option<String>,
     enabled: Option<bool>,
-) -> Result<Assertion, String> {
+) -> Result<Assertion, AppError> {
     let conn = db.conn()?;
     let updated = crate::db::assertion::update(
         &conn,
@@ -58,16 +58,17 @@ pub fn update_assertion(
         operator.as_deref(),
         expected.as_deref(),
         enabled,
-    )
-    .map_err(|e| e.to_string())?;
+    )?;
 
     // 反向同步：status_code 断言的 expected 变更时，同步更新 item 的 expect_status
     if updated.assertion_type == "status_code" {
         if let Ok(new_status) = updated.expected.parse::<u16>() {
-            let _ = conn.execute(
+            if let Err(e) = conn.execute(
                 "UPDATE collection_items SET expect_status = ?1 WHERE id = ?2",
                 rusqlite::params![new_status, updated.item_id],
-            );
+            ) {
+                log::warn!("反向同步 expect_status 失败 [{}]: {e}", updated.item_id);
+            }
         }
     }
 
@@ -75,7 +76,7 @@ pub fn update_assertion(
 }
 
 #[tauri::command]
-pub fn delete_assertion(db: State<'_, DbState>, id: String) -> Result<(), String> {
+pub fn delete_assertion(db: State<'_, DbState>, id: String) -> Result<(), AppError> {
     let conn = db.conn()?;
-    crate::db::assertion::delete(&conn, &id).map_err(|e| e.to_string())
+    Ok(crate::db::assertion::delete(&conn, &id)?)
 }

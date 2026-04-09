@@ -399,7 +399,13 @@ export default function Sidebar() {
     handleSelect(col)
   }
 
-  const handleColAddCase = async () => { if (!menu?.col) return; const col = menu.col; setMenu(null); await invoke('create_item', { collectionId: col.id, parentId: null, itemType: 'request', name: t('common.new_test_case'), method: 'POST' }); await loadTree(col.id); handleSelect(col) }
+  const handleColAddCase = async () => {
+    if (!menu?.col) return; const col = menu.col; setMenu(null)
+    try {
+      await invoke('create_item', { collectionId: col.id, parentId: null, itemType: 'request', name: t('common.new_test_case'), method: 'POST' })
+      await loadTree(col.id); handleSelect(col)
+    } catch (e) { toast.error(invokeErrorMessage(e)) }
+  }
   const handleColRename = () => { if (!menu?.col) return; setRenamingId(menu.col.id); setRenameValue(menu.col.name); setMenu(null) }
   const handleColDelete = async () => { if (!menu?.col) return; const name = menu.col.name; setMenu(null); const ok = await confirm(t('common.confirm_delete', { name }), { title: t('common.delete'), kind: 'warning' }); if (!ok) return; await deleteCollection(menu.col.id) }
   const commitRename = async () => {
@@ -439,13 +445,13 @@ export default function Sidebar() {
           <input data-sidebar-search="" type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('sidebar.search')} autoComplete="off" className="w-full h-7 pl-8 pr-2 rounded-lg bg-overlay/[0.04] text-xs placeholder:text-muted-foreground/40 border border-overlay/[0.06] outline-none focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/20 transition-all" />
         </div>
         <Tooltip content={t('sidebar.quick_test')}>
-          <button onClick={() => setShowQuickTest(true)} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-overlay/[0.06] cursor-pointer transition-colors">
+          <button onClick={() => setShowQuickTest(true)} aria-label={t('sidebar.quick_test')} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-overlay/[0.06] cursor-pointer transition-colors">
             <Zap className="h-3.5 w-3.5 text-muted-foreground" />
           </button>
         </Tooltip>
         <RunConfigButton />
         <Tooltip content={t('sidebar.new_group')}>
-          <button onClick={handleNewTopGroup} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-overlay/[0.06] cursor-pointer transition-colors">
+          <button onClick={handleNewTopGroup} aria-label={t('sidebar.new_group')} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-overlay/[0.06] cursor-pointer transition-colors">
           <Plus className="h-3.5 w-3.5 text-muted-foreground" />
         </button>
         </Tooltip>
@@ -493,7 +499,14 @@ export default function Sidebar() {
             </div>
           )}
 
-          {roots.length === 0 && ungrouped.length === 0 && !newTopGroup && (
+          {search.trim() && filteredRoots.length === 0 && filteredUngrouped.length === 0 && (
+            <div className="flex flex-col items-center justify-center text-center py-10 px-4">
+              <Search className="h-5 w-5 text-muted-foreground/30 mb-2" />
+              <p className="text-xs text-muted-foreground">{t('sidebar.no_results')}</p>
+            </div>
+          )}
+
+          {!search.trim() && roots.length === 0 && ungrouped.length === 0 && !newTopGroup && (
             <div className="flex flex-col items-center justify-center text-center py-16 px-4">
               <p className="text-sm text-muted-foreground">{t('sidebar.no_suites')}</p>
               <p className="text-xs text-muted-foreground/60 mt-1">{t('sidebar.no_suites_hint')}</p>
@@ -548,7 +561,7 @@ export default function Sidebar() {
 
       <div className="border-t border-overlay/[0.06] px-2.5 py-2.5 flex items-center gap-1.5">
         {NAV_ITEMS.map((item) => { const Icon = item.icon; const isActive = location.pathname === item.path; return (
-          <button key={item.path} onClick={() => navigate(item.path)} className={`flex-1 flex flex-col items-center gap-0.5 py-2 rounded-lg cursor-pointer transition-all duration-200 ${isActive ? 'bg-overlay/[0.08] text-foreground glow-ring' : 'text-muted-foreground hover:text-foreground hover:bg-overlay/[0.04]'}`}>
+          <button key={item.path} onClick={() => navigate(item.path)} aria-label={t(item.labelKey)} className={`flex-1 flex flex-col items-center gap-0.5 py-2 rounded-lg cursor-pointer transition-all duration-200 ${isActive ? 'bg-overlay/[0.08] text-foreground glow-ring' : 'text-muted-foreground hover:text-foreground hover:bg-overlay/[0.04]'}`}>
             <Icon className="h-3.5 w-3.5" /><span className="text-[10px] font-medium">{t(item.labelKey)}</span>
           </button>
         ) })}

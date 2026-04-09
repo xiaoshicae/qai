@@ -5,18 +5,10 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { METHOD_COLORS } from '@/lib/styles'
 import { TruncatedPre } from '@/components/ui/truncated-pre'
 import { formatDuration, formatSize } from '@/lib/formatters'
 import type { HistoryEntry, AssertionResultItem } from '@/types'
-
-export const METHOD_COLORS: Record<string, string> = {
-  GET: 'text-method-get',
-  POST: 'text-method-post',
-  PUT: 'text-method-put',
-  DELETE: 'text-method-delete',
-  PATCH: 'text-method-patch',
-  HEAD: 'text-method-head',
-}
 
 function tryPrettyJson(s: string) {
   try { return JSON.stringify(JSON.parse(s), null, 2) } catch { return s }
@@ -77,10 +69,10 @@ export function HistoryRow({ entry, expanded, highlight, onToggle, onGoTo, onRun
 
         {entry.item_id && (
           <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover/row:opacity-100 transition-opacity">
-            <button type="button" className="rounded-md p-1.5 text-muted-foreground hover:text-foreground hover:bg-overlay/[0.08] cursor-pointer" title={t('history.run_again')} onClick={(e) => { e.stopPropagation(); onRunAgain() }}>
+            <button type="button" className="rounded-md p-1.5 text-muted-foreground hover:text-foreground hover:bg-overlay/[0.08] cursor-pointer" title={t('history.run_again')} aria-label={t('history.run_again')} onClick={(e) => { e.stopPropagation(); onRunAgain() }}>
               <Play className="h-3.5 w-3.5" />
             </button>
-            <button type="button" className="rounded-md p-1.5 text-muted-foreground hover:text-foreground hover:bg-overlay/[0.08] cursor-pointer" title={t('history.go_to_request')} onClick={(e) => { e.stopPropagation(); onGoTo() }}>
+            <button type="button" className="rounded-md p-1.5 text-muted-foreground hover:text-foreground hover:bg-overlay/[0.08] cursor-pointer" title={t('history.go_to_request')} aria-label={t('history.go_to_request')} onClick={(e) => { e.stopPropagation(); onGoTo() }}>
               <ExternalLink className="h-3.5 w-3.5" />
             </button>
           </div>

@@ -175,12 +175,14 @@ export default function EnvironmentsView() {
                 <>
                   <span className={`text-sm truncate flex-1 ${selectedId === env.id ? 'font-medium' : ''}`}>{env.name}</span>
                   <button
+                    aria-label={t('common.edit')}
                     className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground cursor-pointer p-0.5"
                     onClick={(e) => { e.stopPropagation(); setEditingName(env.id); setEditName(env.name) }}
                   >
                     <Pencil className="h-3 w-3" />
                   </button>
                   <button
+                    aria-label={t('common.delete')}
                     className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive cursor-pointer p-0.5"
                     onClick={(e) => { e.stopPropagation(); deleteEnv(env.id, env.name) }}
                   >
@@ -202,13 +204,13 @@ export default function EnvironmentsView() {
         {/* 右侧：变量编辑 */}
         <div className="flex-1 min-w-0">
           {selectedEnv ? (
-            <div className="rounded-xl bg-card border border-overlay/[0.06] p-4 space-y-3">
+            <div className="glass-card rounded-2xl p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium">{selectedEnv.name}</span>
                 {/* 自动保存状态指示 */}
                 <div className="flex items-center gap-1 text-[10px] text-muted-foreground/60 transition-opacity">
                   {saveIndicator === 'saving' && <><Cloud className="h-3 w-3 animate-pulse" /> {t('env.saving')}</>}
-                  {saveIndicator === 'saved' && <><Cloud className="h-3 w-3 text-emerald-500" /> {t('env.saved')}</>}
+                  {saveIndicator === 'saved' && <><Cloud className="h-3 w-3 text-success" /> {t('env.saved')}</>}
                   {saveIndicator === 'error' && <><CloudOff className="h-3 w-3 text-destructive" /> {t('env.save_failed')}</>}
                 </div>
               </div>
@@ -240,6 +242,7 @@ export default function EnvironmentsView() {
                     />
                     {!isLast ? (
                       <button
+                        aria-label={t('common.delete')}
                         className="h-7 w-7 flex items-center justify-center opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive cursor-pointer transition-opacity"
                         onClick={() => removeVariable(i)}
                       >

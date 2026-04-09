@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use tauri::State;
 
 use crate::db::init::DbState;
+use crate::errors::AppError;
 use crate::import::postman::PostmanImportResult;
 use crate::import::yaml::{ImportResult, YamlCase};
 
@@ -38,18 +39,18 @@ pub fn import_yaml_cases(
     db: State<'_, DbState>,
     dir_path: String,
     clear_first: Option<bool>,
-) -> Result<ImportResult, String> {
+) -> Result<ImportResult, AppError> {
     let conn = db.conn()?;
     let base = PathBuf::from(&dir_path);
 
     if !base.exists() {
-        return Err(format!("目录不存在: {}", dir_path));
+        return Err(format!("目录不存在: {}", dir_path).into());
     }
 
     if clear_first.unwrap_or(false) {
         conn.execute_batch(
             "DELETE FROM executions; DELETE FROM assertions; DELETE FROM collection_items; DELETE FROM collections; DELETE FROM groups;"
-        ).map_err(|e| e.to_string())?;
+        )?;
     }
 
     let mut result = ImportResult {
@@ -61,14 +62,14 @@ pub fn import_yaml_cases(
 
     let yaml_files = crate::import::yaml::find_yaml_files(&base);
     if yaml_files.is_empty() {
-        return Err("未找到 YAML 文件".to_string());
+        return Err("未找到 YAML 文件".into());
     }
 
     for path in &yaml_files {
         let content =
             std::fs::read_to_string(path).map_err(|e| format!("读取文件失败 {:?}: {}", path, e))?;
-        let case: YamlCase = serde_yaml::from_str(&content)
-            .map_err(|e| format!("解析 YAML 失败 {:?}: {}", path, e))?;
+        let case: YamlCase =
+            serde_yml::from_str(&content).map_err(|e| format!("解析 YAML 失败 {:?}: {}", path, e))?;
 
         let assets_dir = path.parent().unwrap_or(&base).join("../assets");
         let assets_dir = if assets_dir.exists() {
@@ -88,23 +89,22 @@ pub fn import_postman_collection(
     db: State<'_, DbState>,
     json: String,
     group_id: Option<String>,
-) -> Result<PostmanImportResult, String> {
+) -> Result<PostmanImportResult, AppError> {
     let conn = db.conn()?;
-    crate::import::postman::import(&conn, &json, group_id.as_deref())
+    Ok(crate::import::postman::import(&conn, &json, group_id.as_deref())?)
 }
 
 /// 导出全部测试用例为 JSON
 #[tauri::command]
-pub fn export_all_cases(db: State<'_, DbState>) -> Result<String, String> {
+pub fn export_all_cases(db: State<'_, DbState>) -> Result<String, AppError> {
     let conn = db.conn()?;
-    let groups = crate::db::group::list_all(&conn).map_err(|e| e.to_string())?;
-    let collections = crate::db::collection::list_all(&conn).map_err(|e| e.to_string())?;
+    let groups = crate::db::group::list_all(&conn)?;
+    let collections = crate::db::collection::list_all(&conn)?;
 
     // 收集所有 items（按拓扑顺序：父节点在子节点前，确保导入时依赖关系正确）
     let mut all_items = Vec::new();
     for col in &collections {
-        let items =
-            crate::db::item::list_by_collection(&conn, &col.id).map_err(|e| e.to_string())?;
+        let items = crate::db::item::list_by_collection(&conn, &col.id)?;
         // 拓扑排序：先输出 parent_id 为空的，再输出有 parent 的
         let mut remaining = items;
         let mut placed: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -134,16 +134,14 @@ pub fn export_all_cases(db: State<'_, DbState>) -> Result<String, String> {
 
     // 批量查询所有 assertions
     let item_ids: Vec<String> = all_items.iter().map(|i| i.id.clone()).collect();
-    let assertions_map =
-        crate::db::assertion::list_by_items(&conn, &item_ids).map_err(|e| e.to_string())?;
+    let assertions_map = crate::db::assertion::list_by_items(&conn, &item_ids)?;
     let all_assertions: Vec<_> = assertions_map.into_values().flatten().collect();
 
     // 导出环境
-    let environments = crate::db::environment::list_all(&conn).map_err(|e| e.to_string())?;
+    let environments = crate::db::environment::list_all(&conn)?;
     let mut all_env_vars = Vec::new();
     for env in &environments {
-        let vars =
-            crate::db::environment::list_variables(&conn, &env.id).map_err(|e| e.to_string())?;
+        let vars = crate::db::environment::list_variables(&conn, &env.id)?;
         all_env_vars.extend(vars);
     }
 
@@ -158,7 +156,7 @@ pub fn export_all_cases(db: State<'_, DbState>) -> Result<String, String> {
         env_variables: all_env_vars,
     };
 
-    serde_json::to_string_pretty(&data).map_err(|e| e.to_string())
+    Ok(serde_json::to_string_pretty(&data)?)
 }
 
 /// 导入测试用例（mode: "replace" 全量覆盖 / "merge" 按名称合并）
@@ -167,12 +165,12 @@ pub fn import_cases(
     db: State<'_, DbState>,
     json: String,
     mode: String,
-) -> Result<ImportStats, String> {
+) -> Result<ImportStats, AppError> {
     let data: ExportData =
         serde_json::from_str(&json).map_err(|e| format!("JSON 解析失败: {e}"))?;
 
     let conn = db.conn()?;
-    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let tx = conn.unchecked_transaction()?;
 
     let stats = if mode == "replace" {
         import_replace(&tx, &data)?
@@ -180,18 +178,17 @@ pub fn import_cases(
         import_merge(&tx, &data)?
     };
 
-    tx.commit().map_err(|e| e.to_string())?;
+    tx.commit()?;
     Ok(stats)
 }
 
-fn import_replace(conn: &rusqlite::Connection, data: &ExportData) -> Result<ImportStats, String> {
+fn import_replace(conn: &rusqlite::Connection, data: &ExportData) -> Result<ImportStats, AppError> {
     // 按外键顺序清空
     conn.execute_batch(
         "DELETE FROM executions; DELETE FROM assertions; DELETE FROM collection_items; \
          DELETE FROM collections; DELETE FROM env_variables; DELETE FROM environments; \
          DELETE FROM groups;",
-    )
-    .map_err(|e| e.to_string())?;
+    )?;
 
     let mut stats = ImportStats {
         created_collections: 0,
@@ -208,15 +205,14 @@ fn import_replace(conn: &rusqlite::Connection, data: &ExportData) -> Result<Impo
         conn.execute(
             "INSERT INTO groups (id, name, parent_id, sort_order) VALUES (?1, ?2, ?3, ?4)",
             rusqlite::params![g.id, g.name, g.parent_id, g.sort_order],
-        )
-        .map_err(|e| e.to_string())?;
+        )?;
         stats.created_groups += 1;
     }
     for c in &data.collections {
         conn.execute(
             "INSERT INTO collections (id, name, description, group_id, sort_order, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             rusqlite::params![c.id, c.name, c.description, c.group_id, c.sort_order, c.created_at, c.updated_at],
-        ).map_err(|e| e.to_string())?;
+        )?;
         stats.created_collections += 1;
     }
     for i in &data.collection_items {
@@ -229,35 +225,35 @@ fn import_replace(conn: &rusqlite::Connection, data: &ExportData) -> Result<Impo
                 i.extract_rules, i.description, i.expect_status, i.poll_config, i.protocol,
                 i.created_at, i.updated_at
             ],
-        ).map_err(|e| e.to_string())?;
+        )?;
         stats.created_items += 1;
     }
     for a in &data.assertions {
         conn.execute(
             "INSERT INTO assertions (id, item_id, type, expression, operator, expected, enabled, sort_order, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             rusqlite::params![a.id, a.item_id, a.assertion_type, a.expression, a.operator, a.expected, a.enabled, a.sort_order, a.created_at],
-        ).map_err(|e| e.to_string())?;
+        )?;
         stats.created_assertions += 1;
     }
     for e in &data.environments {
         conn.execute(
             "INSERT INTO environments (id, name, is_active, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
             rusqlite::params![e.id, e.name, e.is_active, e.created_at, e.updated_at],
-        ).map_err(|e| e.to_string())?;
+        )?;
         stats.created_environments += 1;
     }
     for v in &data.env_variables {
         conn.execute(
             "INSERT INTO env_variables (id, environment_id, key, value, enabled, sort_order) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             rusqlite::params![v.id, v.environment_id, v.key, v.value, v.enabled, v.sort_order],
-        ).map_err(|e| e.to_string())?;
+        )?;
         stats.created_env_variables += 1;
     }
 
     Ok(stats)
 }
 
-fn import_merge(conn: &rusqlite::Connection, data: &ExportData) -> Result<ImportStats, String> {
+fn import_merge(conn: &rusqlite::Connection, data: &ExportData) -> Result<ImportStats, AppError> {
     let mut stats = ImportStats {
         created_collections: 0,
         updated_collections: 0,
@@ -288,8 +284,7 @@ fn import_merge(conn: &rusqlite::Connection, data: &ExportData) -> Result<Import
                 .as_ref()
                 .and_then(|pid| group_id_map.get(pid))
                 .map(|s| s.as_str());
-            let new = crate::db::group::create(conn, &g.name, mapped_parent)
-                .map_err(|e| e.to_string())?;
+            let new = crate::db::group::create(conn, &g.name, mapped_parent)?;
             stats.created_groups += 1;
             new.id
         };
@@ -320,8 +315,7 @@ fn import_merge(conn: &rusqlite::Connection, data: &ExportData) -> Result<Import
                 Some(&c.description),
                 Some(mapped_group.as_deref()),
                 None,
-            )
-            .map_err(|e| e.to_string())?;
+            )?;
             stats.updated_collections += 1;
             eid
         } else {
@@ -330,8 +324,7 @@ fn import_merge(conn: &rusqlite::Connection, data: &ExportData) -> Result<Import
                 &c.name,
                 &c.description,
                 mapped_group.as_deref(),
-            )
-            .map_err(|e| e.to_string())?;
+            )?;
             stats.created_collections += 1;
             new.id
         };
@@ -371,7 +364,7 @@ fn import_merge(conn: &rusqlite::Connection, data: &ExportData) -> Result<Import
             conn.execute(
                 "UPDATE collection_items SET method=?2, url=?3, headers=?4, query_params=?5, body_type=?6, body_content=?7, extract_rules=?8, description=?9, expect_status=?10, poll_config=?11, protocol=?12, updated_at=datetime('now','localtime') WHERE id=?1",
                 rusqlite::params![eid, i.method, i.url, i.headers, i.query_params, i.body_type, i.body_content, i.extract_rules, i.description, i.expect_status, i.poll_config, i.protocol],
-            ).map_err(|e| e.to_string())?;
+            )?;
             stats.updated_items += 1;
             eid
         } else {
@@ -384,7 +377,7 @@ fn import_merge(conn: &rusqlite::Connection, data: &ExportData) -> Result<Import
                     i.method, i.url, i.headers, i.query_params, i.body_type, i.body_content,
                     i.extract_rules, i.description, i.expect_status, i.poll_config, i.protocol
                 ],
-            ).map_err(|e| e.to_string())?;
+            )?;
             stats.created_items += 1;
             new_item_ids.insert(new_id.clone());
             new_id
@@ -405,15 +398,14 @@ fn import_merge(conn: &rusqlite::Connection, data: &ExportData) -> Result<Import
         conn.execute(
             "DELETE FROM assertions WHERE item_id = ?1",
             rusqlite::params![new_item_id],
-        )
-        .map_err(|e| e.to_string())?;
+        )?;
         let is_new_item = new_item_ids.contains(new_item_id);
         for a in &new_assertions {
             let aid = uuid::Uuid::new_v4().to_string();
             conn.execute(
                 "INSERT INTO assertions (id, item_id, type, expression, operator, expected, enabled, sort_order, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, datetime('now','localtime'))",
                 rusqlite::params![aid, new_item_id, a.assertion_type, a.expression, a.operator, a.expected, a.enabled, a.sort_order],
-            ).map_err(|e| e.to_string())?;
+            )?;
             if is_new_item {
                 stats.created_assertions += 1;
             }
@@ -434,7 +426,7 @@ fn import_merge(conn: &rusqlite::Connection, data: &ExportData) -> Result<Import
         let new_id = if let Some(eid) = existing {
             eid
         } else {
-            let new = crate::db::environment::create(conn, &e.name).map_err(|e| e.to_string())?;
+            let new = crate::db::environment::create(conn, &e.name)?;
             stats.created_environments += 1;
             new.id
         };
@@ -454,15 +446,13 @@ fn import_merge(conn: &rusqlite::Connection, data: &ExportData) -> Result<Import
                 conn.execute(
                     "UPDATE env_variables SET value=?3, enabled=?4 WHERE environment_id=?1 AND key=?2",
                     rusqlite::params![mapped_env_id, v.key, v.value, v.enabled],
-                )
-                .map_err(|e| e.to_string())?;
+                )?;
             } else {
                 let vid = uuid::Uuid::new_v4().to_string();
                 conn.execute(
                     "INSERT INTO env_variables (id, environment_id, key, value, enabled, sort_order) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                     rusqlite::params![vid, mapped_env_id, v.key, v.value, v.enabled, v.sort_order],
-                )
-                .map_err(|e| e.to_string())?;
+                )?;
                 stats.created_env_variables += 1;
             }
         }

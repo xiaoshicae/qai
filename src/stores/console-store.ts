@@ -29,10 +29,18 @@ export const useConsoleStore = create<ConsoleState>((set) => ({
 
 /** 在应用启动时调用一次，全局监听 request-log 事件 */
 let initialized = false
+let unlistenFn: (() => void) | null = null
+
 export function initConsoleListener() {
   if (initialized) return
   initialized = true
   listen<RequestLog>('request-log', (event) => {
     useConsoleStore.setState((s) => ({ logs: [...s.logs, event.payload] }))
-  })
+  }).then((fn) => { unlistenFn = fn })
+}
+
+export function destroyConsoleListener() {
+  unlistenFn?.()
+  unlistenFn = null
+  initialized = false
 }

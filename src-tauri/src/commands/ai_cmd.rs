@@ -3,6 +3,7 @@ use tauri::State;
 
 use crate::ai::{claude, parser, prompts};
 use crate::db::init::DbState;
+use crate::errors::AppError;
 
 #[derive(serde::Serialize)]
 pub struct GeneratedTestResult {
@@ -10,10 +11,10 @@ pub struct GeneratedTestResult {
     pub message: String,
 }
 
-fn get_ai_config(conn: &Connection) -> Result<(String, String), String> {
+fn get_ai_config(conn: &Connection) -> Result<(String, String), AppError> {
     let api_key = get_setting(conn, "ai_api_key")
         .or_else(|| get_setting(conn, "claude_api_key"))
-        .ok_or_else(|| "请先在设置中配置 API Key".to_string())?;
+        .ok_or_else(|| AppError::Generic("请先在设置中配置 API Key".into()))?;
     let model = get_setting(conn, "ai_model")
         .or_else(|| get_setting(conn, "claude_model"))
         .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string());
@@ -26,18 +27,16 @@ pub async fn ai_generate_tests(
     collection_id: String,
     context: String,
     extra_instructions: String,
-) -> Result<GeneratedTestResult, String> {
+) -> Result<GeneratedTestResult, AppError> {
     let (api_key, model) = {
         let conn = db.conn()?;
         get_ai_config(&conn)?
     };
 
     let prompt = prompts::generate_test_cases_prompt(&context, &extra_instructions);
-    let response = claude::chat(&api_key, &model, &prompt)
-        .await
-        .map_err(|e| e.to_string())?;
+    let response = claude::chat(&api_key, &model, &prompt).await?;
 
-    let test_cases = parser::parse_test_cases(&response).map_err(|e| e.to_string())?;
+    let test_cases = parser::parse_test_cases(&response)?;
     let count = test_cases.len();
 
     {
@@ -50,8 +49,7 @@ pub async fn ai_generate_tests(
                 "request",
                 &tc.name,
                 &tc.method,
-            )
-            .map_err(|e| e.to_string())?;
+            )?;
 
             crate::db::item::update(
                 &conn,
@@ -64,8 +62,7 @@ pub async fn ai_generate_tests(
                     body_content: Some(tc.body_content.clone()),
                     ..Default::default()
                 },
-            )
-            .map_err(|e| e.to_string())?;
+            )?;
 
             for assertion in &tc.assertions {
                 crate::db::assertion::create(
@@ -75,8 +72,7 @@ pub async fn ai_generate_tests(
                     &assertion.expression,
                     &assertion.operator,
                     &assertion.expected,
-                )
-                .map_err(|e| e.to_string())?;
+                )?;
             }
         }
     }
@@ -92,44 +88,40 @@ pub async fn ai_suggest_assertions(
     db: State<'_, DbState>,
     response_body: String,
     status_code: u16,
-) -> Result<Vec<parser::GeneratedAssertion>, String> {
+) -> Result<Vec<parser::GeneratedAssertion>, AppError> {
     let (api_key, model) = {
         let conn = db.conn()?;
         get_ai_config(&conn)?
     };
 
     let prompt = prompts::suggest_assertions_prompt(&response_body, status_code);
-    let response = claude::chat(&api_key, &model, &prompt)
-        .await
-        .map_err(|e| e.to_string())?;
+    let response = claude::chat(&api_key, &model, &prompt).await?;
 
-    parser::parse_assertions(&response).map_err(|e| e.to_string())
+    Ok(parser::parse_assertions(&response)?)
 }
 
 #[tauri::command]
-pub async fn ai_chat(db: State<'_, DbState>, message: String) -> Result<String, String> {
+pub async fn ai_chat(db: State<'_, DbState>, message: String) -> Result<String, AppError> {
     let (api_key, model) = {
         let conn = db.conn()?;
         get_ai_config(&conn)?
     };
 
-    claude::chat(&api_key, &model, &message)
-        .await
-        .map_err(|e| e.to_string())
+    Ok(claude::chat(&api_key, &model, &message).await?)
 }
 
 #[tauri::command]
-pub fn save_setting(db: State<'_, DbState>, key: String, value: String) -> Result<(), String> {
+pub fn save_setting(db: State<'_, DbState>, key: String, value: String) -> Result<(), AppError> {
     let conn = db.conn()?;
     conn.execute(
         "INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = ?2, updated_at = datetime('now', 'localtime')",
         rusqlite::params![key, value],
-    ).map_err(|e| e.to_string())?;
+    )?;
     Ok(())
 }
 
 #[tauri::command]
-pub fn get_setting_cmd(db: State<'_, DbState>, key: String) -> Result<Option<String>, String> {
+pub fn get_setting_cmd(db: State<'_, DbState>, key: String) -> Result<Option<String>, AppError> {
     let conn = db.conn()?;
     Ok(get_setting(&conn, &key))
 }
@@ -140,11 +132,10 @@ pub async fn test_ai_connection(
     api_key: String,
     model: String,
     base_url: Option<String>,
-) -> Result<String, String> {
+) -> Result<String, AppError> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(crate::AI_TEST_TIMEOUT_SECS))
-        .build()
-        .map_err(|e| e.to_string())?;
+        .build()?;
 
     let (url, headers, body) = match provider.as_str() {
         "openai" | "other" => {
@@ -199,14 +190,14 @@ pub async fn test_ai_connection(
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("连接失败: {}", e))?;
+        .map_err(|e| AppError::Generic(format!("连接失败: {}", e)))?;
     let status = resp.status();
 
     if status.is_success() {
         Ok("连接成功".to_string())
     } else {
         let text = resp.text().await.unwrap_or_default();
-        Err(format!("API 返回 {}: {}", status.as_u16(), text))
+        Err(format!("API 返回 {}: {}", status.as_u16(), text).into())
     }
 }
 

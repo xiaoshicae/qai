@@ -2,11 +2,15 @@ use rusqlite::Connection;
 use std::sync::{Mutex, MutexGuard};
 use tauri::{AppHandle, Manager};
 
+use crate::errors::AppError;
+
 pub struct DbState(pub Mutex<Connection>);
 
 impl DbState {
-    pub fn conn(&self) -> Result<MutexGuard<'_, Connection>, String> {
-        self.0.lock().map_err(|e| e.to_string())
+    pub fn conn(&self) -> Result<MutexGuard<'_, Connection>, AppError> {
+        self.0
+            .lock()
+            .map_err(|e| AppError::Generic(e.to_string()))
     }
 }
 
@@ -49,6 +53,8 @@ pub fn initialize_database(app: &AppHandle) -> Result<(), Box<dyn std::error::Er
     app.manage(HttpClient(
         reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(crate::HTTP_TIMEOUT_SECS))
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .redirect(reqwest::redirect::Policy::limited(10))
             .build()
             .expect("failed to build http client"),
     ));
@@ -196,7 +202,13 @@ fn migrate_if_needed(conn: &Connection) -> Result<(), rusqlite::Error> {
         "ALTER TABLE requests ADD COLUMN poll_config TEXT NOT NULL DEFAULT ''",
     ];
     for sql in &alter_migrations {
-        let _ = conn.execute(sql, []);
+        if let Err(e) = conn.execute(sql, []) {
+            let msg = e.to_string();
+            // 只忽略 "duplicate column" 类的预期错误
+            if !msg.contains("duplicate column") {
+                log::warn!("迁移 ALTER 失败: {sql} → {msg}");
+            }
+        }
     }
 
     // 1. 从旧 collections.category 创建 groups
@@ -296,11 +308,11 @@ fn migrate_if_needed(conn: &Connection) -> Result<(), rusqlite::Error> {
     )?;
 
     // 8. 重建索引
-    let _ = conn.execute_batch(
+    conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_executions_item ON executions(item_id);
          CREATE INDEX IF NOT EXISTS idx_executions_batch ON executions(batch_id);
          CREATE INDEX IF NOT EXISTS idx_executions_collection ON executions(collection_id);",
-    );
+    )?;
 
     // 9. 清理旧 collections 列（SQLite 不能 DROP COLUMN，但新数据不再使用这些字段）
     // category/endpoint/subcategory 留着不影响，新代码不读取
@@ -317,11 +329,16 @@ pub fn migrate_add_columns(conn: &Connection) -> Result<(), rusqlite::Error> {
     let alterations =
         ["ALTER TABLE collection_items ADD COLUMN protocol TEXT NOT NULL DEFAULT 'http'"];
     for sql in &alterations {
-        let _ = conn.execute(sql, []);
+        if let Err(e) = conn.execute(sql, []) {
+            let msg = e.to_string();
+            if !msg.contains("duplicate column") {
+                log::warn!("增量迁移 ALTER 失败: {sql} → {msg}");
+            }
+        }
     }
-    let _ = conn.execute_batch(
+    conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_executions_executed_at ON executions(executed_at DESC);",
-    );
+    )?;
     Ok(())
 }
 

@@ -4,14 +4,19 @@ use std::io::{Read, Write};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter};
 
-pub struct PtyState {
-    writer: Mutex<Option<Box<dyn Write + Send>>>,
-    master: Mutex<Option<Box<dyn MasterPty + Send>>>,
+use crate::errors::AppError;
+
+/// PTY 内部状态，所有相关资源由单个 Mutex 保护，保证状态一致性
+struct PtyInner {
+    writer: Option<Box<dyn Write + Send>>,
+    master: Option<Box<dyn MasterPty + Send>>,
     #[allow(dead_code)]
-    slave: Mutex<Option<Box<dyn portable_pty::SlavePty + Send>>>,
-    child: Mutex<Option<Box<dyn portable_pty::Child + Send>>>,
-    reader_handle: Mutex<Option<std::thread::JoinHandle<()>>>,
+    slave: Option<Box<dyn portable_pty::SlavePty + Send>>,
+    child: Option<Box<dyn portable_pty::Child + Send>>,
+    reader_handle: Option<std::thread::JoinHandle<()>>,
 }
+
+pub struct PtyState(Mutex<PtyInner>);
 
 impl Default for PtyState {
     fn default() -> Self {
@@ -21,16 +26,22 @@ impl Default for PtyState {
 
 impl PtyState {
     pub fn new() -> Self {
-        Self {
-            writer: Mutex::new(None),
-            master: Mutex::new(None),
-            slave: Mutex::new(None),
-            child: Mutex::new(None),
-            reader_handle: Mutex::new(None),
-        }
+        Self(Mutex::new(PtyInner {
+            writer: None,
+            master: None,
+            slave: None,
+            child: None,
+            reader_handle: None,
+        }))
     }
 
-    pub fn spawn(&self, app: AppHandle, cols: u16, rows: u16) -> Result<(), String> {
+    fn lock_inner(&self) -> Result<std::sync::MutexGuard<'_, PtyInner>, AppError> {
+        self.0
+            .lock()
+            .map_err(|e| AppError::Generic(e.to_string()))
+    }
+
+    pub fn spawn(&self, app: AppHandle, cols: u16, rows: u16) -> Result<(), AppError> {
         self.kill().ok();
 
         let pty_system = NativePtySystem::default();
@@ -41,7 +52,7 @@ impl PtyState {
                 pixel_width: 0,
                 pixel_height: 0,
             })
-            .map_err(|e| format!("{e}"))?;
+            .map_err(|e| AppError::Generic(format!("{e}")))?;
 
         // 明确指定 shell 路径
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
@@ -63,36 +74,48 @@ impl PtyState {
             cmd.cwd(&home);
         }
 
-        let child = pair.slave.spawn_command(cmd).map_err(|e| format!("{e}"))?;
+        let child = pair
+            .slave
+            .spawn_command(cmd)
+            .map_err(|e| AppError::Generic(format!("{e}")))?;
 
-        let reader = pair.master.try_clone_reader().map_err(|e| format!("{e}"))?;
-        let writer = pair.master.take_writer().map_err(|e| format!("{e}"))?;
-
-        *self.writer.lock().unwrap() = Some(writer);
-        *self.slave.lock().unwrap() = Some(pair.slave);
-        *self.master.lock().unwrap() = Some(pair.master);
-        *self.child.lock().unwrap() = Some(child);
+        let reader = pair
+            .master
+            .try_clone_reader()
+            .map_err(|e| AppError::Generic(format!("{e}")))?;
+        let writer = pair
+            .master
+            .take_writer()
+            .map_err(|e| AppError::Generic(format!("{e}")))?;
 
         let handle = std::thread::spawn(move || {
             read_loop(app, reader);
         });
-        *self.reader_handle.lock().unwrap() = Some(handle);
+
+        let mut inner = self.lock_inner()?;
+        inner.writer = Some(writer);
+        inner.slave = Some(pair.slave);
+        inner.master = Some(pair.master);
+        inner.child = Some(child);
+        inner.reader_handle = Some(handle);
 
         Ok(())
     }
 
-    pub fn write_data(&self, data: &[u8]) -> Result<(), String> {
-        let mut guard = self.writer.lock().unwrap();
-        if let Some(ref mut w) = *guard {
-            w.write_all(data).map_err(|e| format!("{e}"))?;
-            w.flush().map_err(|e| format!("{e}"))?;
+    pub fn write_data(&self, data: &[u8]) -> Result<(), AppError> {
+        let mut inner = self.lock_inner()?;
+        if let Some(ref mut w) = inner.writer {
+            w.write_all(data)
+                .map_err(|e| AppError::Generic(format!("{e}")))?;
+            w.flush()
+                .map_err(|e| AppError::Generic(format!("{e}")))?;
         }
         Ok(())
     }
 
-    pub fn resize(&self, cols: u16, rows: u16) -> Result<(), String> {
-        let guard = self.master.lock().unwrap();
-        if let Some(ref master) = *guard {
+    pub fn resize(&self, cols: u16, rows: u16) -> Result<(), AppError> {
+        let inner = self.lock_inner()?;
+        if let Some(ref master) = inner.master {
             master
                 .resize(PtySize {
                     rows,
@@ -100,24 +123,25 @@ impl PtyState {
                     pixel_width: 0,
                     pixel_height: 0,
                 })
-                .map_err(|e| format!("{e}"))?;
+                .map_err(|e| AppError::Generic(format!("{e}")))?;
         }
         Ok(())
     }
 
-    pub fn kill(&self) -> Result<(), String> {
+    pub fn kill(&self) -> Result<(), AppError> {
+        let mut inner = self.lock_inner()?;
         // 先终止子进程
-        if let Some(mut child) = self.child.lock().unwrap().take() {
+        if let Some(mut child) = inner.child.take() {
             if let Err(e) = child.kill() {
                 log::warn!("终止 PTY 子进程失败: {e}");
             }
         }
         // 释放 writer/slave/master（关闭 fd 使 reader 线程 EOF 退出）
-        *self.writer.lock().unwrap() = None;
-        *self.slave.lock().unwrap() = None;
-        *self.master.lock().unwrap() = None;
-        // 等待 reader 线程退出（最多 1s）
-        if let Some(handle) = self.reader_handle.lock().unwrap().take() {
+        inner.writer = None;
+        inner.slave = None;
+        inner.master = None;
+        // 等待 reader 线程退出
+        if let Some(handle) = inner.reader_handle.take() {
             let _ = handle.join();
         }
         Ok(())

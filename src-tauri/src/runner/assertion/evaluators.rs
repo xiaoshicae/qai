@@ -189,3 +189,183 @@ fn evaluate_header_contains(assertion: &Assertion, response: &HttpResponse) -> A
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::item::KeyValuePair;
+
+    fn make_assertion(atype: &str, expr: &str, op: &str, expected: &str) -> Assertion {
+        Assertion {
+            id: "a1".into(),
+            item_id: "r1".into(),
+            assertion_type: atype.into(),
+            expression: expr.into(),
+            operator: op.into(),
+            expected: expected.into(),
+            enabled: true,
+            sort_order: 0,
+            created_at: String::new(),
+        }
+    }
+
+    fn make_response(status: u16, body: &str, time_ms: u64) -> HttpResponse {
+        HttpResponse {
+            status,
+            status_text: "OK".into(),
+            headers: vec![KeyValuePair {
+                key: "content-type".into(),
+                value: "application/json".into(),
+                enabled: true,
+                field_type: String::new(),
+            }],
+            body: body.into(),
+            time_ms,
+            size_bytes: body.len() as u64,
+        }
+    }
+
+    // ─── status_code ────────────────────────────────────────
+    #[test]
+    fn test_status_code_eq_pass() {
+        let a = make_assertion("status_code", "", "eq", "200");
+        let r = make_response(200, "", 100);
+        let result = evaluate_single(&a, &r);
+        assert!(result.passed);
+        assert_eq!(result.actual, "200");
+    }
+
+    #[test]
+    fn test_status_code_eq_fail() {
+        let a = make_assertion("status_code", "", "eq", "200");
+        let r = make_response(404, "", 100);
+        let result = evaluate_single(&a, &r);
+        assert!(!result.passed);
+        assert_eq!(result.actual, "404");
+    }
+
+    #[test]
+    fn test_status_code_neq() {
+        let a = make_assertion("status_code", "", "neq", "500");
+        let r = make_response(200, "", 100);
+        assert!(evaluate_single(&a, &r).passed);
+    }
+
+    // ─── json_path ──────────────────────────────────────────
+    #[test]
+    fn test_json_path_pass() {
+        let a = make_assertion("json_path", "$.id", "eq", "42");
+        let r = make_response(200, r#"{"id": 42}"#, 100);
+        let result = evaluate_single(&a, &r);
+        assert!(result.passed);
+        assert_eq!(result.actual, "42");
+    }
+
+    #[test]
+    fn test_json_path_fail() {
+        let a = make_assertion("json_path", "$.id", "eq", "99");
+        let r = make_response(200, r#"{"id": 42}"#, 100);
+        assert!(!evaluate_single(&a, &r).passed);
+    }
+
+    #[test]
+    fn test_json_path_invalid_json() {
+        let a = make_assertion("json_path", "$.id", "eq", "1");
+        let r = make_response(200, "not json", 100);
+        let result = evaluate_single(&a, &r);
+        assert!(!result.passed);
+        assert!(result.message.contains("JSON"));
+    }
+
+    #[test]
+    fn test_json_path_missing_path() {
+        let a = make_assertion("json_path", "$.missing", "eq", "1");
+        let r = make_response(200, r#"{"id": 1}"#, 100);
+        let result = evaluate_single(&a, &r);
+        assert!(!result.passed);
+    }
+
+    #[test]
+    fn test_json_path_not_exists_pass() {
+        let a = make_assertion("json_path", "$.missing", "not_exists", "");
+        let r = make_response(200, r#"{"id": 1}"#, 100);
+        assert!(evaluate_single(&a, &r).passed);
+    }
+
+    // ─── body_contains ──────────────────────────────────────
+    #[test]
+    fn test_body_contains_pass() {
+        let a = make_assertion("body_contains", "", "contains", "success");
+        let r = make_response(200, r#"{"result":"success"}"#, 100);
+        assert!(evaluate_single(&a, &r).passed);
+    }
+
+    #[test]
+    fn test_body_contains_fail() {
+        let a = make_assertion("body_contains", "", "contains", "error");
+        let r = make_response(200, r#"{"result":"success"}"#, 100);
+        assert!(!evaluate_single(&a, &r).passed);
+    }
+
+    #[test]
+    fn test_body_not_contains() {
+        let a = make_assertion("body_contains", "", "not_contains", "error");
+        let r = make_response(200, r#"{"result":"success"}"#, 100);
+        assert!(evaluate_single(&a, &r).passed);
+    }
+
+    // ─── response_time ──────────────────────────────────────
+    #[test]
+    fn test_response_time_lt_pass() {
+        let a = make_assertion("response_time", "", "lt", "1000");
+        let r = make_response(200, "", 500);
+        assert!(evaluate_single(&a, &r).passed);
+    }
+
+    #[test]
+    fn test_response_time_lt_fail() {
+        let a = make_assertion("response_time", "", "lt", "100");
+        let r = make_response(200, "", 500);
+        assert!(!evaluate_single(&a, &r).passed);
+    }
+
+    // ─── header_contains ────────────────────────────────────
+    #[test]
+    fn test_header_contains_pass() {
+        let a = make_assertion("header_contains", "content-type", "contains", "json");
+        let r = make_response(200, "", 100);
+        assert!(evaluate_single(&a, &r).passed);
+    }
+
+    #[test]
+    fn test_header_contains_case_insensitive_key() {
+        let a = make_assertion("header_contains", "Content-Type", "contains", "json");
+        let r = make_response(200, "", 100);
+        assert!(evaluate_single(&a, &r).passed);
+    }
+
+    #[test]
+    fn test_header_missing() {
+        let a = make_assertion("header_contains", "x-custom", "eq", "value");
+        let r = make_response(200, "", 100);
+        let result = evaluate_single(&a, &r);
+        assert!(!result.passed);
+    }
+
+    #[test]
+    fn test_header_not_exists_pass() {
+        let a = make_assertion("header_contains", "x-missing", "not_exists", "");
+        let r = make_response(200, "", 100);
+        assert!(evaluate_single(&a, &r).passed);
+    }
+
+    // ─── unknown type ───────────────────────────────────────
+    #[test]
+    fn test_unknown_assertion_type() {
+        let a = make_assertion("unknown_type", "", "eq", "");
+        let r = make_response(200, "", 100);
+        let result = evaluate_single(&a, &r);
+        assert!(!result.passed);
+        assert!(result.message.contains("未知断言类型"));
+    }
+}

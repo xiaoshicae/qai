@@ -1,3 +1,4 @@
+use crate::errors::AppError;
 use crate::pty::PtyState;
 use tauri::{AppHandle, Manager, State};
 
@@ -7,29 +8,32 @@ pub fn pty_spawn(
     pty: State<'_, PtyState>,
     cols: u16,
     rows: u16,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     pty.spawn(app, cols, rows)
 }
 
 #[tauri::command]
-pub fn pty_write(pty: State<'_, PtyState>, data: Vec<u8>) -> Result<(), String> {
+pub fn pty_write(pty: State<'_, PtyState>, data: Vec<u8>) -> Result<(), AppError> {
     pty.write_data(&data)
 }
 
 #[tauri::command]
-pub fn pty_resize(pty: State<'_, PtyState>, cols: u16, rows: u16) -> Result<(), String> {
+pub fn pty_resize(pty: State<'_, PtyState>, cols: u16, rows: u16) -> Result<(), AppError> {
     pty.resize(cols, rows)
 }
 
 #[tauri::command]
-pub fn pty_kill(pty: State<'_, PtyState>) -> Result<(), String> {
+pub fn pty_kill(pty: State<'_, PtyState>) -> Result<(), AppError> {
     pty.kill()
 }
 
 /// 生成 MCP 配置文件，返回路径
 #[tauri::command]
-pub fn prepare_mcp_config(app: AppHandle) -> Result<String, String> {
-    let app_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+pub fn prepare_mcp_config(app: AppHandle) -> Result<String, AppError> {
+    let app_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| AppError::Generic(e.to_string()))?;
     let db_path = app_dir.join("qai.db");
 
     // 查找 qai-mcp 二进制：开发模式从 target/debug，生产模式从 externalBin sidecar
@@ -45,15 +49,17 @@ pub fn prepare_mcp_config(app: AppHandle) -> Result<String, String> {
     });
 
     let config_path = app_dir.join("mcp-config.json");
-    std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap())
-        .map_err(|e| e.to_string())?;
+    std::fs::write(
+        &config_path,
+        serde_json::to_string_pretty(&config).unwrap(),
+    )?;
 
     Ok(config_path.to_string_lossy().to_string())
 }
 
 /// 查找 qai-mcp 二进制路径
 /// 依次检查：exe 同目录 → resource 目录 → 常见路径
-fn find_mcp_binary(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+fn find_mcp_binary(app: &AppHandle) -> Result<std::path::PathBuf, AppError> {
     let suffix = if cfg!(target_os = "windows") {
         ".exe"
     } else {
@@ -83,5 +89,6 @@ fn find_mcp_binary(app: &AppHandle) -> Result<std::path::PathBuf, String> {
 
     Err(format!(
         "{bin_name} not found. Ensure qai-mcp is built: cargo build --bin qai-mcp"
-    ))
+    )
+    .into())
 }

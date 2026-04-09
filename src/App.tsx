@@ -12,8 +12,7 @@ import { ConfirmDialog } from './components/ui/confirm-dialog'
 import { ShortcutHelpProvider } from './components/ui/shortcut-help'
 import { ErrorBoundary } from './components/ui/error-boundary'
 import { useThemeStore } from './stores/theme-store'
-import { useCollectionStore } from './stores/collection-store'
-import { initConsoleListener } from './stores/console-store'
+import { initConsoleListener, destroyConsoleListener } from './stores/console-store'
 import { invokeErrorMessage } from './lib/invoke-error'
 
 const EnvironmentsView = lazy(() => import('./views/environments-view'))
@@ -31,9 +30,9 @@ function RouteFallback() {
 /** 监听 macOS 菜单事件 */
 function MenuListener() {
   const navigate = useNavigate()
-  const { loadCollections, loadGroups } = useCollectionStore()
 
   useEffect(() => {
+    let reloadTimer: ReturnType<typeof setTimeout> | null = null
     const u1 = listen('menu-check-update', () => {
       navigate('/settings')
       requestAnimationFrame(() => window.dispatchEvent(new Event('trigger-update-check')))
@@ -71,19 +70,21 @@ function MenuListener() {
         } else {
           toast.success('导入完成，数据无变化')
         }
-        // 延迟刷新页面，确保 toast 可见 + 所有缓存数据重载
-        setTimeout(() => window.location.reload(), 800)
+        reloadTimer = setTimeout(() => window.location.reload(), 800)
       } catch (e: unknown) { toast.error(invokeErrorMessage(e)) }
     })
-    return () => { u1.then((fn) => fn()); u2.then((fn) => fn()); u3.then((fn) => fn()) }
-  }, [navigate, loadCollections, loadGroups])
+    return () => {
+      u1.then((fn) => fn()); u2.then((fn) => fn()); u3.then((fn) => fn())
+      if (reloadTimer) clearTimeout(reloadTimer)
+    }
+  }, [navigate])
   return null
 }
 
 export default function App() {
   const resolved = useThemeStore((s) => s.resolved)
   const init = useThemeStore((s) => s.init)
-  useEffect(() => { init(); initConsoleListener() }, [init])
+  useEffect(() => { init(); initConsoleListener(); return destroyConsoleListener }, [init])
 
   return (
     <ErrorBoundary>

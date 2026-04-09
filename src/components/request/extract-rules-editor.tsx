@@ -8,11 +8,7 @@ import { Select } from '@/components/ui/select'
 import { useRequestStore } from '@/stores/request-store'
 import type { ExtractRule } from '@/types'
 
-const SOURCES = [
-  { value: 'json_body', label: 'JSON Body' },
-  { value: 'header', label: 'Header' },
-  { value: 'status_code', label: 'Status Code' },
-] as const
+import { EXTRACT_SOURCE_OPTIONS } from '@/lib/constants'
 
 interface Props {
   requestId: string
@@ -104,7 +100,7 @@ export default function ExtractRulesEditor({ requestId }: Props) {
                   )
                   save(updated)
                 }}
-                options={SOURCES.map((s) => ({ value: s.value, label: s.label }))}
+                options={EXTRACT_SOURCE_OPTIONS}
                 className="w-[120px]"
               />
               <Input

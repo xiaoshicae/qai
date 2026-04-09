@@ -36,8 +36,7 @@ export default function WorkbenchView() {
       selectNode(nextInQueue)
       void loadTree(nextInQueue)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nextInQueue])
+  }, [nextInQueue, selectNode, loadTree, overviewCollection?.id])
 
   const handleCreateFirstSuite = async () => {
     await createGroup(t('app.quick_start'))

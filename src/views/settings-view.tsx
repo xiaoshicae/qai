@@ -26,6 +26,7 @@ export default function SettingsView() {
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>('idle')
   const [newVersion, setNewVersion] = useState('')
   const [downloadProgress, setDownloadProgress] = useState(0)
+  const [errorDetail, setErrorDetail] = useState('')
 
   useEffect(() => { getVersion().then(setAppVersion) }, [])
 
@@ -63,12 +64,12 @@ export default function SettingsView() {
         setUpdateStatus('latest')
       }
     } catch (e: unknown) {
-      // endpoint 404（尚未发布带签名的 Release）视为"已是最新"
       const msg = String(e).toLowerCase()
-      if (msg.includes('404') || msg.includes('not found') || msg.includes('network')) {
+      if (msg.includes('404') || msg.includes('not found')) {
         setUpdateStatus('latest')
       } else {
         setUpdateStatus('error')
+        setErrorDetail(String(e))
       }
     }
   }
@@ -80,7 +81,7 @@ export default function SettingsView() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto max-w-xl px-8 py-6 pb-12 space-y-6">
+      <div className="mx-auto max-w-xl px-6 py-6 pb-12 space-y-6">
 
         {/* 外观 */}
         <section className="glass-card rounded-2xl p-6">
@@ -212,7 +213,10 @@ export default function SettingsView() {
               </div>
             )}
             {updateStatus === 'error' && (
-              <div className="text-xs text-error">{t('settings.update_error')}</div>
+              <div className="space-y-1">
+                <div className="text-xs text-error">{t('settings.update_error')}</div>
+                {errorDetail && <div className="text-[10px] text-muted-foreground/60 font-mono break-all">{errorDetail}</div>}
+              </div>
             )}
           </div>
         </section>

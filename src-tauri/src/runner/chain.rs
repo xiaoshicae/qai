@@ -179,7 +179,178 @@ pub async fn run_chain(
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+    use std::sync::Arc;
+
+    fn make_item(id: &str, name: &str) -> CollectionItem {
+        CollectionItem {
+            id: id.into(),
+            collection_id: "coll-1".into(),
+            parent_id: None,
+            item_type: "request".into(),
+            name: name.into(),
+            sort_order: 0,
+            method: "GET".into(),
+            url: "http://example.com".into(),
+            headers: "[]".into(),
+            query_params: "[]".into(),
+            body_type: "none".into(),
+            body_content: String::new(),
+            extract_rules: "[]".into(),
+            description: String::new(),
+            expect_status: 200,
+            poll_config: String::new(),
+            protocol: "http".into(),
+            created_at: String::new(),
+            updated_at: String::new(),
+        }
+    }
+
+    fn noop_progress(_: ChainProgress) {}
+
+    #[tokio::test]
+    async fn test_single_step_dry_run() {
+        let client = reqwest::Client::new();
+        let steps = vec![(make_item("1", "Step1"), vec![])];
+        let result = run_chain(
+            &client, steps, HashMap::new(),
+            "chain-1".into(), "TestChain".into(),
+            None, noop_progress, None, true,
+        ).await;
+        assert_eq!(result.completed_steps, 1);
+        assert_eq!(result.total_steps, 1);
+        assert_eq!(result.status, crate::models::Status::Success.as_str());
+    }
+
+    #[tokio::test]
+    async fn test_multi_step_dry_run() {
+        let client = reqwest::Client::new();
+        let steps = vec![
+            (make_item("1", "Step1"), vec![]),
+            (make_item("2", "Step2"), vec![]),
+            (make_item("3", "Step3"), vec![]),
+        ];
+        let result = run_chain(
+            &client, steps, HashMap::new(),
+            "chain-1".into(), "TestChain".into(),
+            None, noop_progress, None, true,
+        ).await;
+        assert_eq!(result.completed_steps, 3);
+        assert_eq!(result.total_steps, 3);
+    }
+
+    #[tokio::test]
+    async fn test_empty_steps() {
+        let client = reqwest::Client::new();
+        let result = run_chain(
+            &client, vec![], HashMap::new(),
+            "chain-1".into(), "TestChain".into(),
+            None, noop_progress, None, true,
+        ).await;
+        assert_eq!(result.completed_steps, 0);
+        assert_eq!(result.total_steps, 0);
+    }
+
+    #[tokio::test]
+    async fn test_base_vars_passed_to_chain() {
+        let client = reqwest::Client::new();
+        let mut base = HashMap::new();
+        base.insert("token".into(), "abc123".into());
+        let steps = vec![(make_item("1", "Step1"), vec![])];
+        let result = run_chain(
+            &client, steps, base,
+            "chain-1".into(), "TestChain".into(),
+            None, noop_progress, None, true,
+        ).await;
+        assert_eq!(result.final_variables.get("token").unwrap(), "abc123");
+    }
+
+    #[tokio::test]
+    async fn test_cancel_token_stops_chain() {
+        let client = reqwest::Client::new();
+        let steps = vec![
+            (make_item("1", "Step1"), vec![]),
+            (make_item("2", "Step2"), vec![]),
+        ];
+        let cancel = Arc::new(AtomicBool::new(true));
+        let result = run_chain(
+            &client, steps, HashMap::new(),
+            "chain-1".into(), "TestChain".into(),
+            Some(cancel), noop_progress, None, true,
+        ).await;
+        assert_eq!(result.completed_steps, 0);
+    }
+
+    #[tokio::test]
+    async fn test_progress_callback_called() {
+        let client = reqwest::Client::new();
+        let steps = vec![(make_item("1", "Step1"), vec![])];
+        let count = Arc::new(AtomicU32::new(0));
+        let count_clone = count.clone();
+        run_chain(
+            &client, steps, HashMap::new(),
+            "chain-1".into(), "TestChain".into(),
+            None,
+            move |_| { count_clone.fetch_add(1, Ordering::Relaxed); },
+            None, true,
+        ).await;
+        // 每步 2 次进度回调：running + completed
+        assert_eq!(count.load(Ordering::Relaxed), 2);
+    }
+
+    #[tokio::test]
+    async fn test_step_failure_stops_chain() {
+        let client = reqwest::Client::new();
+        // 第一步断言失败 → 后续不执行
+        let assertion = crate::models::assertion::Assertion {
+            id: "a1".into(),
+            item_id: "1".into(),
+            assertion_type: "status_code".into(),
+            expression: String::new(),
+            operator: "eq".into(),
+            expected: "404".into(), // dry_run 返回 200，断言失败
+            enabled: true,
+            sort_order: 0,
+            created_at: String::new(),
+        };
+        let steps = vec![
+            (make_item("1", "Step1"), vec![assertion]),
+            (make_item("2", "Step2"), vec![]),
+        ];
+        let result = run_chain(
+            &client, steps, HashMap::new(),
+            "chain-1".into(), "TestChain".into(),
+            None, noop_progress, None, true,
+        ).await;
+        assert_eq!(result.completed_steps, 1);
+        assert_ne!(result.status, crate::models::Status::Success.as_str());
+    }
+
+    #[tokio::test]
+    async fn test_on_result_callback() {
+        let client = reqwest::Client::new();
+        let steps = vec![
+            (make_item("1", "Step1"), vec![]),
+            (make_item("2", "Step2"), vec![]),
+        ];
+        let count = Arc::new(AtomicU32::new(0));
+        let count_clone = count.clone();
+        run_chain(
+            &client, steps, HashMap::new(),
+            "chain-1".into(), "TestChain".into(),
+            None, noop_progress,
+            Some(Box::new(move |_| { count_clone.fetch_add(1, Ordering::Relaxed); })),
+            true,
+        ).await;
+        assert_eq!(count.load(Ordering::Relaxed), 2);
+    }
+}
+
 /// 带轮询的请求执行（支持取消）
+/// 使用 tokio::time::interval 避免间隔漂移（固定节拍，扣除请求耗时）
 async fn execute_with_poll(
     client: &reqwest::Client,
     item: &CollectionItem,
@@ -188,7 +359,10 @@ async fn execute_with_poll(
 ) -> Result<ExecutionResult, anyhow::Error> {
     let start = std::time::Instant::now();
     let max_duration = std::time::Duration::from_secs(poll.max_seconds);
-    let interval = std::time::Duration::from_secs(poll.interval_seconds);
+    let interval_dur = std::time::Duration::from_secs(poll.interval_seconds);
+    let mut ticker = tokio::time::interval(interval_dur);
+    // 第一次 tick 立即触发（执行首次请求）
+    ticker.tick().await;
 
     loop {
         if cancel_token
@@ -233,6 +407,7 @@ async fn execute_with_poll(
             return Ok(result);
         }
 
-        tokio::time::sleep(interval).await;
+        // 等待下一个 tick（自动补偿请求耗时）
+        ticker.tick().await;
     }
 }

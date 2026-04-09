@@ -288,6 +288,235 @@ fn obj_to_kvs(val: &serde_json::Value) -> Vec<serde_json::Value> {
         .unwrap_or_default()
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::init::create_test_db;
+
+    fn make_case(name: &str, scenarios: Vec<YamlScenario>) -> YamlCase {
+        YamlCase {
+            name: name.into(),
+            category: None,
+            endpoint: Some("http://api.example.com".into()),
+            scenarios,
+        }
+    }
+
+    fn make_scenario(id: &str) -> YamlScenario {
+        YamlScenario {
+            id: id.into(),
+            description: Some("test scenario".into()),
+            payload: Some(serde_json::json!({"key": "value"})),
+            form_data: None,
+            multipart_fields: None,
+            multipart_files: None,
+            content_type: None,
+            expect: Some(YamlExpect { status: Some(200) }),
+            protocol: None,
+            ws_endpoint: None,
+            ws_payload: None,
+        }
+    }
+
+    #[test]
+    fn test_import_single_case_basic() {
+        let conn = create_test_db();
+        let case = make_case("TestAPI", vec![make_scenario("login")]);
+        let mut result = ImportResult {
+            collections_created: 0, collections_updated: 0,
+            requests_created: 0, requests_updated: 0,
+        };
+        let r = import_single_case(&conn, &case, &mut result, Path::new("/tmp"));
+        assert!(r.is_ok(), "import failed: {:?}", r.err());
+        assert_eq!(result.collections_created, 1);
+        assert_eq!(result.requests_created, 1);
+    }
+
+    #[test]
+    fn test_import_multiple_scenarios() {
+        let conn = create_test_db();
+        let case = make_case("TestAPI", vec![
+            make_scenario("login"),
+            make_scenario("logout"),
+            make_scenario("profile"),
+        ]);
+        let mut result = ImportResult {
+            collections_created: 0, collections_updated: 0,
+            requests_created: 0, requests_updated: 0,
+        };
+        import_single_case(&conn, &case, &mut result, Path::new("/tmp")).unwrap();
+        assert_eq!(result.requests_created, 3);
+    }
+
+    #[test]
+    fn test_import_creates_group_from_category() {
+        let conn = create_test_db();
+        let mut case = make_case("TestAPI", vec![make_scenario("login")]);
+        case.category = Some("Authentication".into());
+        let mut result = ImportResult {
+            collections_created: 0, collections_updated: 0,
+            requests_created: 0, requests_updated: 0,
+        };
+        import_single_case(&conn, &case, &mut result, Path::new("/tmp")).unwrap();
+        // 验证 group 被创建
+        let group_id: String = conn.query_row(
+            "SELECT id FROM groups WHERE name = 'Authentication'",
+            [], |row| row.get(0),
+        ).unwrap();
+        assert!(!group_id.is_empty());
+    }
+
+    #[test]
+    fn test_import_update_existing_collection() {
+        let conn = create_test_db();
+        let case = make_case("TestAPI", vec![make_scenario("login")]);
+        let mut r1 = ImportResult {
+            collections_created: 0, collections_updated: 0,
+            requests_created: 0, requests_updated: 0,
+        };
+        import_single_case(&conn, &case, &mut r1, Path::new("/tmp")).unwrap();
+        assert_eq!(r1.collections_created, 1);
+
+        // 再次导入同名集合 → 更新
+        let mut r2 = ImportResult {
+            collections_created: 0, collections_updated: 0,
+            requests_created: 0, requests_updated: 0,
+        };
+        import_single_case(&conn, &case, &mut r2, Path::new("/tmp")).unwrap();
+        assert_eq!(r2.collections_updated, 1);
+        assert_eq!(r2.collections_created, 0);
+        assert_eq!(r2.requests_updated, 1);
+    }
+
+    #[test]
+    fn test_import_websocket_scenario() {
+        let conn = create_test_db();
+        let mut scenario = make_scenario("ws-test");
+        scenario.protocol = Some("websocket".into());
+        scenario.ws_endpoint = Some("ws://example.com/ws".into());
+        scenario.ws_payload = Some(serde_json::json!({"action": "subscribe"}));
+        scenario.payload = None;
+        let case = make_case("WS API", vec![scenario]);
+        let mut result = ImportResult {
+            collections_created: 0, collections_updated: 0,
+            requests_created: 0, requests_updated: 0,
+        };
+        import_single_case(&conn, &case, &mut result, Path::new("/tmp")).unwrap();
+        assert_eq!(result.requests_created, 1);
+    }
+
+    #[test]
+    fn test_import_optional_fields_none() {
+        let conn = create_test_db();
+        let case = YamlCase {
+            name: "Minimal".into(),
+            category: None,
+            endpoint: None,
+            scenarios: vec![YamlScenario {
+                id: "test".into(),
+                description: None,
+                payload: None,
+                form_data: None,
+                multipart_fields: None,
+                multipart_files: None,
+                content_type: None,
+                expect: None,
+                protocol: None,
+                ws_endpoint: None,
+                ws_payload: None,
+            }],
+        };
+        let mut result = ImportResult {
+            collections_created: 0, collections_updated: 0,
+            requests_created: 0, requests_updated: 0,
+        };
+        let r = import_single_case(&conn, &case, &mut result, Path::new("/tmp"));
+        assert!(r.is_ok());
+    }
+
+    // ─── build_body ─────────────────────────────────────────
+    #[test]
+    fn test_build_body_json_payload() {
+        let scenario = make_scenario("test");
+        let (body_type, body_content) = build_body(&scenario, Path::new("/tmp"));
+        assert_eq!(body_type, "json");
+        assert!(body_content.contains("key"));
+    }
+
+    #[test]
+    fn test_build_body_form_data() {
+        let scenario = YamlScenario {
+            id: "test".into(),
+            description: None,
+            payload: None,
+            form_data: Some(serde_json::json!({"user": "admin", "pass": "123"})),
+            multipart_fields: None,
+            multipart_files: None,
+            content_type: Some("application/x-www-form-urlencoded".into()),
+            expect: None,
+            protocol: None,
+            ws_endpoint: None,
+            ws_payload: None,
+        };
+        let (body_type, _) = build_body(&scenario, Path::new("/tmp"));
+        assert_eq!(body_type, "urlencoded");
+    }
+
+    #[test]
+    fn test_build_body_none() {
+        let scenario = YamlScenario {
+            id: "test".into(),
+            description: None,
+            payload: None,
+            form_data: None,
+            multipart_fields: None,
+            multipart_files: None,
+            content_type: None,
+            expect: None,
+            protocol: None,
+            ws_endpoint: None,
+            ws_payload: None,
+        };
+        let (body_type, body_content) = build_body(&scenario, Path::new("/tmp"));
+        assert_eq!(body_type, "none");
+        assert!(body_content.is_empty());
+    }
+
+    // ─── obj_to_kvs ─────────────────────────────────────────
+    #[test]
+    fn test_obj_to_kvs() {
+        let obj = serde_json::json!({"user": "admin"});
+        let kvs = obj_to_kvs(&obj);
+        assert_eq!(kvs.len(), 1);
+        assert_eq!(kvs[0]["key"], "user");
+        assert_eq!(kvs[0]["value"], "admin");
+    }
+
+    #[test]
+    fn test_obj_to_kvs_non_object() {
+        let arr = serde_json::json!([1, 2, 3]);
+        let kvs = obj_to_kvs(&arr);
+        assert!(kvs.is_empty());
+    }
+
+    // ─── build_headers ──────────────────────────────────────
+    #[test]
+    fn test_build_headers_json() {
+        let scenario = make_scenario("test");
+        let headers = build_headers(&scenario);
+        assert!(headers.contains("application/json"));
+    }
+
+    #[test]
+    fn test_build_headers_form() {
+        let mut scenario = make_scenario("test");
+        scenario.payload = None;
+        scenario.content_type = Some("application/x-www-form-urlencoded".into());
+        let headers = build_headers(&scenario);
+        assert!(headers.contains("application/x-www-form-urlencoded"));
+    }
+}
+
 fn build_headers(scenario: &YamlScenario) -> String {
     let ct = scenario.content_type.as_deref().unwrap_or("");
     let content_type = if scenario.payload.is_some() {

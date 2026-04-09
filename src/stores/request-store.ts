@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import { toast } from 'sonner'
 import type { CollectionItem, ExecutionResult, StreamChunk } from '@/types'
 import { extractSSEContent } from '@/lib/media'
 import { invokeErrorMessage } from '@/lib/invoke-error'
@@ -39,8 +40,12 @@ export const useRequestStore = create<RequestState>((set, get) => ({
   streamChunks: 0,
 
   loadRequest: async (id: string) => {
-    const req = await invoke<CollectionItem>('get_item', { id })
-    set({ currentRequest: req, currentResponse: null })
+    try {
+      const req = await invoke<CollectionItem>('get_item', { id })
+      set({ currentRequest: req, currentResponse: null })
+    } catch (e: unknown) {
+      toast.error(invokeErrorMessage(e))
+    }
   },
 
   clearRequest: () =>
@@ -56,8 +61,12 @@ export const useRequestStore = create<RequestState>((set, get) => ({
   updateRequest: async (updates: RequestUpdates) => {
     const { currentRequest } = get()
     if (!currentRequest) return
-    const req = await invoke<CollectionItem>('update_item', { id: currentRequest.id, payload: updates })
-    set({ currentRequest: req })
+    try {
+      const req = await invoke<CollectionItem>('update_item', { id: currentRequest.id, payload: updates })
+      set({ currentRequest: req })
+    } catch (e) {
+      toast.error(invokeErrorMessage(e))
+    }
   },
 
   sendRequest: async () => {

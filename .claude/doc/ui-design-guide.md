@@ -11,6 +11,7 @@ QAI 支持深色/浅色/跟随系统三种主题模式。核心机制是 **overl
 ```
 
 所有半透明叠加效果（hover、active、边框、分割线）统一使用 `bg-overlay/[0.0x]`，这样同一套 Tailwind 类在两种主题下都能正确工作：
+
 - 深色底 + 半透明白 = 微亮 ✓
 - 浅色底 + 半透明黑 = 微暗 ✓
 
@@ -19,6 +20,7 @@ QAI 支持深色/浅色/跟随系统三种主题模式。核心机制是 **overl
 ## 一、设计目标
 
 对标 concierge.ai、Linear、Hoppscotch 等产品，实现：
+
 - 深色/浅色双主题无缝切换
 - 毛玻璃/磨砂质感的卡片效果
 - 渐变色点缀取代纯色块
@@ -39,9 +41,33 @@ QAI 支持深色/浅色/跟随系统三种主题模式。核心机制是 **overl
 具体实现（使用 OKLch 色彩空间）：
 
 ```css
---color-background: oklch(0.145 0.004 260);   /* 最深 - 页面底色 */
---color-card: oklch(0.185 0.005 260);          /* 中间 - 卡片/面板 */
---color-surface: oklch(0.21 0.006 260);        /* 最浅 - 悬浮/弹窗 */
+--color-background:
+
+oklch
+(
+0.145
+0.004
+260
+)
+; /* 最深 - 页面底色 */
+--color-card:
+
+oklch
+(
+0.185
+0.005
+260
+)
+; /* 中间 - 卡片/面板 */
+--color-surface:
+
+oklch
+(
+0.21
+0.006
+260
+)
+; /* 最浅 - 悬浮/弹窗 */
 ```
 
 **关键点**：不要用纯灰（色度 0），给每个灰度加一点点蓝/紫色调（色度 0.004~0.006，色相 260），视觉上更高级。
@@ -52,13 +78,58 @@ QAI 支持深色/浅色/跟随系统三种主题模式。核心机制是 **overl
 
 ```css
 /* 静态边框 */
-border: 1px solid rgba(255, 255, 255, 0.06);   /* border-white/[0.06] */
+border:
+
+1
+px solid
+
+rgba
+(
+255
+,
+255
+,
+255
+,
+0.06
+)
+; /* border-white/[0.06] */
 
 /* Hover 边框 */
-border: 1px solid rgba(255, 255, 255, 0.10);   /* border-white/[0.10] */
+border:
+
+1
+px solid
+
+rgba
+(
+255
+,
+255
+,
+255
+,
+0.10
+)
+; /* border-white/[0.10] */
 
 /* 选中/焦点边框 */
-border: 1px solid rgba(255, 255, 255, 0.12);   /* border-white/[0.12] */
+border:
+
+1
+px solid
+
+rgba
+(
+255
+,
+255
+,
+255
+,
+0.12
+)
+; /* border-white/[0.12] */
 ```
 
 **为什么**：半透明白色边框能自动适应任何底色，不会出现"边框太突兀"或"边框看不见"的问题。
@@ -69,13 +140,10 @@ border: 1px solid rgba(255, 255, 255, 0.12);   /* border-white/[0.12] */
 
 ```css
 .glass-card {
-  background: oklch(0.185 0.005 260 / 0.8);     /* 半透明背景 */
-  border: 1px solid oklch(1 0 0 / 0.06);         /* 微光白色边框 */
-  box-shadow:
-    0 0 0 1px oklch(0 0 0 / 0.3),                /* 外层阴影轮廓 */
-    0 2px 8px oklch(0 0 0 / 0.2),                 /* 投影 */
-    inset 0 1px 0 oklch(1 0 0 / 0.03);           /* 顶部内光（关键！） */
-  backdrop-filter: blur(12px);                     /* 背景模糊 */
+    background: oklch(0.185 0.005 260 / 0.8); /* 半透明背景 */
+    border: 1px solid oklch(1 0 0 / 0.06); /* 微光白色边框 */
+    box-shadow: 0 0 0 1px oklch(0 0 0 / 0.3), /* 外层阴影轮廓 */ 0 2px 8px oklch(0 0 0 / 0.2), /* 投影 */ inset 0 1px 0 oklch(1 0 0 / 0.03); /* 顶部内光（关键！） */
+    backdrop-filter: blur(12px); /* 背景模糊 */
 }
 ```
 
@@ -87,10 +155,8 @@ border: 1px solid rgba(255, 255, 255, 0.12);   /* border-white/[0.12] */
 
 ```css
 .btn-gradient {
-  background: linear-gradient(135deg, oklch(0.6 0.18 240), oklch(0.55 0.2 280));
-  box-shadow:
-    0 1px 2px oklch(0 0 0 / 0.3),                /* 基础投影 */
-    0 0 12px oklch(0.6 0.18 240 / 0.15);         /* 品牌色光晕 */
+    background: linear-gradient(135deg, oklch(0.6 0.18 240), oklch(0.55 0.2 280));
+    box-shadow: 0 1px 2px oklch(0 0 0 / 0.3), /* 基础投影 */ 0 0 12px oklch(0.6 0.18 240 / 0.15); /* 品牌色光晕 */
 }
 ```
 
@@ -102,9 +168,7 @@ border: 1px solid rgba(255, 255, 255, 0.12);   /* border-white/[0.12] */
 
 ```css
 .glow-ring {
-  box-shadow:
-    0 0 0 1px oklch(0.65 0.18 240 / 0.3),        /* 1px 色环 */
-    0 0 8px oklch(0.65 0.18 240 / 0.1);           /* 外扩光晕 */
+    box-shadow: 0 0 0 1px oklch(0.65 0.18 240 / 0.3), /* 1px 色环 */ 0 0 8px oklch(0.65 0.18 240 / 0.1); /* 外扩光晕 */
 }
 ```
 
@@ -152,11 +216,13 @@ Selected:  bg-overlay/[0.08] + glow-ring
 ## 五、macOS 标题栏集成
 
 ### 问题
+
 Tauri 默认标题栏是白色，与深色主题严重不协调。
 
 ### 解决方案
 
 `tauri.conf.json`:
+
 ```json
 {
   "titleBarStyle": "Overlay",
@@ -165,9 +231,11 @@ Tauri 默认标题栏是白色，与深色主题严重不协调。
 ```
 
 前端布局：
+
 ```tsx
-{/* 顶部拖拽区域，给红绿灯按钮留空间 */}
-<div className="h-8 shrink-0" data-tauri-drag-region="" />
+{/* 顶部拖拽区域，给红绿灯按钮留空间 */
+}
+<div className="h-8 shrink-0" data-tauri-drag-region=""/>
 ```
 
 - 侧边栏顶部：`pt-8` + `data-tauri-drag-region`（红绿灯所在区域）
@@ -180,22 +248,47 @@ Tauri 默认标题栏是白色，与深色主题严重不协调。
 
 ```css
 /* 避免 */
-border-top: 1px solid var(--color-border);
+border-top:
+
+1
+px solid
+
+var
+(
+--color-border
+
+)
+;
 
 /* 推荐：极淡的半透明白色 */
-border-top: 1px solid rgba(255, 255, 255, 0.06);
+border-top:
+
+1
+px solid
+
+rgba
+(
+255
+,
+255
+,
+255
+,
+0.06
+)
+;
 ```
 
 ### 面板间分割线用渐变
 
 ```css
 .divider-glow {
-  background: linear-gradient(
-    to bottom,
-    transparent,
-    oklch(0.65 0.18 240 / 0.15) 50%,
-    transparent
-  );
+    background: linear-gradient(
+            to bottom,
+            transparent,
+            oklch(0.65 0.18 240 / 0.15) 50%,
+            transparent
+    );
 }
 ```
 
@@ -203,31 +296,31 @@ border-top: 1px solid rgba(255, 255, 255, 0.06);
 
 ## 七、配色速查表
 
-| 用途 | 颜色值 | Tailwind 写法 |
-|------|--------|---------------|
-| 页面背景 | `oklch(0.145 0.004 260)` | `bg-background` |
-| 卡片背景 | `oklch(0.185 0.005 260)` | `bg-card` / `glass-card` |
-| 侧边栏 | `oklch(0.125 0.004 260)` | `bg-sidebar` |
-| 主文字 | `oklch(0.93 0.005 260)` | `text-foreground` |
-| 次要文字 | `oklch(0.55 0.01 260)` | `text-muted-foreground` |
-| 品牌色 | `oklch(0.65 0.18 240)` | `text-primary` / `bg-primary` |
-| 静态边框 | overlay 6% | `border-overlay/[0.06]` |
-| Hover 背景 | overlay 4% | `bg-overlay/[0.04]` |
-| 选中背景 | overlay 8% | `bg-overlay/[0.08]` |
-| 成功色 | emerald-600/400 | `text-emerald-600 dark:text-emerald-400` |
-| 错误色 | `oklch(0.637 0.208 25)` | `text-destructive` |
+| 用途       | 颜色值                      | Tailwind 写法                              |
+|----------|--------------------------|------------------------------------------|
+| 页面背景     | `oklch(0.145 0.004 260)` | `bg-background`                          |
+| 卡片背景     | `oklch(0.185 0.005 260)` | `bg-card` / `glass-card`                 |
+| 侧边栏      | `oklch(0.125 0.004 260)` | `bg-sidebar`                             |
+| 主文字      | `oklch(0.93 0.005 260)`  | `text-foreground`                        |
+| 次要文字     | `oklch(0.55 0.01 260)`   | `text-muted-foreground`                  |
+| 品牌色      | `oklch(0.65 0.18 240)`   | `text-primary` / `bg-primary`            |
+| 静态边框     | overlay 6%               | `border-overlay/[0.06]`                  |
+| Hover 背景 | overlay 4%               | `bg-overlay/[0.04]`                      |
+| 选中背景     | overlay 8%               | `bg-overlay/[0.08]`                      |
+| 成功色      | emerald-600/400          | `text-emerald-600 dark:text-emerald-400` |
+| 错误色      | `oklch(0.637 0.208 25)`  | `text-destructive`                       |
 
 ### 语法高亮配色
 
 代码/JSON 高亮必须适配双主题，浅色用 `-600`（高对比度），深色用 `-400`：
 
-| Token | 浅色 | 深色 | Tailwind |
-|-------|------|------|----------|
-| key | sky-600 | sky-400 | `text-sky-600 dark:text-sky-400` |
-| string | emerald-600 | emerald-400 | `text-emerald-600 dark:text-emerald-400` |
-| number | amber-600 | amber-400 | `text-amber-600 dark:text-amber-400` |
-| boolean/null | purple-600 | purple-400 | `text-purple-600 dark:text-purple-400` |
-| variable `{{}}` | cyan-600 | cyan-400 | `text-cyan-600 dark:text-cyan-400` |
+| Token           | 浅色          | 深色          | Tailwind                                 |
+|-----------------|-------------|-------------|------------------------------------------|
+| key             | sky-600     | sky-400     | `text-sky-600 dark:text-sky-400`         |
+| string          | emerald-600 | emerald-400 | `text-emerald-600 dark:text-emerald-400` |
+| number          | amber-600   | amber-400   | `text-amber-600 dark:text-amber-400`     |
+| boolean/null    | purple-600  | purple-400  | `text-purple-600 dark:text-purple-400`   |
+| variable `{{}}` | cyan-600    | cyan-400    | `text-cyan-600 dark:text-cyan-400`       |
 
 共享定义位于 `src/lib/syntax.ts`，禁止在组件中重复定义颜色映射。
 
@@ -294,12 +387,12 @@ Logo 区域:  px-4（drag-region，更多留白）
 
 ## 十、设计参考站点
 
-| 站点 | 用途 |
-|------|------|
-| [Layers.to](https://layers.to) | 设计师作品集，搜 "dark dashboard" |
-| [Dark Design](https://dark.design) | 专门收录深色模式设计 |
-| [Godly](https://godly.website) | 精选高质量网页设计 |
-| [Magic UI](https://magicui.design) | 带光感/渐变的 React 组件 |
-| [Aceternity UI](https://ui.aceternity.com) | 暗色主题炫酷组件库 |
-| [Hoppscotch](https://hoppscotch.io) | 同类 API 工具参考 |
-| [Linear](https://linear.app) | 深色主题标杆产品 |
+| 站点                                         | 用途                        |
+|--------------------------------------------|---------------------------|
+| [Layers.to](https://layers.to)             | 设计师作品集，搜 "dark dashboard" |
+| [Dark Design](https://dark.design)         | 专门收录深色模式设计                |
+| [Godly](https://godly.website)             | 精选高质量网页设计                 |
+| [Magic UI](https://magicui.design)         | 带光感/渐变的 React 组件          |
+| [Aceternity UI](https://ui.aceternity.com) | 暗色主题炫酷组件库                 |
+| [Hoppscotch](https://hoppscotch.io)        | 同类 API 工具参考               |
+| [Linear](https://linear.app)               | 深色主题标杆产品                  |

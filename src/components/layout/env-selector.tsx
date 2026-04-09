@@ -56,11 +56,12 @@ export default function EnvSelector() {
     <div ref={ref} className="relative">
       <button
         onClick={(e) => { e.stopPropagation(); setOpen(!open) }}
+        aria-label="Select environment"
         className="flex items-center gap-1.5 h-6 px-2 rounded-lg text-[11px] text-muted-foreground hover:text-foreground border border-overlay/[0.06] hover:border-overlay/[0.1] cursor-pointer transition-all duration-200"
       >
         {active ? (
           <>
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500/60" />
+            <span className="w-1.5 h-1.5 rounded-full bg-success/60" />
             <span>{active.name}</span>
           </>
         ) : (
@@ -75,7 +76,7 @@ export default function EnvSelector() {
             className={`flex items-center gap-2 w-full px-3 py-1.5 text-xs hover:bg-overlay/[0.06] cursor-pointer transition-colors ${!active ? 'text-foreground' : 'text-muted-foreground'}`}
             onClick={() => select(null)}
           >
-            <span className="w-3.5">{!active && <Check className="h-3 w-3 text-emerald-500" />}</span>
+            <span className="w-3.5">{!active && <Check className="h-3 w-3 text-success" />}</span>
             No Environment
           </button>
           <div className="h-px bg-overlay/[0.06] my-0.5" />
@@ -85,7 +86,7 @@ export default function EnvSelector() {
               className={`flex items-center gap-2 w-full px-3 py-1.5 text-xs hover:bg-overlay/[0.06] cursor-pointer transition-colors ${e.is_active ? 'text-foreground' : 'text-muted-foreground'}`}
               onClick={() => select(e.id)}
             >
-              <span className="w-3.5">{e.is_active && <Check className="h-3 w-3 text-emerald-500" />}</span>
+              <span className="w-3.5">{e.is_active && <Check className="h-3 w-3 text-success" />}</span>
               {e.name}
             </button>
           ))}

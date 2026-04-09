@@ -225,6 +225,28 @@ pub fn delete(conn: &Connection, id: &str) -> Result<(), rusqlite::Error> {
     Ok(())
 }
 
+/// 搜索 items（跨集合，按 name/url 模糊匹配，带集合名称）
+pub fn search(
+    conn: &Connection,
+    keyword: &str,
+    limit: u32,
+) -> Result<Vec<(CollectionItem, String)>, rusqlite::Error> {
+    let like = format!("%{}%", keyword.to_lowercase());
+    let sql = format!(
+        "SELECT {ITEM_COLS}, c.name as col_name FROM collection_items ci \
+         JOIN collections c ON ci.collection_id = c.id \
+         WHERE LOWER(ci.name) LIKE ?1 OR LOWER(ci.url) LIKE ?2 \
+         LIMIT ?3"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(params![like, like, limit], |row| {
+        let item = item_from_row(row)?;
+        let col_name: String = row.get(19)?;
+        Ok((item, col_name))
+    })?;
+    rows.collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

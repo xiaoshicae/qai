@@ -5,8 +5,10 @@ use tauri::{AppHandle, Emitter, State};
 use tokio::sync::Semaphore;
 
 use crate::db::init::{DbState, HttpClient};
+use crate::errors::AppError;
 use crate::models::execution::ChainResult;
 use crate::runner::batch::{self, BatchResult};
+use crate::runner::orchestrator::{self, ExecUnit};
 
 /// 运行器状态，管理每次运行的取消令牌
 /// 每次运行使用独立的取消令牌，避免多个运行互相干扰
@@ -55,7 +57,7 @@ impl RunnerState {
 }
 
 #[tauri::command]
-pub async fn cancel_run(runner: State<'_, RunnerState>) -> Result<(), String> {
+pub async fn cancel_run(runner: State<'_, RunnerState>) -> Result<(), AppError> {
     runner.cancel_current();
     Ok(())
 }
@@ -72,11 +74,9 @@ pub async fn run_collection(
     concurrency: Option<usize>,
     exclude_ids: Option<Vec<String>>,
     dry_run: Option<bool>,
-) -> Result<BatchResult, String> {
+) -> Result<BatchResult, AppError> {
     let dry_run = dry_run.unwrap_or(false);
-    // 获取本次运行的取消令牌（会取消之前正在运行的任务）
     let cancel_token = runner.start_run();
-    // 使用 inner 函数确保 end_run() 在所有退出路径都被调用
     let result = run_collection_inner(
         &app,
         &db,
@@ -93,33 +93,6 @@ pub async fn run_collection(
     result
 }
 
-/// 执行单元：保持表格顺序，chain 和普通请求统一编排
-#[allow(clippy::large_enum_variant)]
-enum ExecUnit {
-    Single(
-        crate::models::item::CollectionItem,
-        Vec<crate::models::assertion::Assertion>,
-    ),
-    Chain {
-        chain_id: String,
-        name: String,
-        steps: Vec<(
-            crate::models::item::CollectionItem,
-            Vec<crate::models::assertion::Assertion>,
-        )>,
-    },
-}
-
-impl ExecUnit {
-    /// 该执行单元包含的请求数（chain 计子步骤数）
-    fn request_count(&self) -> u32 {
-        match self {
-            ExecUnit::Single(..) => 1,
-            ExecUnit::Chain { steps, .. } => steps.len() as u32,
-        }
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 async fn run_collection_inner(
     app: &AppHandle,
@@ -131,135 +104,14 @@ async fn run_collection_inner(
     concurrency: Option<usize>,
     exclude_ids: Option<Vec<String>>,
     dry_run: bool,
-) -> Result<BatchResult, String> {
+) -> Result<BatchResult, AppError> {
     let excluded: std::collections::HashSet<String> =
         exclude_ids.unwrap_or_default().into_iter().collect();
 
-    // ── 1. 按表格顺序构建有序执行单元列表 ──
+    // ── 1. 通过 orchestrator 构建有序执行单元 ──
     let (ordered, var_map) = {
         let conn = db.conn()?;
-
-        let mut all_items = if let Some(ref pid) = parent_id {
-            crate::db::item::list_by_parent(&conn, pid).map_err(|e| e.to_string())?
-        } else {
-            crate::db::item::list_by_collection(&conn, collection_id).map_err(|e| e.to_string())?
-        };
-        if !excluded.is_empty() {
-            all_items.retain(|item| {
-                !excluded.contains(&item.id)
-                    && !item
-                        .parent_id
-                        .as_ref()
-                        .is_some_and(|pid| excluded.contains(pid))
-            });
-        }
-
-        let var_map = crate::db::environment::get_active_var_map(&conn);
-
-        // 识别 chain 容器
-        let chain_item_ids: std::collections::HashSet<String> = all_items
-            .iter()
-            .filter(|i| i.item_type == crate::models::ItemType::Chain.as_str())
-            .map(|i| i.id.clone())
-            .collect();
-
-        // 收集所有 request items 用于批量加载断言
-        let mut all_request_items: Vec<&crate::models::item::CollectionItem> = all_items
-            .iter()
-            .filter(|i| i.item_type == crate::models::ItemType::Request.as_str())
-            .collect();
-
-        // chain 子项可能不在 all_items 中（嵌套加载）
-        let mut extra_children = Vec::new();
-        for chain_id in &chain_item_ids {
-            let has_child = all_items
-                .iter()
-                .any(|i| i.parent_id.as_deref() == Some(chain_id));
-            if !has_child {
-                let children =
-                    crate::db::item::list_by_parent(&conn, chain_id).map_err(|e| e.to_string())?;
-                extra_children.extend(children);
-            }
-        }
-        all_request_items.extend(
-            extra_children
-                .iter()
-                .filter(|i| i.item_type == crate::models::ItemType::Request.as_str()),
-        );
-
-        // 批量查询断言（消除 N+1）
-        let request_ids: Vec<String> = all_request_items.iter().map(|i| i.id.clone()).collect();
-        let mut assertions_map =
-            crate::db::assertion::list_by_items(&conn, &request_ids).map_err(|e| e.to_string())?;
-
-        // 先构建 chain → steps 映射
-        let mut chain_steps: std::collections::HashMap<
-            String,
-            Vec<(
-                crate::models::item::CollectionItem,
-                Vec<crate::models::assertion::Assertion>,
-            )>,
-        > = std::collections::HashMap::new();
-
-        for item in &all_items {
-            if item.item_type != crate::models::ItemType::Request.as_str() || item.url.is_empty() {
-                continue;
-            }
-            if let Some(ref pid) = item.parent_id {
-                if chain_item_ids.contains(pid) {
-                    let assertions = assertions_map.remove(&item.id).unwrap_or_default();
-                    chain_steps
-                        .entry(pid.clone())
-                        .or_default()
-                        .push((item.clone(), assertions));
-                }
-            }
-        }
-        for child in &extra_children {
-            if child.item_type == crate::models::ItemType::Request.as_str() && !child.url.is_empty()
-            {
-                let assertions = assertions_map.remove(&child.id).unwrap_or_default();
-                if let Some(ref pid) = child.parent_id {
-                    chain_steps
-                        .entry(pid.clone())
-                        .or_default()
-                        .push((child.clone(), assertions));
-                }
-            }
-        }
-
-        // 按 sort_order 遍历 all_items，构建有序执行单元
-        let mut units: Vec<ExecUnit> = Vec::new();
-        for item in &all_items {
-            if item.item_type == crate::models::ItemType::Chain.as_str() {
-                if let Some(steps) = chain_steps.remove(&item.id) {
-                    if !steps.is_empty() {
-                        units.push(ExecUnit::Chain {
-                            chain_id: item.id.clone(),
-                            name: item.name.clone(),
-                            steps,
-                        });
-                    }
-                }
-            } else if item.item_type == crate::models::ItemType::Request.as_str() {
-                // 跳过 chain 子请求和空 URL
-                if item
-                    .parent_id
-                    .as_ref()
-                    .is_some_and(|pid| chain_item_ids.contains(pid))
-                {
-                    continue;
-                }
-                if item.url.is_empty() {
-                    continue;
-                }
-                let assertions = assertions_map.remove(&item.id).unwrap_or_default();
-                let item = crate::http::vars::apply_vars(item, &var_map);
-                units.push(ExecUnit::Single(item, assertions));
-            }
-        }
-
-        (units, var_map)
+        orchestrator::build_exec_units(&conn, collection_id, parent_id.as_deref(), &excluded)?
     };
 
     let overall_total: u32 = ordered.iter().map(|u| u.request_count()).sum();
@@ -269,24 +121,9 @@ async fn run_collection_inner(
         ordered.len(),
         overall_total
     );
-    for unit in &ordered {
-        if let ExecUnit::Chain {
-            chain_id,
-            name,
-            steps,
-        } = unit
-        {
-            log::info!(
-                "[run_collection] chain '{}' ({}) has {} steps",
-                name,
-                chain_id,
-                steps.len()
-            );
-        }
-    }
 
     if overall_total == 0 {
-        return Err("没有可执行的请求".to_string());
+        return Err("没有可执行的请求".into());
     }
 
     // ── 2. 按序入队、并发执行 ──
@@ -304,12 +141,11 @@ async fn run_collection_inner(
             break;
         }
 
-        // 按序获取 permit —— 确保从上往下依次启动
         let permit = semaphore
             .clone()
             .acquire_owned()
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| AppError::Generic(e.to_string()))?;
 
         match unit {
             ExecUnit::Single(item, assertions) => {
@@ -463,8 +299,9 @@ async fn run_collection_inner(
     // ── 3. 收集结果 ──
     let mut all_results = Vec::new();
     for handle in handles {
-        if let Ok(results) = handle.await {
-            all_results.extend(results);
+        match handle.await {
+            Ok(results) => all_results.extend(results),
+            Err(e) => log::warn!("任务执行异常: {e}"),
         }
     }
 
@@ -492,19 +329,13 @@ async fn run_collection_inner(
         results: all_results,
     };
 
-    // 发射请求日志 + 保存执行记录（dry-run 跳过持久化）
+    // 保存执行记录（dry-run 跳过）
     if !dry_run {
         let conn = db.conn()?;
         for result in &batch_result.results {
             crate::http::emit_request_log(app, result);
-            if let Ok(item) = crate::db::item::get(&conn, &result.item_id) {
-                let mut exec = crate::http::client::to_execution(&item, result);
-                exec.batch_id = Some(batch_id.clone());
-                if let Err(e) = crate::db::execution::save(&conn, &exec) {
-                    log::warn!("保存执行记录失败 [{}]: {e}", result.item_id);
-                }
-            }
         }
+        orchestrator::save_results(&conn, &batch_result.results, &batch_id)?;
     }
 
     Ok(batch_result)
@@ -517,41 +348,19 @@ pub async fn run_chain(
     http: State<'_, HttpClient>,
     item_id: String,
     dry_run: Option<bool>,
-) -> Result<ChainResult, String> {
+) -> Result<ChainResult, AppError> {
     let dry_run = dry_run.unwrap_or(false);
     let (steps, base_vars, item_name) = {
         let conn = db.conn()?;
-
-        let chain_item = crate::db::item::get(&conn, &item_id).map_err(|e| e.to_string())?;
+        let chain_item = crate::db::item::get(&conn, &item_id)?;
         if chain_item.item_type != crate::models::ItemType::Chain.as_str() {
-            return Err("该节点不是请求链".to_string());
+            return Err("该节点不是请求链".into());
         }
-
-        let children =
-            crate::db::item::list_by_parent(&conn, &item_id).map_err(|e| e.to_string())?;
-
-        let var_map = crate::db::environment::get_active_var_map(&conn);
-
-        let request_children: Vec<_> = children
-            .iter()
-            .filter(|c| c.item_type == crate::models::ItemType::Request.as_str())
-            .collect();
-        let child_ids: Vec<String> = request_children.iter().map(|c| c.id.clone()).collect();
-        let mut assertions_map =
-            crate::db::assertion::list_by_items(&conn, &child_ids).map_err(|e| e.to_string())?;
-        let steps: Vec<_> = request_children
-            .into_iter()
-            .map(|child| {
-                let assertions = assertions_map.remove(&child.id).unwrap_or_default();
-                (child.clone(), assertions)
-            })
-            .collect();
-
-        (steps, var_map, chain_item.name)
+        orchestrator::build_chain_steps(&conn, &item_id)?
     };
 
     if steps.is_empty() {
-        return Err("请求链中没有请求".to_string());
+        return Err("请求链中没有请求".into());
     }
 
     let app_clone = app.clone();
@@ -573,27 +382,27 @@ pub async fn run_chain(
     )
     .await;
 
-    // 发射请求日志 + 保存每步执行记录（dry-run 跳过持久化）
+    // 保存执行记录（dry-run 跳过）
     if !dry_run {
         let conn = db.conn()?;
-        for step in &chain_result.steps {
-            let result = &step.execution_result;
+        let results: Vec<_> = chain_result
+            .steps
+            .iter()
+            .map(|s| &s.execution_result)
+            .collect();
+        for result in &results {
             crate::http::emit_request_log(&app, result);
-            if let Ok(item) = crate::db::item::get(&conn, &result.item_id) {
-                let mut exec = crate::http::client::to_execution(&item, result);
-                exec.batch_id = Some(chain_result.chain_id.clone());
-                if let Err(e) = crate::db::execution::save(&conn, &exec) {
-                    log::warn!("保存执行记录失败 [{}]: {e}", result.item_id);
-                }
-            }
         }
+        // save_results 需要 slice，收集引用转为 owned
+        let owned: Vec<_> = results.into_iter().cloned().collect();
+        orchestrator::save_results(&conn, &owned, &chain_result.chain_id)?;
     }
 
     Ok(chain_result)
 }
 
 #[tauri::command]
-pub fn export_report_html(batch_result: BatchResult) -> Result<String, String> {
+pub fn export_report_html(batch_result: BatchResult) -> Result<String, AppError> {
     Ok(crate::report::html::generate_html_report(&batch_result))
 }
 
@@ -601,10 +410,12 @@ pub fn export_report_html(batch_result: BatchResult) -> Result<String, String> {
 pub fn list_history(
     db: State<'_, DbState>,
     limit: Option<u32>,
-) -> Result<Vec<crate::db::execution::HistoryEntry>, String> {
+) -> Result<Vec<crate::db::execution::HistoryEntry>, AppError> {
     let conn = db.conn()?;
-    crate::db::execution::list_recent(&conn, limit.unwrap_or(crate::DEFAULT_HISTORY_LIMIT))
-        .map_err(|e| e.to_string())
+    Ok(crate::db::execution::list_recent(
+        &conn,
+        limit.unwrap_or(crate::DEFAULT_HISTORY_LIMIT),
+    )?)
 }
 
 #[tauri::command]
@@ -615,35 +426,36 @@ pub fn list_history_filtered(
     keyword: Option<String>,
     limit: Option<u32>,
     offset: Option<u32>,
-) -> Result<Vec<crate::db::execution::HistoryEntry>, String> {
+) -> Result<Vec<crate::db::execution::HistoryEntry>, AppError> {
     let conn = db.conn()?;
-    crate::db::execution::list_filtered(
+    Ok(crate::db::execution::list_filtered(
         &conn,
         status.as_deref(),
         method.as_deref(),
         keyword.as_deref(),
         limit.unwrap_or(crate::DEFAULT_HISTORY_LIMIT),
         offset.unwrap_or(0),
-    )
-    .map_err(|e| e.to_string())
+    )?)
 }
 
 #[tauri::command]
-pub fn history_stats(db: State<'_, DbState>) -> Result<crate::db::execution::HistoryStats, String> {
+pub fn history_stats(
+    db: State<'_, DbState>,
+) -> Result<crate::db::execution::HistoryStats, AppError> {
     let conn = db.conn()?;
-    crate::db::execution::get_stats(&conn).map_err(|e| e.to_string())
+    Ok(crate::db::execution::get_stats(&conn)?)
 }
 
 #[tauri::command]
-pub fn delete_history(db: State<'_, DbState>, id: String) -> Result<(), String> {
+pub fn delete_history(db: State<'_, DbState>, id: String) -> Result<(), AppError> {
     let conn = db.conn()?;
-    crate::db::execution::delete_one(&conn, &id).map_err(|e| e.to_string())
+    Ok(crate::db::execution::delete_one(&conn, &id)?)
 }
 
 #[tauri::command]
-pub fn clear_history(db: State<'_, DbState>) -> Result<u64, String> {
+pub fn clear_history(db: State<'_, DbState>) -> Result<u64, AppError> {
     let conn = db.conn()?;
-    crate::db::execution::clear_all(&conn).map_err(|e| e.to_string())
+    Ok(crate::db::execution::clear_all(&conn)?)
 }
 
 #[tauri::command]
@@ -651,22 +463,23 @@ pub fn list_item_runs(
     db: State<'_, DbState>,
     item_id: String,
     limit: Option<u32>,
-) -> Result<Vec<crate::db::execution::RunRecord>, String> {
+) -> Result<Vec<crate::db::execution::RunRecord>, AppError> {
     let conn = db.conn()?;
-    crate::db::execution::list_by_item(
+    Ok(crate::db::execution::list_by_item(
         &conn,
         &item_id,
         limit.unwrap_or(crate::DEFAULT_ITEM_RUNS_LIMIT),
-    )
-    .map_err(|e| e.to_string())
+    )?)
 }
 
 #[tauri::command]
 pub fn get_collection_status(
     db: State<'_, DbState>,
     collection_id: String,
-) -> Result<Vec<crate::db::execution::ItemLastStatus>, String> {
+) -> Result<Vec<crate::db::execution::ItemLastStatus>, AppError> {
     let conn = db.conn()?;
-    crate::db::execution::get_last_status_for_collection(&conn, &collection_id)
-        .map_err(|e| e.to_string())
+    Ok(crate::db::execution::get_last_status_for_collection(
+        &conn,
+        &collection_id,
+    )?)
 }

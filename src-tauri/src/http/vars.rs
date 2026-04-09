@@ -8,7 +8,8 @@ use crate::runner::assertion::json_path::{extract_json_path, value_to_string};
 
 fn var_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"\{\{(\w+)\}\}").unwrap())
+    // 支持字母数字下划线、连字符、点号的变量名（如 api-host、base.url）
+    RE.get_or_init(|| Regex::new(r"\{\{([\w.\-]+)\}\}").unwrap())
 }
 
 pub fn build_var_map(variables: &[EnvVariable]) -> HashMap<String, String> {

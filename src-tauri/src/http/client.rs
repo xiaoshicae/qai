@@ -107,7 +107,7 @@ pub async fn execute_smart(
     let (body, size_bytes) = if should_stream {
         // 流式读取
         use futures_util::StreamExt;
-        let on_chunk = on_chunk.unwrap();
+        let on_chunk = on_chunk.ok_or_else(|| anyhow::anyhow!("stream callback missing"))?;
         let mut stream = resp.bytes_stream();
         let mut full_body = String::new();
         let mut chunk_index: u32 = 0;

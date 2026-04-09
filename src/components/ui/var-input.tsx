@@ -5,11 +5,13 @@ interface VarInputProps {
   value: string
   onChange: (value: string) => void
   onBlur?: () => void
+  onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void
   placeholder?: string
   className?: string
   envVars?: Record<string, string>
   /** 是否在链式请求中（未解析变量显示为链式变量样式） */
   isChainStep?: boolean
+  [key: `data-${string}`]: string
 }
 
 const MONO = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
@@ -19,7 +21,7 @@ const MONO = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
  * 未聚焦：显示 VarHighlight（带 hover tooltip）
  * 聚焦：显示透明文字 input + 高亮 overlay
  */
-export function VarInput({ value, onChange, onBlur, placeholder, className = '', envVars = {} }: VarInputProps) {
+export function VarInput({ value, onChange, onBlur, onKeyDown, placeholder, className = '', envVars = {}, ...rest }: VarInputProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const mirrorRef = useRef<HTMLDivElement>(null)
   const [focused, setFocused] = useState(false)
@@ -90,12 +92,14 @@ export function VarInput({ value, onChange, onBlur, placeholder, className = '',
           onBlur={handleBlur}
           onScroll={syncScroll}
           onKeyUp={syncScroll}
+          onKeyDown={onKeyDown}
           onClick={syncScroll}
           placeholder={placeholder}
           className={`w-full h-8 rounded-lg border border-overlay/[0.08] bg-transparent px-3 text-sm outline-none transition-colors focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/20 ${
             hasVars ? 'text-transparent caret-foreground selection:bg-primary/20' : ''
           } ${className}`}
           style={{ fontFamily: MONO }}
+          {...rest}
         />
       </div>
     </div>

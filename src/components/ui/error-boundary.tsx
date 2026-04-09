@@ -1,6 +1,9 @@
 import { Component, type ReactNode } from 'react'
 import { AlertTriangle, RefreshCw } from 'lucide-react'
 import { Button } from './button'
+import i18n from '@/i18n'
+
+const t = (key: string) => i18n.t(key)
 
 interface ErrorBoundaryProps {
   children: ReactNode
@@ -43,10 +46,10 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               <AlertTriangle className="h-6 w-6 text-destructive" />
             </div>
             <h2 className="text-sm font-semibold text-foreground mb-2">
-              出错了
+              {t('error.title')}
             </h2>
             <p className="text-xs text-muted-foreground mb-4 leading-relaxed">
-              应用遇到了一个错误。请尝试刷新页面，如果问题持续存在，请联系支持。
+              {t('error.description')}
             </p>
             {this.state.error && (
               <pre className="text-[10px] text-muted-foreground/60 bg-overlay/[0.04] rounded-lg p-3 mb-4 max-w-full overflow-x-auto">
@@ -55,7 +58,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             )}
             <Button size="sm" onClick={this.handleRetry} className="gap-1.5">
               <RefreshCw className="h-3.5 w-3.5" />
-              重试
+              {t('error.retry')}
             </Button>
           </div>
         </div>
@@ -75,10 +78,10 @@ export function GlobalErrorPage({ error, onRetry }: { error?: Error; onRetry?: (
           <AlertTriangle className="h-8 w-8 text-destructive" />
         </div>
         <h1 className="text-lg font-semibold text-foreground mb-2">
-          应用发生错误
+          {t('error.page_title')}
         </h1>
         <p className="text-sm text-muted-foreground mb-5 leading-relaxed">
-          应用遇到了一个意外错误。请刷新页面或重启应用。
+          {t('error.page_description')}
         </p>
         {error && (
           <pre className="text-xs text-muted-foreground/60 bg-overlay/[0.04] rounded-xl p-4 mb-5 max-w-full overflow-x-auto">
@@ -87,12 +90,12 @@ export function GlobalErrorPage({ error, onRetry }: { error?: Error; onRetry?: (
         )}
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
-            刷新页面
+            {t('error.refresh')}
           </Button>
           {onRetry && (
             <Button size="sm" onClick={onRetry} className="gap-1.5">
               <RefreshCw className="h-3.5 w-3.5" />
-              重试
+              {t('error.retry')}
             </Button>
           )}
         </div>

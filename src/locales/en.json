@@ -14,11 +14,12 @@
     "failed": "{{count}} failed"
   },
   "sidebar": {
-    "search": "Search...",
+    "search": "Search...  ⌘K",
     "group_name_placeholder": "Group name",
     "import_postman_ok": "Imported {{name}} ({{n}} requests)",
     "new_group": "New Group",
     "no_suites": "No test suites",
+    "no_results": "No matching results",
     "no_suites_hint": "Click + to create a group",
     "history": "History",
     "environments": "Env",
@@ -104,7 +105,11 @@
     "cancel": "Cancel",
     "save": "Save",
     "create": "Create",
-    "debug_send": "Debug"
+    "debug_send": "Debug",
+    "double_click_add_desc": "Double-click to add description...",
+    "chain_name_label": "Chain Name",
+    "chain_name_placeholder": "e.g. Custom Voice TTS",
+    "chain_desc_placeholder": "Multi-step dependency: upload → generate"
   },
   "chain": {
     "chain_help": "After creation, expand the chain in the table and add steps via \"+ Add Step\". Steps pass data via Extract Rules, referenced as {{variable_name}} in subsequent steps.",
@@ -203,7 +208,10 @@
     "extract_hint": "Extract variables from response, reference as {{variable}} in subsequent requests",
     "active_env": "Environment",
     "shortcut_send": "⌘ / Ctrl + Enter to send",
-    "unresolved_vars": "Variables not defined in the active environment"
+    "unresolved_vars": "Variables not defined in the active environment",
+    "protocol_switch": "Switch Protocol",
+    "protocol_switch_warning": "Switching to WebSocket will change body type to JSON. Current form data will be lost. Continue?",
+    "unresolved_vars_confirm": "URL contains unresolved variables: {{vars}}. Send anyway?"
   },
   "env": {
     "new_env": "New Environment",
@@ -234,7 +242,8 @@
     "send": "Send",
     "paste_hint": "Paste a curl command to auto-fill",
     "paste_curl": "Paste curl command",
-    "reimport_curl": "Re-import curl"
+    "reimport_curl": "Re-import curl",
+    "clear_result": "Clear Result"
   },
   "runner": {
     "run_chain": "Run Chain"
@@ -334,6 +343,14 @@
     "show_more": "Show more ({{size}})",
     "show_less": "Show less",
     "clear": "Clear"
+  },
+  "error": {
+    "title": "Something went wrong",
+    "description": "The application encountered an error. Please try again. If the problem persists, contact support.",
+    "retry": "Retry",
+    "page_title": "Application Error",
+    "page_description": "The application encountered an unexpected error. Please refresh the page or restart the app.",
+    "refresh": "Refresh Page"
   },
   "shortcuts": {
     "title": "Keyboard Shortcuts",

@@ -19,7 +19,8 @@ import { HistoryRow } from './history-row'
 const PAGE_SIZE = 50
 
 const STATUS_FILTERS = ['all', 'success', 'failed', 'error'] as const
-const METHOD_OPTIONS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD']
+import { HTTP_METHODS } from '@/lib/constants'
+const METHOD_OPTIONS = [...HTTP_METHODS]
 
 export default function HistoryView() {
   const { t, i18n } = useTranslation()
@@ -251,7 +252,7 @@ export default function HistoryView() {
           <EmptyState icon={Clock} title={t('history.empty')} description={t('history.empty_hint')} />
         )
       ) : (
-        <div className="space-y-1">
+        <div className="space-y-2">
           {entries.map((entry) => (
             <HistoryRow
               key={entry.id}

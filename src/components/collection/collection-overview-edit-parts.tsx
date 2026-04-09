@@ -16,8 +16,11 @@ import { WsStepsEditor } from '@/components/request/ws-steps-editor'
 import { MiniResponseViewer } from '@/components/request/mini-response-viewer'
 import AssertionEditor from '@/components/assertion/assertion-editor'
 import { invokeErrorMessage } from '@/lib/invoke-error'
+import { METHOD_COLORS } from '@/lib/styles'
 
 type EditFormTab = 'body' | 'headers' | 'assertions' | 'extract' | 'poll'
+
+import { METHOD_OPTIONS, EXTRACT_SOURCE_OPTIONS } from '@/lib/constants'
 
 export function StatCard({ label, value, color }: { label: string; value: number; color?: string }) {
   return (
@@ -83,11 +86,7 @@ function ExtractRulesEditor({ value, onChange }: {
       {value.map((rule, i) => (
         <div key={i} className="flex items-center gap-2">
           <Input value={rule.var_name} onChange={(e) => updateRule(i, 'var_name', e.target.value)} className="h-7 text-xs flex-1" placeholder={t('edit.var_name_placeholder')} />
-          <Select value={rule.source} onChange={(v) => updateRule(i, 'source', v)} options={[
-            { value: 'json_body', label: 'JSON Body' },
-            { value: 'header', label: 'Header' },
-            { value: 'status_code', label: 'Status Code' },
-          ]} className="w-32" />
+          <Select value={rule.source} onChange={(v) => updateRule(i, 'source', v)} options={EXTRACT_SOURCE_OPTIONS} className="w-32" />
           <Input value={rule.expression} onChange={(e) => updateRule(i, 'expression', e.target.value)} className="h-7 text-xs flex-1" placeholder={t('edit.expression_placeholder')} />
           <button type="button" onClick={() => removeRule(i)} className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-destructive/10 cursor-pointer transition-colors shrink-0">
             <Trash2 className="h-3 w-3 text-destructive" />
@@ -322,6 +321,20 @@ export function EditForm({ req, onChange, onSave, onEnsureSaved, onCancel, envVa
     }
   }
 
+  // ⌘+Enter 发送调试请求
+  const runDebugRef = useRef(runDebug)
+  runDebugRef.current = runDebug
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault()
+        runDebugRef.current()
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [])
+
   const tabDefs: { key: EditFormTab; label: string; count?: number }[] = [
     { key: 'body', label: t('edit.body') },
     { key: 'headers', label: 'Headers', count: headers.filter((h) => h.key).length },
@@ -336,7 +349,7 @@ export function EditForm({ req, onChange, onSave, onEnsureSaved, onCancel, envVa
       <div className="grid grid-cols-2 gap-3 shrink-0">
         <div>
           <label className="text-xs text-muted-foreground mb-1 block">{t('edit.name')}</label>
-          <Input value={req.name} onChange={(e) => set('name', e.target.value)} className="h-8 text-sm" error={nameError} />
+          <Input value={req.name} onChange={(e) => set('name', e.target.value)} onBlur={() => setTouched(true)} className="h-8 text-sm" error={nameError} />
         </div>
         <div>
           <label className="text-xs text-muted-foreground mb-1 block">{t('edit.desc')}</label>
@@ -345,7 +358,7 @@ export function EditForm({ req, onChange, onSave, onEnsureSaved, onCancel, envVa
       </div>
 
       <div className="flex gap-2 items-center">
-        <Select value={req.method} onChange={(v) => set('method', v)} options={['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD'].map((m) => ({ value: m, label: m }))} className="w-28" />
+        <Select value={req.method} onChange={(v) => set('method', v)} options={METHOD_OPTIONS} className={`w-28 ${METHOD_COLORS[req.method] ?? ''}`} />
         <VarInput value={req.url} onChange={(v) => set('url', v)} placeholder={t('edit.url_placeholder')} envVars={envVars} />
         <div className="flex gap-1 shrink-0">
           <button

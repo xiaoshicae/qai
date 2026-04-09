@@ -4,15 +4,7 @@ import { ScrollText, Trash2, X, ChevronDown, ChevronRight } from 'lucide-react'
 import { EmptyState } from '@/components/ui/empty-state'
 import { formatDuration, formatSize } from '@/lib/formatters'
 import { useConsoleStore, type RequestLog } from '@/stores/console-store'
-
-const METHOD_COLORS: Record<string, string> = {
-  GET: 'text-method-get',
-  POST: 'text-method-post',
-  PUT: 'text-method-put',
-  DELETE: 'text-method-delete',
-  PATCH: 'text-method-patch',
-  HEAD: 'text-method-head',
-}
+import { METHOD_COLORS } from '@/lib/styles'
 
 function statusColor(status: number | null): string {
   if (!status) return 'text-destructive'

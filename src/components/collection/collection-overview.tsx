@@ -51,7 +51,7 @@ interface Props {
 export default function CollectionOverview({ collection, tree }: Props) {
   const { t } = useTranslation()
   const confirm = useConfirmStore((s) => s.confirm)
-  const { loadTree, loadCollections, selectedNodeId, selectNode } = useCollectionStore()
+  const { loadTree, loadCollections, selectedNodeId, selectNode, updateItem, deleteItem, duplicateItem, reorderItems, createItem: storeCreateItem } = useCollectionStore()
   const { envVars } = useEnvVars()
 
   const tableItems = useMemo(() => flattenTreeToTableItems(tree), [tree])
@@ -103,12 +103,8 @@ export default function CollectionOverview({ collection, tree }: Props) {
       sort_order: i,
     }))
 
-    try {
-      await invoke('reorder_items', { items: orders })
-      await loadTree(collection.id)
-    } catch (e) {
-      toast.error(invokeErrorMessage(e))
-    }
+    await reorderItems(orders)
+    await loadTree(collection.id)
   }, [tableItems, sortableIds, collection.id, loadTree])
 
   const loadAssertionCounts = useCallback(async () => {
@@ -199,10 +195,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
     if (!editingChainId) return
     const trimmed = editingChainName.trim()
     if (trimmed) {
-      try {
-        await invoke('update_item', { id: editingChainId, payload: { name: trimmed } })
-        await loadTree(collection.id)
-      } catch (e) { toast.error(invokeErrorMessage(e)) }
+      await updateItem(editingChainId, collection.id, { name: trimmed })
     }
     setEditingChainId(null)
   }
@@ -212,11 +205,10 @@ export default function CollectionOverview({ collection, tree }: Props) {
     if (!chainName.trim() || savingChain) return
     setSavingChain(true)
     try {
-      await invoke('create_item', { collectionId: collection.id, parentId: null, itemType: 'chain', name: chainName.trim(), method: 'GET' })
-      await loadTree(collection.id)
+      await storeCreateItem(collection.id, null, chainName.trim(), 'GET', 'chain')
       setShowChainDialog(false)
       resetResults()
-    } catch (e) { toast.error(invokeErrorMessage(e)) }
+    } catch { /* store 内部已处理 */ }
     finally { setSavingChain(false) }
   }
 
@@ -258,27 +250,22 @@ export default function CollectionOverview({ collection, tree }: Props) {
     e.stopPropagation()
     const ok = await confirm(t('common.confirm_delete', { name }), { title: t('common.delete'), kind: 'warning' })
     if (!ok) return
-    await invoke('delete_item', { id })
-    await loadTree(collection.id)
+    await deleteItem(id, collection.id)
     setDetailData((prev) => { const n = { ...prev }; delete n[id]; return n })
     if (selectedNodeId === id) selectNode(null)
     resetResults()
   }
 
   const copyRequest = useCallback(async (id: string) => {
-    try {
-      await invoke('duplicate_item', { id })
-      await loadTree(collection.id)
-      resetResults()
-    } catch (e) { toast.error(invokeErrorMessage(e)) }
-  }, [collection.id, loadTree, resetResults])
+    await duplicateItem(id, collection.id)
+    resetResults()
+  }, [collection.id, duplicateItem, resetResults])
 
   const deleteRequest = async (id: string, name: string, e: React.MouseEvent) => {
     e.stopPropagation()
     const ok = await confirm(t('common.confirm_delete', { name }), { title: t('common.delete'), kind: 'warning' })
     if (!ok) return
-    await invoke('delete_item', { id })
-    await loadTree(collection.id)
+    await deleteItem(id, collection.id)
     setExpandedRows((prev) => { const n = new Set(prev); n.delete(id); return n })
     setDetailData((prev) => { const n = { ...prev }; delete n[id]; return n })
     if (selectedNodeId === id) selectNode(null)
@@ -375,6 +362,7 @@ export default function CollectionOverview({ collection, tree }: Props) {
         await invoke('update_item', { id: editReq.id, payload: buildPayload(editReq) })
       }
       await loadTree(collection.id)
+
       if (editReq) {
         setDetailData((prev) => { const n = { ...prev }; delete n[editReq.id]; return n })
         if (!isNewReq) {
@@ -424,10 +412,12 @@ export default function CollectionOverview({ collection, tree }: Props) {
         <h1 className="text-xl font-bold mb-1.5">{collection.name}</h1>
         <InlineEdit
           value={collection.description}
-          placeholder="双击添加描述..."
+          placeholder={t('edit.double_click_add_desc')}
           onSave={async (v) => {
-            await invoke('update_collection', { id: collection.id, description: v })
-            await loadCollections()
+            try {
+              await invoke('update_collection', { id: collection.id, description: v })
+              await loadCollections()
+            } catch (e) { toast.error(invokeErrorMessage(e)) }
           }}
         />
       </div>
@@ -652,12 +642,12 @@ export default function CollectionOverview({ collection, tree }: Props) {
           <DialogHeader><DialogTitle>{t('edit.new_chain')}</DialogTitle></DialogHeader>
           <div className="space-y-3 pt-2">
             <div>
-              <label className="text-xs text-muted-foreground mb-1 block">链名称</label>
-              <Input value={chainName} onChange={(e) => setChainName(e.target.value)} className="h-8 text-sm" placeholder="如：自定义音色 TTS" autoFocus onKeyDown={(e) => e.key === 'Enter' && saveChain()} />
+              <label className="text-xs text-muted-foreground mb-1 block">{t('edit.chain_name_label')}</label>
+              <Input value={chainName} onChange={(e) => setChainName(e.target.value)} className="h-8 text-sm" placeholder={t('edit.chain_name_placeholder')} autoFocus onKeyDown={(e) => e.key === 'Enter' && saveChain()} />
             </div>
             <div>
-              <label className="text-xs text-muted-foreground mb-1 block">描述</label>
-              <Input value={chainDesc} onChange={(e) => setChainDesc(e.target.value)} className="h-8 text-sm" placeholder="多步依赖：上传→生成" />
+              <label className="text-xs text-muted-foreground mb-1 block">{t('edit.desc')}</label>
+              <Input value={chainDesc} onChange={(e) => setChainDesc(e.target.value)} className="h-8 text-sm" placeholder={t('edit.chain_desc_placeholder')} />
             </div>
             <p className="text-[10px] text-muted-foreground/60 leading-relaxed">
               {t('chain.chain_help')}

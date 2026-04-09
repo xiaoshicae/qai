@@ -18,7 +18,7 @@ export function JsonEditor({ value, onChange, className, placeholder }: Props) {
   const jsonError = useMemo(() => {
     if (!value.trim()) return null
     try { JSON.parse(value); return null }
-    catch (e: any) { return e.message as string }
+    catch (e: unknown) { return e instanceof Error ? e.message : String(e) }
   }, [value])
 
   const handleScroll = useCallback(() => {

@@ -80,3 +80,13 @@ wc -l src/**/*.tsx src/**/*.ts 2>/dev/null | sort -rn | head -20
 /refactor extract src-tauri/src/runner/evaluator.rs  # 拆分大文件
 /refactor deps src/                         # 分析前端依赖关系
 ```
+
+## 经验沉淀
+
+重构完成后，回顾本次发现的问题模式，判断是否有**可泛化的规律性教训**应写入 `.claude/rules/`：
+
+- 对照 `architecture.md`、`rust-patterns.md`、`react-patterns.md` 现有规则
+- 如果某类代码坏味道反复出现但 rules 中未覆盖 → 新增规则条目
+- 如果某条现有规则表述不够具体导致遗漏 → 补充细化
+- 输出一张"现有 rules 覆盖 vs 缺失"对照表，标注需要新增/强化的条目
+- 确认后更新对应 rules 文件

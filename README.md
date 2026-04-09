@@ -20,7 +20,7 @@ The Postman alternative with a brain. QAI analyzes your code and docs to automat
 
 ---
 
-<p align="center"><img src="doc/screenshot.png" width="960" alt="QAI Screenshot"></p>
+<p align="center"><img src="public/screenshot.png" width="960" alt="QAI Screenshot"></p>
 
 ## Why QAI?
 

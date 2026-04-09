@@ -2,30 +2,19 @@ import { useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { ChevronRight, ChevronDown, Folder, FolderOpen, Play, Plus, FolderPlus, Trash2, Pencil, MoreHorizontal, Link2 } from 'lucide-react'
-import { invoke } from '@tauri-apps/api/core'
-import { toast } from 'sonner'
-import { invokeErrorMessage } from '@/lib/invoke-error'
 import { cn } from '@/lib/utils'
 import type { Collection, CollectionTreeNode } from '@/types'
 import { useCollectionStore } from '@/stores/collection-store'
 import { useStatusStore } from '@/stores/status-store'
 import { Input } from '@/components/ui/input'
 import { ContextMenu, menuItemClass, menuDangerClass, menuDividerClass } from '@/components/ui/context-menu'
+import { METHOD_COLORS } from '@/lib/styles'
 
 interface CollectionTreeProps {
   collections: Collection[]
   trees: Record<string, CollectionTreeNode>
   selectedNodeId: string | null
   onSelect: (nodeId: string) => void
-}
-
-const METHOD_COLORS: Record<string, string> = {
-  GET: 'text-method-get',
-  POST: 'text-method-post',
-  PUT: 'text-method-put',
-  DELETE: 'text-method-delete',
-  PATCH: 'text-method-patch',
-  HEAD: 'text-method-head',
 }
 
 interface ContextMenu {
@@ -42,7 +31,7 @@ export default function CollectionTree({ collections, trees, selectedNodeId, onS
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  const { loadTree, createItem, createFolder, deleteCollection, renameCollection, selectNode } = useCollectionStore()
+  const { loadTree, createItem, createFolder, deleteCollection, renameCollection, selectNode, updateItem, deleteItem } = useCollectionStore()
   const loadForCollection = useStatusStore((s) => s.loadForCollection)
   const [menu, setMenu] = useState<ContextMenu | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
@@ -85,10 +74,9 @@ export default function CollectionTree({ collections, trees, selectedNodeId, onS
       if (type === 'collection') {
         await renameCollection(id, name)
       } else if (type === 'request' || type === 'folder') {
-        await invoke('update_item', { id, payload: { name } })
-        await loadTree(collectionId)
+        await updateItem(id, collectionId, { name })
       }
-    } catch (e) { toast.error(invokeErrorMessage(e)) }
+    } catch { /* store 内部已处理 */ }
   }
 
   const handleMenuAction = async (action: string) => {
@@ -129,11 +117,8 @@ export default function CollectionTree({ collections, trees, selectedNodeId, onS
         if (type === 'collection') {
           await deleteCollection(id)
         } else if (type === 'request' || type === 'folder') {
-          try {
-            await invoke('delete_item', { id })
-            await loadTree(collectionId)
-            if (selectedNodeId === id) selectNode(null)
-          } catch (e) { toast.error(invokeErrorMessage(e)) }
+          await deleteItem(id, collectionId)
+          if (selectedNodeId === id) selectNode(null)
         }
         break
     }

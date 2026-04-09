@@ -44,30 +44,22 @@ pub fn search(conn: &Connection, keyword: &str, scope: Option<&str>) -> Result<S
     }
 
     if scope == "all" || scope == "items" {
-        // 搜索所有集合的 items
-        let cols = qai_lib::db::collection::list_all(conn).map_err(|e| e.to_string())?;
-        let mut matched: Vec<Value> = Vec::new();
-        for col in &cols {
-            let items =
-                qai_lib::db::item::list_by_collection(conn, &col.id).map_err(|e| e.to_string())?;
-            for item in items {
-                if item.name.to_lowercase().contains(&kw) || item.url.to_lowercase().contains(&kw) {
-                    matched.push(json!({
-                        "id": item.id,
-                        "name": item.name,
-                        "item_type": item.item_type,
-                        "method": item.method,
-                        "url": item.url,
-                        "collection_id": item.collection_id,
-                        "collection_name": col.name,
-                        "type": "item"
-                    }));
-                }
-            }
-            if matched.len() >= 50 {
-                break;
-            }
-        }
+        let items = qai_lib::db::item::search(conn, &kw, 50).map_err(|e| e.to_string())?;
+        let matched: Vec<Value> = items
+            .into_iter()
+            .map(|(item, col_name)| {
+                json!({
+                    "id": item.id,
+                    "name": item.name,
+                    "item_type": item.item_type,
+                    "method": item.method,
+                    "url": item.url,
+                    "collection_id": item.collection_id,
+                    "collection_name": col_name,
+                    "type": "item"
+                })
+            })
+            .collect();
         if !matched.is_empty() {
             results["items"] = json!(matched);
         }
@@ -297,89 +289,37 @@ pub async fn run_collection(
     parent_id: Option<&str>,
     concurrency: Option<usize>,
 ) -> Result<String, String> {
-    use std::collections::{HashMap, HashSet};
+    use std::collections::HashSet;
 
-    let all_items = if let Some(pid) = parent_id {
-        qai_lib::db::item::list_by_parent(conn, pid).map_err(|e| e.to_string())?
-    } else {
-        qai_lib::db::item::list_by_collection(conn, collection_id).map_err(|e| e.to_string())?
-    };
+    let empty_excludes = HashSet::new();
+    let (units, var_map) = qai_lib::runner::orchestrator::build_exec_units(
+        conn,
+        collection_id,
+        parent_id,
+        &empty_excludes,
+    )
+    .map_err(|e| e.to_string())?;
 
-    let var_map = build_env_var_map(conn);
-
-    // 识别 chain 容器
-    let mut chain_names: HashMap<String, String> = HashMap::new();
-    let chain_ids: HashSet<String> = all_items
-        .iter()
-        .filter(|i| i.item_type == qai_lib::models::item_type::CHAIN)
-        .map(|i| {
-            chain_names.insert(i.id.clone(), i.name.clone());
-            i.id.clone()
-        })
-        .collect();
-
-    // 加载 chain 子请求
-    let mut extra_children = Vec::new();
-    for cid in &chain_ids {
-        if !all_items
-            .iter()
-            .any(|i| i.parent_id.as_deref() == Some(cid))
-        {
-            let children =
-                qai_lib::db::item::list_by_parent(conn, cid).map_err(|e| e.to_string())?;
-            extra_children.extend(children);
-        }
+    if units.is_empty() {
+        return Err("No executable requests found".into());
     }
-
-    // 批量加载断言
-    let mut all_request_refs: Vec<&qai_lib::models::item::CollectionItem> = all_items
-        .iter()
-        .filter(|i| i.item_type == qai_lib::models::item_type::REQUEST)
-        .collect();
-    all_request_refs.extend(
-        extra_children
-            .iter()
-            .filter(|i| i.item_type == qai_lib::models::item_type::REQUEST),
-    );
-    let req_ids: Vec<String> = all_request_refs.iter().map(|i| i.id.clone()).collect();
-    let mut assertions_map =
-        qai_lib::db::assertion::list_by_items(conn, &req_ids).map_err(|e| e.to_string())?;
 
     // 分类 chain vs normal
     let mut normal = Vec::new();
-    let mut chains: HashMap<String, Vec<_>> = HashMap::new();
-
-    for item in &all_items {
-        if item.item_type != qai_lib::models::item_type::REQUEST || item.url.is_empty() {
-            continue;
-        }
-        let assertions = assertions_map.remove(&item.id).unwrap_or_default();
-        if let Some(ref pid) = item.parent_id {
-            if chain_ids.contains(pid) {
-                chains
-                    .entry(pid.clone())
-                    .or_default()
-                    .push((item.clone(), assertions));
-                continue;
+    let mut chain_units = Vec::new();
+    for unit in units {
+        match unit {
+            qai_lib::runner::orchestrator::ExecUnit::Single(item, assertions) => {
+                normal.push((item, assertions));
+            }
+            qai_lib::runner::orchestrator::ExecUnit::Chain {
+                chain_id,
+                name,
+                steps,
+            } => {
+                chain_units.push((chain_id, name, steps));
             }
         }
-        normal.push((qai_lib::http::vars::apply_vars(item, &var_map), assertions));
-    }
-    for child in &extra_children {
-        if child.item_type != qai_lib::models::item_type::REQUEST || child.url.is_empty() {
-            continue;
-        }
-        let assertions = assertions_map.remove(&child.id).unwrap_or_default();
-        if let Some(ref pid) = child.parent_id {
-            chains
-                .entry(pid.clone())
-                .or_default()
-                .push((child.clone(), assertions));
-        }
-    }
-
-    if normal.is_empty() && chains.is_empty() {
-        return Err("No executable requests found".into());
     }
 
     let batch_id = uuid::Uuid::new_v4().to_string();
@@ -387,13 +327,12 @@ pub async fn run_collection(
     let start = std::time::Instant::now();
 
     // 执行 chains
-    for (chain_id, steps) in &chains {
-        let name = chain_names.get(chain_id).cloned().unwrap_or_default();
+    for (chain_id, name, steps) in chain_units {
         let cr = qai_lib::runner::chain::run_chain(
             client,
-            steps.clone(),
+            steps,
             var_map.clone(),
-            chain_id.clone(),
+            chain_id,
             name,
             None,
             |_| {},
@@ -436,14 +375,8 @@ pub async fn run_collection(
         .count();
 
     // 保存执行记录
-    for result in &all_results {
-        if let Ok(item) = qai_lib::db::item::get(conn, &result.item_id) {
-            let mut exec = qai_lib::http::client::to_execution(&item, result);
-            exec.batch_id = Some(batch_id.clone());
-            if let Err(e) = qai_lib::db::execution::save(conn, &exec) {
-                eprintln!("[qai-mcp] save execution failed: {e}");
-            }
-        }
+    if let Err(e) = qai_lib::runner::orchestrator::save_results(conn, &all_results, &batch_id) {
+        eprintln!("[qai-mcp] save execution failed: {e}");
     }
 
     // 返回精简摘要（不含大段 response body，避免 context 爆炸）

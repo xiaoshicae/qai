@@ -35,8 +35,8 @@ export default function AIGenerateDialog({ open, onOpenChange }: AIGenerateDialo
       })
       setResult(res.message)
       await loadTree(selectedId)
-    } catch (e: any) {
-      setError(typeof e === 'string' ? e : e.message ?? t('ai.generate_failed'))
+    } catch (e: unknown) {
+      setError(typeof e === 'string' ? e : (e instanceof Error ? e.message : t('ai.generate_failed')))
     } finally {
       setLoading(false)
     }
@@ -90,7 +90,7 @@ export default function AIGenerateDialog({ open, onOpenChange }: AIGenerateDialo
           </Button>
 
           {result && (
-            <div className="flex items-start gap-2 rounded-lg bg-emerald-500/10 p-3 text-sm text-emerald-500">
+            <div className="flex items-start gap-2 rounded-lg bg-success/10 p-3 text-sm text-success">
               <CheckCircle className="h-4 w-4 mt-0.5 shrink-0" />
               <p>{result}</p>
             </div>

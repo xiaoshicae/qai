@@ -1,6 +1,7 @@
 pub mod ai;
 mod commands;
 pub mod db;
+pub mod errors;
 pub mod http;
 mod import;
 pub mod models;

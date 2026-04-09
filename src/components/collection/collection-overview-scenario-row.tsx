@@ -489,7 +489,7 @@ export function ScenarioRow({ r, stepLabel, indent, envVars = {}, assertionCount
                     </div>
                     <div className="space-y-0.5 pl-6">
                       {displayAssertions.map((a, i) => (
-                        <div key={i} className="flex items-center gap-1.5 text-[11px]">
+                        <div key={`${i}-${a.message}`} className="flex items-center gap-1.5 text-[11px]">
                           {a.passed
                             ? <CheckCircle2 className="h-2.5 w-2.5 text-success/60 shrink-0" />
                             : <XCircle className="h-2.5 w-2.5 text-error/60 shrink-0" />}

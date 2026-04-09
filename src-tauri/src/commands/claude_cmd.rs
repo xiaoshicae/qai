@@ -4,8 +4,13 @@ use tauri::{AppHandle, Emitter, State};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
+use crate::errors::AppError;
+
+/// stderr 最大读取字节数（1MB），防止恶意输出耗尽内存
+const MAX_STDERR_BYTES: usize = 1024 * 1024;
+
 /// 验证 MCP 配置路径：必须是 .json 文件且位于合理目录
-fn validate_mcp_config(path: &str) -> Result<(), String> {
+fn validate_mcp_config(path: &str) -> Result<(), AppError> {
     let p = std::path::Path::new(path);
     if !p.extension().is_some_and(|e| e == "json") {
         return Err("MCP 配置文件必须是 .json 格式".into());
@@ -13,7 +18,7 @@ fn validate_mcp_config(path: &str) -> Result<(), String> {
     // canonicalize 确保路径存在且无符号链接绕过
     let canonical = p
         .canonicalize()
-        .map_err(|e| format!("MCP 配置路径无效: {e}"))?;
+        .map_err(|e| AppError::Generic(format!("MCP 配置路径无效: {e}")))?;
     let path_str = canonical.to_string_lossy();
     // 禁止指向系统敏感目录
     #[cfg(unix)]
@@ -43,6 +48,35 @@ fn kill_process(pid: u32) {
     }
 }
 
+/// 有限读取 stderr，超出 MAX_STDERR_BYTES 截断
+async fn read_stderr_limited(child: &mut tokio::process::Child) -> String {
+    let Some(stderr) = child.stderr.take() else {
+        return String::new();
+    };
+    let mut reader = BufReader::new(stderr);
+    let mut buf = Vec::with_capacity(4096);
+    let mut total = 0usize;
+
+    loop {
+        let bytes_read = match tokio::io::AsyncBufReadExt::fill_buf(&mut reader).await {
+            Ok(b) if b.is_empty() => break,
+            Ok(b) => {
+                let take = b.len().min(MAX_STDERR_BYTES - total);
+                buf.extend_from_slice(&b[..take]);
+                total += take;
+                b.len()
+            }
+            Err(_) => break,
+        };
+        reader.consume(bytes_read);
+        if total >= MAX_STDERR_BYTES {
+            break;
+        }
+    }
+
+    String::from_utf8_lossy(&buf).to_string()
+}
+
 /// Claude 会话内部状态
 /// 所有字段放在一个结构体中，由单个 Mutex 保护，避免竞态条件
 struct ClaudeInner {
@@ -68,10 +102,10 @@ impl ClaudeState {
     }
 
     /// 获取状态的可变引用
-    fn lock_inner(&self) -> Result<std::sync::MutexGuard<'_, ClaudeInner>, String> {
+    fn lock_inner(&self) -> Result<std::sync::MutexGuard<'_, ClaudeInner>, AppError> {
         self.0
             .lock()
-            .map_err(|_| "内部状态不可用（锁冲突）".to_string())
+            .map_err(|_| AppError::Generic("内部状态不可用（锁冲突）".into()))
     }
 }
 
@@ -83,9 +117,54 @@ pub struct ClaudeEvent {
     pub raw: Option<serde_json::Value>,
 }
 
+/// 构建带 MCP 参数的公共 args
+fn build_mcp_args(args: &mut Vec<String>, mcp_config_path: Option<&str>) -> Result<(), AppError> {
+    if let Some(config) = mcp_config_path {
+        validate_mcp_config(config)?;
+        args.push(format!("--mcp-config={config}"));
+        args.push("--allowedTools".into());
+        args.push("mcp__qai__*,Bash,Read,Write,Edit,Glob,Grep,Agent,ToolSearch".into());
+        args.push("--append-system-prompt".into());
+        args.push(
+            "You are running inside QAI, an API testing tool. \
+             When the user mentions tests, modules, collections, suites, or requests, \
+             they mean QAI's data — use the QAI MCP tools (search, run_collection, send_request, list_collections, etc.). \
+             NEVER use 'cargo test', 'npm test', 'jest', 'pytest', or any shell test command. \
+             Always resolve entity names via the 'search' MCP tool first."
+                .into(),
+        );
+    }
+    Ok(())
+}
+
+/// 配置 Claude 命令的环境变量
+fn configure_cmd_env(cmd: &mut Command) {
+    let path = std::env::var("PATH").unwrap_or_default();
+    let home = std::env::var("HOME").unwrap_or_default();
+    cmd.env(
+        "PATH",
+        format!("{home}/.local/bin:/opt/homebrew/bin:/usr/local/bin:{path}"),
+    );
+    if let Ok(home) = std::env::var("HOME") {
+        cmd.env("HOME", &home);
+        cmd.current_dir(&home);
+    }
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+}
+
+/// 等待进程退出并确保 PID 被清理
+async fn wait_and_clear_pid(child: &mut tokio::process::Child, state: &ClaudeState) {
+    let _ = child.wait().await;
+    if let Ok(mut inner) = state.lock_inner() {
+        inner.pid = None;
+    }
+}
+
 /// 查询 session 是否已建立（面板用来判断预热状态）
 #[tauri::command]
-pub fn claude_session_ready(claude_state: State<'_, ClaudeState>) -> Result<bool, String> {
+pub fn claude_session_ready(claude_state: State<'_, ClaudeState>) -> Result<bool, AppError> {
     Ok(claude_state.lock_inner()?.session_id.is_some())
 }
 
@@ -95,7 +174,7 @@ pub async fn claude_warmup(
     app: AppHandle,
     claude_state: State<'_, ClaudeState>,
     mcp_config_path: Option<String>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     // 已有 session，无需预热
     {
         let inner = claude_state.lock_inner()?;
@@ -116,40 +195,17 @@ pub async fn claude_warmup(
         "stream-json".into(),
         "--verbose".into(),
     ];
-    if let Some(ref config) = mcp_config_path {
-        validate_mcp_config(config)?;
-        args.push(format!("--mcp-config={config}"));
-        args.push("--allowedTools".into());
-        args.push("mcp__qai__*,Bash,Read,Write,Edit,Glob,Grep,Agent,ToolSearch".into());
-        args.push("--append-system-prompt".into());
-        args.push(
-            "You are running inside QAI, an API testing tool. \
-             When the user mentions tests, modules, collections, suites, or requests, \
-             they mean QAI's data — use the QAI MCP tools (search, run_collection, send_request, list_collections, etc.). \
-             NEVER use 'cargo test', 'npm test', 'jest', 'pytest', or any shell test command. \
-             Always resolve entity names via the 'search' MCP tool first.".into()
-        );
-    }
+    build_mcp_args(&mut args, mcp_config_path.as_deref())?;
     // 极简 prompt，只为建立 session
     args.push("Reply with only: ok".into());
 
     let mut cmd = Command::new(&claude_bin);
     cmd.args(&args);
-    let path = std::env::var("PATH").unwrap_or_default();
-    let home = std::env::var("HOME").unwrap_or_default();
-    cmd.env(
-        "PATH",
-        format!("{home}/.local/bin:/opt/homebrew/bin:/usr/local/bin:{path}"),
-    );
-    if let Ok(home) = std::env::var("HOME") {
-        cmd.env("HOME", &home);
-        cmd.current_dir(&home);
-    }
-    cmd.stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+    configure_cmd_env(&mut cmd);
 
-    let mut child = cmd.spawn().map_err(|e| format!("Warmup failed: {e}"))?;
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| AppError::Generic(format!("Warmup failed: {e}")))?;
     if let Some(pid) = child.id() {
         claude_state.lock_inner()?.pid = Some(pid);
     }
@@ -175,21 +231,12 @@ pub async fn claude_warmup(
         }
     }
 
-    if let Some(stderr) = child.stderr.take() {
-        let mut r = BufReader::new(stderr);
-        let mut buf = String::new();
-        tokio::io::AsyncReadExt::read_to_string(&mut r, &mut buf)
-            .await
-            .ok();
-        if !buf.trim().is_empty() {
-            log::warn!("[claude warmup stderr] {}", buf.trim());
-        }
+    let stderr_output = read_stderr_limited(&mut child).await;
+    if !stderr_output.trim().is_empty() {
+        log::warn!("[claude warmup stderr] {}", stderr_output.trim());
     }
 
-    let _ = child.wait().await;
-    if let Ok(mut inner) = claude_state.lock_inner() {
-        inner.pid = None;
-    }
+    wait_and_clear_pid(&mut child, &claude_state).await;
     // 通知前端预热完成
     let _ = app.emit("claude-warmup-done", ());
     Ok(())
@@ -202,16 +249,16 @@ pub async fn claude_send(
     message: String,
     mcp_config_path: Option<String>,
     session_id: Option<String>,
-) -> Result<serde_json::Value, String> {
-    // 如果有正在运行的进程（如 warmup），先杀掉
+) -> Result<serde_json::Value, AppError> {
+    // 如果有正在运行的进程（如 warmup），先杀掉并等待退出
     {
         let mut inner = claude_state.lock_inner()?;
         if let Some(pid) = inner.pid.take() {
             kill_process(pid);
         }
     }
-    // 让被杀进程有时间退出
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    // 等待被杀进程退出，最多 500ms
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
     let claude_bin = which_claude().unwrap_or_else(|| "claude".to_string());
     // 优先使用前端传入的 session_id（多 Tab 场景），其次用全局缓存的
@@ -230,20 +277,7 @@ pub async fn claude_send(
         "--include-partial-messages".into(),
     ];
 
-    if let Some(ref config) = mcp_config_path {
-        validate_mcp_config(config)?;
-        args.push(format!("--mcp-config={config}"));
-        args.push("--allowedTools".into());
-        args.push("mcp__qai__*,Bash,Read,Write,Edit,Glob,Grep,Agent,ToolSearch".into());
-        args.push("--append-system-prompt".into());
-        args.push(
-            "You are running inside QAI, an API testing tool. \
-             When the user mentions tests, modules, collections, suites, or requests, \
-             they mean QAI's data — use the QAI MCP tools (search, run_collection, send_request, list_collections, etc.). \
-             NEVER use 'cargo test', 'npm test', 'jest', 'pytest', or any shell test command. \
-             Always resolve entity names via the 'search' MCP tool first.".into()
-        );
-    }
+    build_mcp_args(&mut args, mcp_config_path.as_deref())?;
 
     // 复用 session：预热成功后秒回
     if let Some(ref sid) = resume_sid {
@@ -255,23 +289,11 @@ pub async fn claude_send(
 
     let mut cmd = Command::new(&claude_bin);
     cmd.args(&args);
+    configure_cmd_env(&mut cmd);
 
-    let path = std::env::var("PATH").unwrap_or_default();
-    let home = std::env::var("HOME").unwrap_or_default();
-    cmd.env(
-        "PATH",
-        format!("{home}/.local/bin:/opt/homebrew/bin:/usr/local/bin:{path}"),
-    );
-    if let Ok(home) = std::env::var("HOME") {
-        cmd.env("HOME", &home);
-        cmd.current_dir(&home); // 避免继承 QAI 项目目录，防止 Claude Code 误读源码
-    }
-
-    cmd.stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    let mut child = cmd.spawn().map_err(|e| format!("启动 Claude 失败: {e}"))?;
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| AppError::Generic(format!("启动 Claude 失败: {e}")))?;
     if let Some(pid) = child.id() {
         claude_state.lock_inner()?.pid = Some(pid);
     }
@@ -378,22 +400,13 @@ pub async fn claude_send(
         }
     }
 
-    // stderr
-    if let Some(stderr) = child.stderr.take() {
-        let mut r = BufReader::new(stderr);
-        let mut buf = String::new();
-        tokio::io::AsyncReadExt::read_to_string(&mut r, &mut buf)
-            .await
-            .ok();
-        if !buf.trim().is_empty() {
-            log::warn!("[claude stderr] {}", buf.trim());
-        }
+    // stderr（有限读取）
+    let stderr_output = read_stderr_limited(&mut child).await;
+    if !stderr_output.trim().is_empty() {
+        log::warn!("[claude stderr] {}", stderr_output.trim());
     }
 
-    let _ = child.wait().await;
-    if let Ok(mut inner) = claude_state.lock_inner() {
-        inner.pid = None;
-    }
+    wait_and_clear_pid(&mut child, &claude_state).await;
     // MCP 写操作完成后通知前端刷新数据
     if has_mcp_write {
         let _ = app.emit("mcp:data-changed", ());
@@ -402,7 +415,7 @@ pub async fn claude_send(
 }
 
 #[tauri::command]
-pub fn claude_stop(claude_state: State<'_, ClaudeState>) -> Result<(), String> {
+pub fn claude_stop(claude_state: State<'_, ClaudeState>) -> Result<(), AppError> {
     if let Some(pid) = claude_state.lock_inner()?.pid.take() {
         kill_process(pid);
     }
@@ -410,14 +423,16 @@ pub fn claude_stop(claude_state: State<'_, ClaudeState>) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn claude_reset_session(claude_state: State<'_, ClaudeState>) -> Result<(), String> {
+pub fn claude_reset_session(claude_state: State<'_, ClaudeState>) -> Result<(), AppError> {
     claude_state.lock_inner()?.session_id = None;
     Ok(())
 }
 
 /// 取走预热的备用 session（原子操作：取走后清空）
 #[tauri::command]
-pub fn claude_take_spare(claude_state: State<'_, ClaudeState>) -> Result<Option<String>, String> {
+pub fn claude_take_spare(
+    claude_state: State<'_, ClaudeState>,
+) -> Result<Option<String>, AppError> {
     Ok(claude_state.lock_inner()?.spare_session_id.take())
 }
 
@@ -427,7 +442,7 @@ pub async fn claude_warmup_spare(
     app: AppHandle,
     claude_state: State<'_, ClaudeState>,
     mcp_config_path: Option<String>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     // 已有备用 session，跳过
     if claude_state.lock_inner()?.spare_session_id.is_some() {
         return Ok(());
@@ -440,41 +455,16 @@ pub async fn claude_warmup_spare(
         "stream-json".into(),
         "--verbose".into(),
     ];
-    if let Some(ref config) = mcp_config_path {
-        validate_mcp_config(config)?;
-        args.push(format!("--mcp-config={config}"));
-        args.push("--allowedTools".into());
-        args.push("mcp__qai__*,Bash,Read,Write,Edit,Glob,Grep,Agent,ToolSearch".into());
-        args.push("--append-system-prompt".into());
-        args.push(
-            "You are running inside QAI, an API testing tool. \
-             When the user mentions tests, modules, collections, suites, or requests, \
-             they mean QAI's data — use the QAI MCP tools (search, run_collection, send_request, list_collections, etc.). \
-             NEVER use 'cargo test', 'npm test', 'jest', 'pytest', or any shell test command. \
-             Always resolve entity names via the 'search' MCP tool first.".into()
-        );
-    }
+    build_mcp_args(&mut args, mcp_config_path.as_deref())?;
     args.push("Reply with only: ok".into());
 
     let mut cmd = Command::new(&claude_bin);
     cmd.args(&args);
-    let path = std::env::var("PATH").unwrap_or_default();
-    let home = std::env::var("HOME").unwrap_or_default();
-    cmd.env(
-        "PATH",
-        format!("{home}/.local/bin:/opt/homebrew/bin:/usr/local/bin:{path}"),
-    );
-    if let Ok(home) = std::env::var("HOME") {
-        cmd.env("HOME", &home);
-        cmd.current_dir(&home);
-    }
-    cmd.stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+    configure_cmd_env(&mut cmd);
 
     let mut child = cmd
         .spawn()
-        .map_err(|e| format!("Spare warmup failed: {e}"))?;
+        .map_err(|e| AppError::Generic(format!("Spare warmup failed: {e}")))?;
     let stdout = child.stdout.take().ok_or("No stdout")?;
     let mut lines = BufReader::new(stdout).lines();
 
@@ -493,13 +483,7 @@ pub async fn claude_warmup_spare(
         }
     }
 
-    if let Some(stderr) = child.stderr.take() {
-        let mut r = BufReader::new(stderr);
-        let mut buf = String::new();
-        tokio::io::AsyncReadExt::read_to_string(&mut r, &mut buf)
-            .await
-            .ok();
-    }
+    let _ = read_stderr_limited(&mut child).await;
     let _ = child.wait().await;
     let _ = app.emit("claude-spare-ready", ());
     Ok(())
@@ -516,32 +500,14 @@ fn tool_use_summary(name: &str, input: Option<&serde_json::Value>) -> String {
             let cmd = input.get("command").and_then(|v| v.as_str()).unwrap_or("");
             truncate_str(cmd, 200)
         }
-        "Read" => {
+        "Read" | "Write" | "Edit" => {
             let path = input
                 .get("file_path")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
             truncate_str(path, 200)
         }
-        "Write" => {
-            let path = input
-                .get("file_path")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            truncate_str(path, 200)
-        }
-        "Edit" => {
-            let path = input
-                .get("file_path")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            truncate_str(path, 200)
-        }
-        "Glob" => {
-            let pattern = input.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
-            truncate_str(pattern, 200)
-        }
-        "Grep" => {
+        "Glob" | "Grep" => {
             let pattern = input.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
             truncate_str(pattern, 200)
         }
@@ -607,7 +573,7 @@ fn which_claude() -> Option<String> {
 
 /// 快速检测 Claude Code CLI 是否已安装（只检查二进制，不发请求）
 #[tauri::command]
-pub fn claude_check_status() -> Result<serde_json::Value, String> {
+pub fn claude_check_status() -> Result<serde_json::Value, AppError> {
     let claude_bin = match which_claude() {
         Some(p) => p,
         None => {

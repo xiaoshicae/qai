@@ -20,6 +20,10 @@ interface CollectionState {
   renameCollection: (id: string, name: string) => Promise<void>
   createItem: (collectionId: string, parentId: string | null, name: string, method: string, itemType?: string) => Promise<string>
   createFolder: (collectionId: string, parentId: string | null, name: string) => Promise<void>
+  updateItem: (id: string, collectionId: string, payload: Record<string, unknown>) => Promise<void>
+  deleteItem: (id: string, collectionId: string) => Promise<void>
+  duplicateItem: (id: string, collectionId: string) => Promise<void>
+  reorderItems: (items: Array<{ id: string; sort_order: number }>) => Promise<void>
   createGroup: (name: string, parentId?: string | null) => Promise<Group>
   updateGroup: (id: string, name: string) => Promise<void>
   deleteGroup: (id: string) => Promise<void>
@@ -81,62 +85,131 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
   },
 
   createCollection: async (name: string, description: string, groupId?: string | null) => {
-    const col = await invoke<Collection>('create_collection', { name, description, groupId: groupId ?? null })
-    set((state) => ({ collections: [col, ...state.collections] }))
-    await get().loadTree(col.id)
+    try {
+      const col = await invoke<Collection>('create_collection', { name, description, groupId: groupId ?? null })
+      set((state) => ({ collections: [col, ...state.collections] }))
+      await get().loadTree(col.id)
+    } catch (e) {
+      toast.error(invokeErrorMessage(e))
+    }
   },
 
   deleteCollection: async (id: string) => {
-    await invoke('delete_collection', { id })
-    set((state) => {
-      const { [id]: _, ...rest } = state.trees
-      return {
-        collections: state.collections.filter((c) => c.id !== id),
-        trees: rest,
-        selectedNodeId: state.selectedNodeId === id ? null : state.selectedNodeId,
-        selectedRequestId: state.selectedRequestId === id ? null : state.selectedRequestId,
-        contextCollectionId: state.contextCollectionId === id ? null : state.contextCollectionId,
-      }
-    })
+    try {
+      await invoke('delete_collection', { id })
+      set((state) => {
+        const { [id]: _, ...rest } = state.trees
+        return {
+          collections: state.collections.filter((c) => c.id !== id),
+          trees: rest,
+          selectedNodeId: state.selectedNodeId === id ? null : state.selectedNodeId,
+          selectedRequestId: state.selectedRequestId === id ? null : state.selectedRequestId,
+          contextCollectionId: state.contextCollectionId === id ? null : state.contextCollectionId,
+        }
+      })
+    } catch (e) {
+      toast.error(invokeErrorMessage(e))
+    }
   },
 
   renameCollection: async (id: string, name: string) => {
-    const updated = await invoke<Collection>('update_collection', { id, name })
-    set((state) => ({
-      collections: state.collections.map((c) => c.id === id ? updated : c),
-    }))
-    await get().loadTree(id)
+    try {
+      const updated = await invoke<Collection>('update_collection', { id, name })
+      set((state) => ({
+        collections: state.collections.map((c) => c.id === id ? updated : c),
+      }))
+      await get().loadTree(id)
+    } catch (e) {
+      toast.error(invokeErrorMessage(e))
+    }
   },
 
   createItem: async (collectionId, parentId, name, method, itemType) => {
-    const req = await invoke<{ id: string }>('create_item', { collectionId, parentId, itemType: itemType ?? 'request', name, method })
-    await get().loadTree(collectionId)
-    return req.id
+    try {
+      const req = await invoke<{ id: string }>('create_item', { collectionId, parentId, itemType: itemType ?? 'request', name, method })
+      await get().loadTree(collectionId)
+      return req.id
+    } catch (e) {
+      toast.error(invokeErrorMessage(e))
+      return ''
+    }
   },
 
   createFolder: async (collectionId, parentId, name) => {
-    await invoke('create_item', { collectionId, parentId, itemType: 'folder', name, method: 'GET' })
-    await get().loadTree(collectionId)
+    try {
+      await invoke('create_item', { collectionId, parentId, itemType: 'folder', name, method: 'GET' })
+      await get().loadTree(collectionId)
+    } catch (e) {
+      toast.error(invokeErrorMessage(e))
+    }
+  },
+
+  updateItem: async (id, collectionId, payload) => {
+    try {
+      await invoke('update_item', { id, payload })
+      await get().loadTree(collectionId)
+    } catch (e) {
+      toast.error(invokeErrorMessage(e))
+    }
+  },
+
+  deleteItem: async (id, collectionId) => {
+    try {
+      await invoke('delete_item', { id })
+      await get().loadTree(collectionId)
+    } catch (e) {
+      toast.error(invokeErrorMessage(e))
+    }
+  },
+
+  duplicateItem: async (id, collectionId) => {
+    try {
+      await invoke('duplicate_item', { id })
+      await get().loadTree(collectionId)
+    } catch (e) {
+      toast.error(invokeErrorMessage(e))
+    }
+  },
+
+  reorderItems: async (items) => {
+    try {
+      await invoke('reorder_items', { items })
+    } catch (e) {
+      toast.error(invokeErrorMessage(e))
+    }
   },
 
   createGroup: async (name: string, parentId?: string | null) => {
-    const group = await invoke<Group>('create_group', { name, parentId: parentId ?? null })
-    set((state) => ({ groups: [...state.groups, group] }))
-    return group
+    try {
+      const group = await invoke<Group>('create_group', { name, parentId: parentId ?? null })
+      set((state) => ({ groups: [...state.groups, group] }))
+      return group
+    } catch (e) {
+      toast.error(invokeErrorMessage(e))
+      return { id: '', name, parent_id: parentId ?? null, sort_order: 0, created_at: '', updated_at: '' } as Group
+    }
   },
 
   updateGroup: async (id: string, name: string) => {
-    await invoke('update_group', { id, name })
-    set((state) => ({
-      groups: state.groups.map((g) => g.id === id ? { ...g, name } : g),
-    }))
+    try {
+      await invoke('update_group', { id, name })
+      set((state) => ({
+        groups: state.groups.map((g) => g.id === id ? { ...g, name } : g),
+      }))
+    } catch (e) {
+      toast.error(invokeErrorMessage(e))
+    }
   },
 
   deleteGroup: async (id: string) => {
-    await invoke('delete_group', { id })
-    set((state) => ({
-      groups: state.groups.filter((g) => g.id !== id),
-    }))
+    try {
+      await invoke('delete_group', { id })
+      set((state) => ({
+        groups: state.groups.filter((g) => g.id !== id),
+      }))
+    } catch (e) {
+      toast.error(invokeErrorMessage(e))
+    }
   },
 
   selectNode: (nodeId: string | null) => {

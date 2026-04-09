@@ -14,11 +14,12 @@
     "failed": "{{count}} 失败"
   },
   "sidebar": {
-    "search": "搜索...",
+    "search": "搜索...  ⌘K",
     "group_name_placeholder": "分组名称",
     "import_postman_ok": "已导入 {{name}}（{{n}} 个请求）",
     "new_group": "新建分组",
     "no_suites": "暂无测试集",
+    "no_results": "无匹配结果",
     "no_suites_hint": "点击 + 创建分组",
     "history": "历史",
     "environments": "环境",
@@ -104,7 +105,11 @@
     "cancel": "取消",
     "save": "保存",
     "create": "创建",
-    "debug_send": "调试"
+    "debug_send": "调试",
+    "double_click_add_desc": "双击添加描述...",
+    "chain_name_label": "链名称",
+    "chain_name_placeholder": "如：自定义音色 TTS",
+    "chain_desc_placeholder": "多步依赖：上传→生成"
   },
   "chain": {
     "chain_help": "创建后可在表格中展开链，通过「+ 添加步骤」逐个添加请求。步骤间通过变量提取规则（Extract）传递数据，后续步骤用 {{变量名}} 引用。",
@@ -203,7 +208,10 @@
     "file_field": "文件字段（点击切换为文本）",
     "text_field": "文本字段（点击切换为文件）",
     "click_select_file": "点击选择文件",
-    "extract_hint": "从响应中提取变量，供后续请求通过 {{变量名}} 引用"
+    "extract_hint": "从响应中提取变量，供后续请求通过 {{变量名}} 引用",
+    "protocol_switch": "切换协议",
+    "protocol_switch_warning": "切换到 WebSocket 会将请求体类型改为 JSON，当前的表单数据将丢失。确定继续？",
+    "unresolved_vars_confirm": "URL 中包含未解析的变量：{{vars}}。确定继续发送？"
   },
   "env": {
     "new_env": "新环境",
@@ -234,7 +242,8 @@
     "send": "发送",
     "paste_hint": "粘贴 curl 命令，自动解析填充",
     "paste_curl": "粘贴 curl 命令",
-    "reimport_curl": "重新导入 curl"
+    "reimport_curl": "重新导入 curl",
+    "clear_result": "清空结果"
   },
   "runner": {
     "run_chain": "运行链"
@@ -334,6 +343,14 @@
     "show_more": "展开全部 ({{size}})",
     "show_less": "收起",
     "clear": "清空"
+  },
+  "error": {
+    "title": "出错了",
+    "description": "应用遇到了一个错误，请尝试重试。如果问题持续存在，请联系支持。",
+    "retry": "重试",
+    "page_title": "应用发生错误",
+    "page_description": "应用遇到了一个意外错误，请刷新页面或重启应用。",
+    "refresh": "刷新页面"
   },
   "shortcuts": {
     "title": "键盘快捷键",

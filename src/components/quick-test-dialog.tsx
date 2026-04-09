@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useMemo } from 'react'
+import { useState, useCallback, useRef, useMemo, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
@@ -14,6 +14,7 @@ import { BodyTypeSelector } from '@/components/request/body-type-selector'
 import { MiniResponseViewer } from '@/components/request/mini-response-viewer'
 import { invokeErrorMessage } from '@/lib/invoke-error'
 import { useEnvVars } from '@/hooks/use-env-vars'
+import { METHOD_COLORS } from '@/lib/styles'
 import type { ExecutionResult, KeyValuePair } from '@/types'
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD'].map((m) => ({ value: m, label: m }))
@@ -100,6 +101,21 @@ export default function QuickTestDialog({ open, onOpenChange, envVars: envVarsPr
       setStreaming(false)
     }
   }, [method, url, headers, bodyType, bodyContent, bodyKv])
+
+  // ⌘+Enter 发送
+  const sendRef = useRef(send)
+  sendRef.current = send
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault()
+        sendRef.current()
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [open])
 
   const applyParsed = (parsed: ParseCurlResult) => {
     if (parsed.method) setMethod(parsed.method)
@@ -197,18 +213,30 @@ export default function QuickTestDialog({ open, onOpenChange, envVars: envVarsPr
 
           {/* Method + URL + Send */}
           <div className="flex gap-2 items-center">
-            <Select value={method} onChange={setMethod} options={HTTP_METHODS} className="w-28" />
+            <Select value={method} onChange={setMethod} options={HTTP_METHODS} className={`w-28 ${METHOD_COLORS[method] ?? ''}`} />
             <VarInput value={url} onChange={setUrl} placeholder={t('quick_test.url_placeholder')} envVars={envVars} className="flex-1 h-9 font-mono text-xs" />
             <Button size="sm" className="gap-1.5 shrink-0" onClick={send} disabled={loading || !url.trim()}>
               {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
               {t('quick_test.send')}
             </Button>
-            {(result || url) && (
+            {result && (
+              <button
+                type="button"
+                onClick={() => { setResult(null); setStreamContent('') }}
+                className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground/50 hover:text-foreground hover:bg-overlay/[0.06] cursor-pointer transition-colors shrink-0"
+                title={t('quick_test.clear_result')}
+                aria-label={t('quick_test.clear_result')}
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+              </button>
+            )}
+            {!result && url && (
               <button
                 type="button"
                 onClick={() => { setMethod('GET'); setUrl(''); setHeaders([]); setBodyType('none'); setBodyContent(''); setBodyKv([]); setResult(null); setStreamContent(''); setCurlCollapsed(false); setCurlInput('') }}
                 className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground/50 hover:text-foreground hover:bg-overlay/[0.06] cursor-pointer transition-colors shrink-0"
                 title={t('common.clear')}
+                aria-label={t('common.clear')}
               >
                 <RotateCcw className="h-3.5 w-3.5" />
               </button>

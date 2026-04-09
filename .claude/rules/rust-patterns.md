@@ -2,10 +2,11 @@
 
 ## 错误处理
 
-- Tauri command 层：`Result<T, String>`，用 `.map_err(|e| e.to_string())`
+- Tauri command 层：统一使用 `AppError`（`errors.rs`），自动 From 转换
 - 内部模块：保留具体错误类型（`rusqlite::Error`、`anyhow::Error`）
 - 禁止生产代码 `unwrap()`，用 `?` 或 `unwrap_or_default()`
 - DB 写入错误禁止 `let _ =` 静默吞掉，至少 `log::warn!`
+- `let _ = app.emit(...)` 是**允许的例外**（事件发送失败不影响核心逻辑）
 
 ## 数据库操作
 
@@ -85,6 +86,10 @@ if result.status == status::SUCCESS { ... }  // 而非 "success"
 ## 命名约定
 
 模块 `snake_case`，结构体 `PascalCase`，函数 `snake_case`，常量 `UPPER_SNAKE`。
+
+## 依赖注意
+
+- YAML 解析用 `serde_yml`（`serde_yaml` 已弃用，勿引入）
 
 ## 禁止事项
 

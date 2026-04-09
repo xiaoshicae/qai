@@ -90,7 +90,7 @@ function FeatureToggle({ label, hint, icon: Icon, enabled, onToggle }: {
           enabled ? 'bg-primary' : 'bg-overlay/[0.12]'
         }`}
       >
-        <span className={`absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${
+        <span className={`absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-background shadow-sm transition-transform duration-200 ${
           enabled ? 'translate-x-[18px]' : 'translate-x-0'
         }`} />
       </button>
@@ -204,9 +204,9 @@ export default function AIConfigSection() {
     try {
       await invoke('test_ai_connection', { provider, apiKey, model: effectiveModel, baseUrl: baseUrl || null })
       setTestStatus('success')
-    } catch (e: any) {
+    } catch (e: unknown) {
       setTestStatus('error')
-      setTestError(typeof e === 'string' ? e : e.message ?? t('settings.connection_failed'))
+      setTestError(typeof e === 'string' ? e : (e instanceof Error ? e.message : t('settings.connection_failed')))
     }
   }
 

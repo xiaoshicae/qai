@@ -20,7 +20,7 @@
 
 ---
 
-<p align="center"><img src="doc/screenshot.png" width="960" alt="QAI 截图"></p>
+<p align="center"><img src="public/screenshot.png" width="960" alt="QAI 截图"></p>
 
 ## 为什么选 QAI？
 

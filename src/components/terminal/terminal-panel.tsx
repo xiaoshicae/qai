@@ -43,8 +43,8 @@ export default function TerminalPanel({ onClose }: Props) {
         mcpConfigPath: store.mcpConfigPath,
         sessionId: activeTab.claudeSessionId,
       })
-    } catch (e: any) {
-      store.appendMessage(activeTab.id, { id: crypto.randomUUID(), role: 'system', content: `${e}` })
+    } catch (e: unknown) {
+      store.appendMessage(activeTab.id, { id: crypto.randomUUID(), role: 'system', content: String(e) })
       store.setSending(activeTab.id, false)
     }
   }
@@ -64,8 +64,8 @@ export default function TerminalPanel({ onClose }: Props) {
         mcpConfigPath: store.mcpConfigPath,
         sessionId: activeTab.claudeSessionId,
       })
-    } catch (e: any) {
-      store.appendMessage(activeTab.id, { id: crypto.randomUUID(), role: 'system', content: `${e}` })
+    } catch (e: unknown) {
+      store.appendMessage(activeTab.id, { id: crypto.randomUUID(), role: 'system', content: String(e) })
       store.setSending(activeTab.id, false)
     }
   }

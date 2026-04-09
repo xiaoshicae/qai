@@ -8,9 +8,7 @@ pub struct DbState(pub Mutex<Connection>);
 
 impl DbState {
     pub fn conn(&self) -> Result<MutexGuard<'_, Connection>, AppError> {
-        self.0
-            .lock()
-            .map_err(|e| AppError::Generic(e.to_string()))
+        self.0.lock().map_err(|e| AppError::Generic(e.to_string()))
     }
 }
 

@@ -171,7 +171,11 @@ where
 
         total_binary += bytes;
         total_text += received.len();
-        let status = if err.is_some() { crate::models::status::ERROR } else { crate::models::status::SUCCESS };
+        let status = if err.is_some() {
+            crate::models::status::ERROR
+        } else {
+            crate::models::status::SUCCESS
+        };
 
         steps.push(serde_json::json!({
             "step": step_num, "sent": msg, "received": received,

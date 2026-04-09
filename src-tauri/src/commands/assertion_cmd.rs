@@ -5,7 +5,10 @@ use crate::errors::AppError;
 use crate::models::assertion::Assertion;
 
 #[tauri::command]
-pub fn list_assertions(db: State<'_, DbState>, item_id: String) -> Result<Vec<Assertion>, AppError> {
+pub fn list_assertions(
+    db: State<'_, DbState>,
+    item_id: String,
+) -> Result<Vec<Assertion>, AppError> {
     let conn = db.conn()?;
     Ok(crate::db::assertion::list_by_item(&conn, &item_id)?)
 }
@@ -16,7 +19,10 @@ pub fn get_assertion_counts(
     collection_id: String,
 ) -> Result<std::collections::HashMap<String, i32>, AppError> {
     let conn = db.conn()?;
-    Ok(crate::db::assertion::count_by_collection(&conn, &collection_id)?)
+    Ok(crate::db::assertion::count_by_collection(
+        &conn,
+        &collection_id,
+    )?)
 }
 
 #[tauri::command]

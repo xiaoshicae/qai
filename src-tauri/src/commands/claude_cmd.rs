@@ -59,7 +59,7 @@ async fn read_stderr_limited(child: &mut tokio::process::Child) -> String {
 
     loop {
         let bytes_read = match tokio::io::AsyncBufReadExt::fill_buf(&mut reader).await {
-            Ok(b) if b.is_empty() => break,
+            Ok([]) => break,
             Ok(b) => {
                 let take = b.len().min(MAX_STDERR_BYTES - total);
                 buf.extend_from_slice(&b[..take]);
@@ -430,9 +430,7 @@ pub fn claude_reset_session(claude_state: State<'_, ClaudeState>) -> Result<(), 
 
 /// 取走预热的备用 session（原子操作：取走后清空）
 #[tauri::command]
-pub fn claude_take_spare(
-    claude_state: State<'_, ClaudeState>,
-) -> Result<Option<String>, AppError> {
+pub fn claude_take_spare(claude_state: State<'_, ClaudeState>) -> Result<Option<String>, AppError> {
     Ok(claude_state.lock_inner()?.spare_session_id.take())
 }
 

@@ -68,8 +68,8 @@ pub fn import_yaml_cases(
     for path in &yaml_files {
         let content =
             std::fs::read_to_string(path).map_err(|e| format!("读取文件失败 {:?}: {}", path, e))?;
-        let case: YamlCase =
-            serde_yml::from_str(&content).map_err(|e| format!("解析 YAML 失败 {:?}: {}", path, e))?;
+        let case: YamlCase = serde_yml::from_str(&content)
+            .map_err(|e| format!("解析 YAML 失败 {:?}: {}", path, e))?;
 
         let assets_dir = path.parent().unwrap_or(&base).join("../assets");
         let assets_dir = if assets_dir.exists() {
@@ -91,7 +91,11 @@ pub fn import_postman_collection(
     group_id: Option<String>,
 ) -> Result<PostmanImportResult, AppError> {
     let conn = db.conn()?;
-    Ok(crate::import::postman::import(&conn, &json, group_id.as_deref())?)
+    Ok(crate::import::postman::import(
+        &conn,
+        &json,
+        group_id.as_deref(),
+    )?)
 }
 
 /// 导出全部测试用例为 JSON

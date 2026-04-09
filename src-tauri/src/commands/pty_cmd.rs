@@ -49,10 +49,7 @@ pub fn prepare_mcp_config(app: AppHandle) -> Result<String, AppError> {
     });
 
     let config_path = app_dir.join("mcp-config.json");
-    std::fs::write(
-        &config_path,
-        serde_json::to_string_pretty(&config).unwrap(),
-    )?;
+    std::fs::write(&config_path, serde_json::to_string_pretty(&config).unwrap())?;
 
     Ok(config_path.to_string_lossy().to_string())
 }
@@ -87,8 +84,5 @@ fn find_mcp_binary(app: &AppHandle) -> Result<std::path::PathBuf, AppError> {
         }
     }
 
-    Err(format!(
-        "{bin_name} not found. Ensure qai-mcp is built: cargo build --bin qai-mcp"
-    )
-    .into())
+    Err(format!("{bin_name} not found. Ensure qai-mcp is built: cargo build --bin qai-mcp").into())
 }

@@ -323,8 +323,10 @@ mod tests {
         let conn = create_test_db();
         let case = make_case("TestAPI", vec![make_scenario("login")]);
         let mut result = ImportResult {
-            collections_created: 0, collections_updated: 0,
-            requests_created: 0, requests_updated: 0,
+            collections_created: 0,
+            collections_updated: 0,
+            requests_created: 0,
+            requests_updated: 0,
         };
         let r = import_single_case(&conn, &case, &mut result, Path::new("/tmp"));
         assert!(r.is_ok(), "import failed: {:?}", r.err());
@@ -335,14 +337,19 @@ mod tests {
     #[test]
     fn test_import_multiple_scenarios() {
         let conn = create_test_db();
-        let case = make_case("TestAPI", vec![
-            make_scenario("login"),
-            make_scenario("logout"),
-            make_scenario("profile"),
-        ]);
+        let case = make_case(
+            "TestAPI",
+            vec![
+                make_scenario("login"),
+                make_scenario("logout"),
+                make_scenario("profile"),
+            ],
+        );
         let mut result = ImportResult {
-            collections_created: 0, collections_updated: 0,
-            requests_created: 0, requests_updated: 0,
+            collections_created: 0,
+            collections_updated: 0,
+            requests_created: 0,
+            requests_updated: 0,
         };
         import_single_case(&conn, &case, &mut result, Path::new("/tmp")).unwrap();
         assert_eq!(result.requests_created, 3);
@@ -354,15 +361,20 @@ mod tests {
         let mut case = make_case("TestAPI", vec![make_scenario("login")]);
         case.category = Some("Authentication".into());
         let mut result = ImportResult {
-            collections_created: 0, collections_updated: 0,
-            requests_created: 0, requests_updated: 0,
+            collections_created: 0,
+            collections_updated: 0,
+            requests_created: 0,
+            requests_updated: 0,
         };
         import_single_case(&conn, &case, &mut result, Path::new("/tmp")).unwrap();
         // 验证 group 被创建
-        let group_id: String = conn.query_row(
-            "SELECT id FROM groups WHERE name = 'Authentication'",
-            [], |row| row.get(0),
-        ).unwrap();
+        let group_id: String = conn
+            .query_row(
+                "SELECT id FROM groups WHERE name = 'Authentication'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
         assert!(!group_id.is_empty());
     }
 
@@ -371,16 +383,20 @@ mod tests {
         let conn = create_test_db();
         let case = make_case("TestAPI", vec![make_scenario("login")]);
         let mut r1 = ImportResult {
-            collections_created: 0, collections_updated: 0,
-            requests_created: 0, requests_updated: 0,
+            collections_created: 0,
+            collections_updated: 0,
+            requests_created: 0,
+            requests_updated: 0,
         };
         import_single_case(&conn, &case, &mut r1, Path::new("/tmp")).unwrap();
         assert_eq!(r1.collections_created, 1);
 
         // 再次导入同名集合 → 更新
         let mut r2 = ImportResult {
-            collections_created: 0, collections_updated: 0,
-            requests_created: 0, requests_updated: 0,
+            collections_created: 0,
+            collections_updated: 0,
+            requests_created: 0,
+            requests_updated: 0,
         };
         import_single_case(&conn, &case, &mut r2, Path::new("/tmp")).unwrap();
         assert_eq!(r2.collections_updated, 1);
@@ -398,8 +414,10 @@ mod tests {
         scenario.payload = None;
         let case = make_case("WS API", vec![scenario]);
         let mut result = ImportResult {
-            collections_created: 0, collections_updated: 0,
-            requests_created: 0, requests_updated: 0,
+            collections_created: 0,
+            collections_updated: 0,
+            requests_created: 0,
+            requests_updated: 0,
         };
         import_single_case(&conn, &case, &mut result, Path::new("/tmp")).unwrap();
         assert_eq!(result.requests_created, 1);
@@ -427,8 +445,10 @@ mod tests {
             }],
         };
         let mut result = ImportResult {
-            collections_created: 0, collections_updated: 0,
-            requests_created: 0, requests_updated: 0,
+            collections_created: 0,
+            collections_updated: 0,
+            requests_created: 0,
+            requests_updated: 0,
         };
         let r = import_single_case(&conn, &case, &mut result, Path::new("/tmp"));
         assert!(r.is_ok());

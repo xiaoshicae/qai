@@ -154,18 +154,18 @@ pub fn build_exec_units(
     Ok((units, var_map))
 }
 
+/// Chain 步骤 + 变量映射 + chain 名称
+pub type ChainStepsData = (
+    Vec<(CollectionItem, Vec<Assertion>)>,
+    HashMap<String, String>,
+    String,
+);
+
 /// 为单个 chain 构建执行步骤
 pub fn build_chain_steps(
     conn: &Connection,
     chain_item_id: &str,
-) -> Result<
-    (
-        Vec<(CollectionItem, Vec<Assertion>)>,
-        HashMap<String, String>,
-        String,
-    ),
-    rusqlite::Error,
-> {
+) -> Result<ChainStepsData, rusqlite::Error> {
     let chain_item = crate::db::item::get(conn, chain_item_id)?;
     let children = crate::db::item::list_by_parent(conn, chain_item_id)?;
     let var_map = crate::db::environment::get_active_var_map(conn);

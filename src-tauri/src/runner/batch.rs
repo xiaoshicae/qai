@@ -194,7 +194,16 @@ mod tests {
     async fn test_empty_items() {
         let client = reqwest::Client::new();
         let cancel = Arc::new(AtomicBool::new(false));
-        let result = run_batch(&client, vec![], 10, cancel, noop_progress, noop_result, true).await;
+        let result = run_batch(
+            &client,
+            vec![],
+            10,
+            cancel,
+            noop_progress,
+            noop_result,
+            true,
+        )
+        .await;
         assert_eq!(result.total, 0);
         assert_eq!(result.passed, 0);
     }
@@ -211,7 +220,9 @@ mod tests {
             items,
             10,
             cancel,
-            move |_| { count_clone.fetch_add(1, Ordering::Relaxed); },
+            move |_| {
+                count_clone.fetch_add(1, Ordering::Relaxed);
+            },
             noop_result,
             true,
         )
@@ -224,10 +235,7 @@ mod tests {
     #[tokio::test]
     async fn test_on_result_callback_called() {
         let client = reqwest::Client::new();
-        let items = vec![
-            (make_item("1", "A"), vec![]),
-            (make_item("2", "B"), vec![]),
-        ];
+        let items = vec![(make_item("1", "A"), vec![]), (make_item("2", "B"), vec![])];
         let cancel = Arc::new(AtomicBool::new(false));
         let count = Arc::new(AtomicU32::new(0));
         let count_clone = count.clone();
@@ -237,7 +245,9 @@ mod tests {
             10,
             cancel,
             noop_progress,
-            move |_| { count_clone.fetch_add(1, Ordering::Relaxed); },
+            move |_| {
+                count_clone.fetch_add(1, Ordering::Relaxed);
+            },
             true,
         )
         .await;

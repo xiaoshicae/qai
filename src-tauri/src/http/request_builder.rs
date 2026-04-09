@@ -438,7 +438,11 @@ mod tests {
                 created_at: String::new(),
                 updated_at: String::new(),
             };
-            assert!(build_request(&client, &item).await.is_ok(), "Failed for method {}", method);
+            assert!(
+                build_request(&client, &item).await.is_ok(),
+                "Failed for method {}",
+                method
+            );
         }
     }
 }

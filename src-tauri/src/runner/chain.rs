@@ -216,10 +216,17 @@ mod tests {
         let client = reqwest::Client::new();
         let steps = vec![(make_item("1", "Step1"), vec![])];
         let result = run_chain(
-            &client, steps, HashMap::new(),
-            "chain-1".into(), "TestChain".into(),
-            None, noop_progress, None, true,
-        ).await;
+            &client,
+            steps,
+            HashMap::new(),
+            "chain-1".into(),
+            "TestChain".into(),
+            None,
+            noop_progress,
+            None,
+            true,
+        )
+        .await;
         assert_eq!(result.completed_steps, 1);
         assert_eq!(result.total_steps, 1);
         assert_eq!(result.status, crate::models::Status::Success.as_str());
@@ -234,10 +241,17 @@ mod tests {
             (make_item("3", "Step3"), vec![]),
         ];
         let result = run_chain(
-            &client, steps, HashMap::new(),
-            "chain-1".into(), "TestChain".into(),
-            None, noop_progress, None, true,
-        ).await;
+            &client,
+            steps,
+            HashMap::new(),
+            "chain-1".into(),
+            "TestChain".into(),
+            None,
+            noop_progress,
+            None,
+            true,
+        )
+        .await;
         assert_eq!(result.completed_steps, 3);
         assert_eq!(result.total_steps, 3);
     }
@@ -246,10 +260,17 @@ mod tests {
     async fn test_empty_steps() {
         let client = reqwest::Client::new();
         let result = run_chain(
-            &client, vec![], HashMap::new(),
-            "chain-1".into(), "TestChain".into(),
-            None, noop_progress, None, true,
-        ).await;
+            &client,
+            vec![],
+            HashMap::new(),
+            "chain-1".into(),
+            "TestChain".into(),
+            None,
+            noop_progress,
+            None,
+            true,
+        )
+        .await;
         assert_eq!(result.completed_steps, 0);
         assert_eq!(result.total_steps, 0);
     }
@@ -261,10 +282,17 @@ mod tests {
         base.insert("token".into(), "abc123".into());
         let steps = vec![(make_item("1", "Step1"), vec![])];
         let result = run_chain(
-            &client, steps, base,
-            "chain-1".into(), "TestChain".into(),
-            None, noop_progress, None, true,
-        ).await;
+            &client,
+            steps,
+            base,
+            "chain-1".into(),
+            "TestChain".into(),
+            None,
+            noop_progress,
+            None,
+            true,
+        )
+        .await;
         assert_eq!(result.final_variables.get("token").unwrap(), "abc123");
     }
 
@@ -277,10 +305,17 @@ mod tests {
         ];
         let cancel = Arc::new(AtomicBool::new(true));
         let result = run_chain(
-            &client, steps, HashMap::new(),
-            "chain-1".into(), "TestChain".into(),
-            Some(cancel), noop_progress, None, true,
-        ).await;
+            &client,
+            steps,
+            HashMap::new(),
+            "chain-1".into(),
+            "TestChain".into(),
+            Some(cancel),
+            noop_progress,
+            None,
+            true,
+        )
+        .await;
         assert_eq!(result.completed_steps, 0);
     }
 
@@ -291,12 +326,19 @@ mod tests {
         let count = Arc::new(AtomicU32::new(0));
         let count_clone = count.clone();
         run_chain(
-            &client, steps, HashMap::new(),
-            "chain-1".into(), "TestChain".into(),
+            &client,
+            steps,
+            HashMap::new(),
+            "chain-1".into(),
+            "TestChain".into(),
             None,
-            move |_| { count_clone.fetch_add(1, Ordering::Relaxed); },
-            None, true,
-        ).await;
+            move |_| {
+                count_clone.fetch_add(1, Ordering::Relaxed);
+            },
+            None,
+            true,
+        )
+        .await;
         // 每步 2 次进度回调：running + completed
         assert_eq!(count.load(Ordering::Relaxed), 2);
     }
@@ -321,10 +363,17 @@ mod tests {
             (make_item("2", "Step2"), vec![]),
         ];
         let result = run_chain(
-            &client, steps, HashMap::new(),
-            "chain-1".into(), "TestChain".into(),
-            None, noop_progress, None, true,
-        ).await;
+            &client,
+            steps,
+            HashMap::new(),
+            "chain-1".into(),
+            "TestChain".into(),
+            None,
+            noop_progress,
+            None,
+            true,
+        )
+        .await;
         assert_eq!(result.completed_steps, 1);
         assert_ne!(result.status, crate::models::Status::Success.as_str());
     }
@@ -339,12 +388,19 @@ mod tests {
         let count = Arc::new(AtomicU32::new(0));
         let count_clone = count.clone();
         run_chain(
-            &client, steps, HashMap::new(),
-            "chain-1".into(), "TestChain".into(),
-            None, noop_progress,
-            Some(Box::new(move |_| { count_clone.fetch_add(1, Ordering::Relaxed); })),
+            &client,
+            steps,
+            HashMap::new(),
+            "chain-1".into(),
+            "TestChain".into(),
+            None,
+            noop_progress,
+            Some(Box::new(move |_| {
+                count_clone.fetch_add(1, Ordering::Relaxed);
+            })),
             true,
-        ).await;
+        )
+        .await;
         assert_eq!(count.load(Ordering::Relaxed), 2);
     }
 }

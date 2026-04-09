@@ -84,7 +84,11 @@ pub fn create_group(
     parent_id: Option<String>,
 ) -> Result<Group, AppError> {
     let conn = db.conn()?;
-    Ok(crate::db::group::create(&conn, &name, parent_id.as_deref())?)
+    Ok(crate::db::group::create(
+        &conn,
+        &name,
+        parent_id.as_deref(),
+    )?)
 }
 
 #[tauri::command]

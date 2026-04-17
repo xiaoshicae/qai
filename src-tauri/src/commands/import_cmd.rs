@@ -66,10 +66,22 @@ pub fn import_yaml_cases(
     }
 
     for path in &yaml_files {
-        let content =
-            std::fs::read_to_string(path).map_err(|e| format!("读取文件失败 {:?}: {}", path, e))?;
-        let case: YamlCase = serde_yml::from_str(&content)
-            .map_err(|e| format!("解析 YAML 失败 {:?}: {}", path, e))?;
+        let content = std::fs::read_to_string(path)
+            .map_err(|e| format!("读取文件失败 {}: {}", path.display(), e))?;
+        let case: YamlCase = serde_yml::from_str(&content).map_err(|e| {
+            // serde_yml::Error 带 location，直接 Display 输出 "at line X column Y"
+            // 单独抽出更直观提示
+            match e.location() {
+                Some(loc) => format!(
+                    "解析 YAML 失败 {} (行 {}, 列 {}): {}",
+                    path.display(),
+                    loc.line(),
+                    loc.column(),
+                    e
+                ),
+                None => format!("解析 YAML 失败 {}: {}", path.display(), e),
+            }
+        })?;
 
         let assets_dir = path.parent().unwrap_or(&base).join("../assets");
         let assets_dir = if assets_dir.exists() {
@@ -78,7 +90,7 @@ pub fn import_yaml_cases(
             base.join("assets")
         };
         crate::import::yaml::import_single_case(&conn, &case, &mut result, &assets_dir)
-            .map_err(|e| format!("导入 {} 失败: {}", case.name, e))?;
+            .map_err(|e| format!("导入 {} 失败 (case='{}'): {}", path.display(), case.name, e))?;
     }
 
     Ok(result)

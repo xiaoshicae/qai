@@ -20,18 +20,33 @@ pub fn build_var_map(variables: &[EnvVariable]) -> HashMap<String, String> {
         .collect()
 }
 
+/// 变量递归展开最大深度，超过后停止（防止 {{a}} → {{b}} → {{a}} 之类的循环）
+const MAX_VAR_DEPTH: usize = 3;
+
 pub fn replace_vars(text: &str, vars: &HashMap<String, String>) -> String {
     if vars.is_empty() || !text.contains("{{") {
         return text.to_string();
     }
     let re = var_regex();
-    re.replace_all(text, |caps: &regex::Captures| {
-        let key = &caps[1];
-        vars.get(key)
-            .cloned()
-            .unwrap_or_else(|| caps[0].to_string())
-    })
-    .to_string()
+    let mut current = text.to_string();
+    for _ in 0..MAX_VAR_DEPTH {
+        if !current.contains("{{") {
+            break;
+        }
+        let replaced = re
+            .replace_all(&current, |caps: &regex::Captures| {
+                vars.get(&caps[1])
+                    .cloned()
+                    .unwrap_or_else(|| caps[0].to_string())
+            })
+            .to_string();
+        // 未发生替换（全是未定义变量或循环引用），不再迭代
+        if replaced == current {
+            break;
+        }
+        current = replaced;
+    }
+    current
 }
 
 pub fn apply_vars(req: &CollectionItem, vars: &HashMap<String, String>) -> CollectionItem {
@@ -199,6 +214,27 @@ mod tests {
         let mut vars = HashMap::new();
         vars.insert("x".into(), "y".into());
         assert_eq!(replace_vars("plain text", &vars), "plain text");
+    }
+
+    #[test]
+    fn test_replace_vars_nested_expansion() {
+        // 变量值里再引用变量，最多展开 MAX_VAR_DEPTH 层
+        let mut vars = HashMap::new();
+        vars.insert("greeting".into(), "{{hello}} {{name}}".into());
+        vars.insert("hello".into(), "Hi".into());
+        vars.insert("name".into(), "World".into());
+        assert_eq!(replace_vars("{{greeting}}!", &vars), "Hi World!");
+    }
+
+    #[test]
+    fn test_replace_vars_circular_reference_terminates() {
+        // a → b → a 循环：迭代到上限后停止，不死循环
+        let mut vars = HashMap::new();
+        vars.insert("a".into(), "{{b}}".into());
+        vars.insert("b".into(), "{{a}}".into());
+        let out = replace_vars("{{a}}", &vars);
+        // 不应 panic / 死循环；剩余字面量为 {{a}} 或 {{b}} 之一
+        assert!(out == "{{a}}" || out == "{{b}}");
     }
 
     // ─── build_var_map ──────────────────────────────────────

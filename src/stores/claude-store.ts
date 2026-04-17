@@ -17,11 +17,17 @@ export interface ClaudeTab {
   warmupStatus: 'idle' | 'warming' | 'ready'
 }
 
+/** Claude CLI stream-json result 行的部分字段（仅用到的） */
+interface ClaudeRawResult {
+  session_id?: string
+  [key: string]: unknown
+}
+
 interface ClaudeEventPayload {
-  event_type: string
+  event_type: 'delta' | 'tool_use' | 'result' | string
   content: string
   session_id: string | null
-  raw?: any
+  raw?: ClaudeRawResult
 }
 
 const MAX_TABS = 8

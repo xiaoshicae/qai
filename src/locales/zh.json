@@ -369,5 +369,14 @@
     "show_help": "显示帮助",
     "save": "保存",
     "close_dialog": "关闭对话框"
+  },
+  "menu": {
+    "exported_to": "已导出到 {{path}}",
+    "import_done_with": "导入完成，新增：{{parts}}",
+    "import_done_no_change": "导入完成，数据无变化",
+    "count_collections": "{{count}} 集合",
+    "count_items": "{{count}} 请求",
+    "count_assertions": "{{count}} 断言",
+    "count_environments": "{{count}} 环境"
   }
 }

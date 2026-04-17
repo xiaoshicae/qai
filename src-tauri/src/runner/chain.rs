@@ -5,7 +5,11 @@ use crate::models::execution::{ChainProgress, ChainResult, ChainStepResult, Exec
 use crate::models::item::{CollectionItem, ExtractRule, PollConfig};
 use crate::runner::assertion::apply_assertions;
 
-/// 按顺序执行链中的步骤，步骤间传递提取的变量，任一步骤失败则终止
+/// 按顺序执行链中的步骤，步骤间传递提取的变量
+///
+/// `continue_on_failure`：失败时是否继续后续步骤
+/// - `false`（默认）：任一步骤失败立即终止，行为与历史一致
+/// - `true`：收集全部结果，整体状态取最严重的失败级别（error > failed > success）
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub async fn run_chain(
     client: &reqwest::Client,
@@ -17,6 +21,7 @@ pub async fn run_chain(
     progress_callback: impl Fn(ChainProgress) + Send + Sync + 'static,
     on_result: Option<Box<dyn Fn(&ExecutionResult) + Send + Sync + 'static>>,
     dry_run: bool,
+    continue_on_failure: bool,
 ) -> ChainResult {
     let chain_id = uuid::Uuid::new_v4().to_string();
     let total_steps = steps.len() as u32;
@@ -93,6 +98,9 @@ pub async fn run_chain(
                     extracted_variables: HashMap::new(),
                 });
                 overall_status = crate::models::Status::Error.as_str().to_string();
+                if continue_on_failure {
+                    continue;
+                }
                 break;
             }
         };
@@ -156,13 +164,23 @@ pub async fn run_chain(
         });
 
         if step_status != crate::models::Status::Success.as_str() {
+            // 整体状态取最严重的失败级别：error > failed > success
+            if overall_status != crate::models::Status::Error.as_str() {
+                overall_status = step_status.clone();
+            }
+            if !continue_on_failure {
+                log::info!(
+                    "[chain] step {} failed with '{}', breaking chain",
+                    step_index,
+                    step_status
+                );
+                break;
+            }
             log::info!(
-                "[chain] step {} failed with '{}', breaking chain",
+                "[chain] step {} failed with '{}', continuing (continue_on_failure)",
                 step_index,
                 step_status
             );
-            overall_status = step_status;
-            break;
         }
     }
 
@@ -225,6 +243,7 @@ mod tests {
             noop_progress,
             None,
             true,
+            false,
         )
         .await;
         assert_eq!(result.completed_steps, 1);
@@ -250,6 +269,7 @@ mod tests {
             noop_progress,
             None,
             true,
+            false,
         )
         .await;
         assert_eq!(result.completed_steps, 3);
@@ -269,6 +289,7 @@ mod tests {
             noop_progress,
             None,
             true,
+            false,
         )
         .await;
         assert_eq!(result.completed_steps, 0);
@@ -291,6 +312,7 @@ mod tests {
             noop_progress,
             None,
             true,
+            false,
         )
         .await;
         assert_eq!(result.final_variables.get("token").unwrap(), "abc123");
@@ -314,6 +336,7 @@ mod tests {
             noop_progress,
             None,
             true,
+            false,
         )
         .await;
         assert_eq!(result.completed_steps, 0);
@@ -337,6 +360,7 @@ mod tests {
             },
             None,
             true,
+            false,
         )
         .await;
         // 每步 2 次进度回调：running + completed
@@ -372,9 +396,47 @@ mod tests {
             noop_progress,
             None,
             true,
+            false,
         )
         .await;
         assert_eq!(result.completed_steps, 1);
+        assert_ne!(result.status, crate::models::Status::Success.as_str());
+    }
+
+    #[tokio::test]
+    async fn test_continue_on_failure_runs_all_steps() {
+        let client = reqwest::Client::new();
+        // 第一步断言失败，但 continue_on_failure=true 时继续后续步骤
+        let assertion = crate::models::assertion::Assertion {
+            id: "a1".into(),
+            item_id: "1".into(),
+            assertion_type: "status_code".into(),
+            expression: String::new(),
+            operator: "eq".into(),
+            expected: "404".into(),
+            enabled: true,
+            sort_order: 0,
+            created_at: String::new(),
+        };
+        let steps = vec![
+            (make_item("1", "Step1"), vec![assertion]),
+            (make_item("2", "Step2"), vec![]),
+            (make_item("3", "Step3"), vec![]),
+        ];
+        let result = run_chain(
+            &client,
+            steps,
+            HashMap::new(),
+            "chain-1".into(),
+            "TestChain".into(),
+            None,
+            noop_progress,
+            None,
+            true,
+            true, // continue_on_failure
+        )
+        .await;
+        assert_eq!(result.completed_steps, 3);
         assert_ne!(result.status, crate::models::Status::Success.as_str());
     }
 
@@ -399,6 +461,7 @@ mod tests {
                 count_clone.fetch_add(1, Ordering::Relaxed);
             })),
             true,
+            false,
         )
         .await;
         assert_eq!(count.load(Ordering::Relaxed), 2);

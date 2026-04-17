@@ -1,166 +1,29 @@
-use std::process::Stdio;
-use std::sync::Mutex;
+//! Claude CLI 集成命令
+//!
+//! 模块组织：
+//! - [`session`]：会话状态、Mutex、MCP 参数构造
+//! - [`process`]：子进程生命周期管理（路径探测、kill、stderr 限读）
+//! - [`summary`]：工具调用摘要文本生成
+//! - 本文件：6 个 Tauri 命令入口
+
+mod process;
+mod session;
+mod summary;
+
 use tauri::{AppHandle, Emitter, State};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
 use crate::errors::AppError;
 
-/// stderr 最大读取字节数（1MB），防止恶意输出耗尽内存
-const MAX_STDERR_BYTES: usize = 1024 * 1024;
+// 对外保留的公共类型与命令路径：commands::claude_cmd::xxx
+pub use session::{ClaudeEvent, ClaudeState};
 
-/// 验证 MCP 配置路径：必须是 .json 文件且位于合理目录
-fn validate_mcp_config(path: &str) -> Result<(), AppError> {
-    let p = std::path::Path::new(path);
-    if !p.extension().is_some_and(|e| e == "json") {
-        return Err("MCP 配置文件必须是 .json 格式".into());
-    }
-    // canonicalize 确保路径存在且无符号链接绕过
-    let canonical = p
-        .canonicalize()
-        .map_err(|e| AppError::Generic(format!("MCP 配置路径无效: {e}")))?;
-    let path_str = canonical.to_string_lossy();
-    // 禁止指向系统敏感目录
-    #[cfg(unix)]
-    if path_str.starts_with("/etc/") || path_str.starts_with("/var/") {
-        return Err("MCP 配置路径不允许指向系统目录".into());
-    }
-    Ok(())
-}
-
-/// 跨平台终止子进程
-fn kill_process(pid: u32) {
-    #[cfg(unix)]
-    {
-        // SAFETY: pid 来自本模块的子进程，仅发送 SIGTERM 请求其退出
-        let rc = unsafe { libc::kill(pid as i32, libc::SIGTERM) };
-        if rc != 0 {
-            log::warn!("[kill_process] kill(pid={pid}) returned {rc}");
-        }
-    }
-    #[cfg(windows)]
-    {
-        // Windows 下通过 taskkill 终止进程树
-        let _ = std::process::Command::new("taskkill")
-            .args(["/PID", &pid.to_string(), "/T", "/F"])
-            .output()
-            .map_err(|e| log::warn!("[kill_process] taskkill failed: {e}"));
-    }
-}
-
-/// 有限读取 stderr，超出 MAX_STDERR_BYTES 截断
-async fn read_stderr_limited(child: &mut tokio::process::Child) -> String {
-    let Some(stderr) = child.stderr.take() else {
-        return String::new();
-    };
-    let mut reader = BufReader::new(stderr);
-    let mut buf = Vec::with_capacity(4096);
-    let mut total = 0usize;
-
-    loop {
-        let bytes_read = match tokio::io::AsyncBufReadExt::fill_buf(&mut reader).await {
-            Ok([]) => break,
-            Ok(b) => {
-                let take = b.len().min(MAX_STDERR_BYTES - total);
-                buf.extend_from_slice(&b[..take]);
-                total += take;
-                b.len()
-            }
-            Err(_) => break,
-        };
-        reader.consume(bytes_read);
-        if total >= MAX_STDERR_BYTES {
-            break;
-        }
-    }
-
-    String::from_utf8_lossy(&buf).to_string()
-}
-
-/// Claude 会话内部状态
-/// 所有字段放在一个结构体中，由单个 Mutex 保护，避免竞态条件
-struct ClaudeInner {
-    /// 当前运行的进程 PID
-    pid: Option<u32>,
-    /// 当前会话 ID（用于 --resume）
-    session_id: Option<String>,
-    /// 预热的备用 session（新建 Tab 时秒用）
-    spare_session_id: Option<String>,
-}
-
-/// Claude 会话状态
-/// 使用单个 Mutex 包装所有状态，确保原子操作
-pub struct ClaudeState(Mutex<ClaudeInner>);
-
-impl ClaudeState {
-    pub fn new() -> Self {
-        Self(Mutex::new(ClaudeInner {
-            pid: None,
-            session_id: None,
-            spare_session_id: None,
-        }))
-    }
-
-    /// 获取状态的可变引用
-    fn lock_inner(&self) -> Result<std::sync::MutexGuard<'_, ClaudeInner>, AppError> {
-        self.0
-            .lock()
-            .map_err(|_| AppError::Generic("内部状态不可用（锁冲突）".into()))
-    }
-}
-
-#[derive(Clone, serde::Serialize)]
-pub struct ClaudeEvent {
-    pub event_type: String,
-    pub content: String,
-    pub session_id: Option<String>,
-    pub raw: Option<serde_json::Value>,
-}
-
-/// 构建带 MCP 参数的公共 args
-fn build_mcp_args(args: &mut Vec<String>, mcp_config_path: Option<&str>) -> Result<(), AppError> {
-    if let Some(config) = mcp_config_path {
-        validate_mcp_config(config)?;
-        args.push(format!("--mcp-config={config}"));
-        args.push("--allowedTools".into());
-        args.push("mcp__qai__*,Bash,Read,Write,Edit,Glob,Grep,Agent,ToolSearch".into());
-        args.push("--append-system-prompt".into());
-        args.push(
-            "You are running inside QAI, an API testing tool. \
-             When the user mentions tests, modules, collections, suites, or requests, \
-             they mean QAI's data — use the QAI MCP tools (search, run_collection, send_request, list_collections, etc.). \
-             NEVER use 'cargo test', 'npm test', 'jest', 'pytest', or any shell test command. \
-             Always resolve entity names via the 'search' MCP tool first."
-                .into(),
-        );
-    }
-    Ok(())
-}
-
-/// 配置 Claude 命令的环境变量
-fn configure_cmd_env(cmd: &mut Command) {
-    let path = std::env::var("PATH").unwrap_or_default();
-    let home = std::env::var("HOME").unwrap_or_default();
-    cmd.env(
-        "PATH",
-        format!("{home}/.local/bin:/opt/homebrew/bin:/usr/local/bin:{path}"),
-    );
-    if let Ok(home) = std::env::var("HOME") {
-        cmd.env("HOME", &home);
-        cmd.current_dir(&home);
-    }
-    cmd.stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-}
-
-/// 等待进程退出并确保 PID 被清理
-async fn wait_and_clear_pid(child: &mut tokio::process::Child, state: &ClaudeState) {
-    let _ = child.wait().await;
-    if let Ok(mut inner) = state.lock_inner() {
-        inner.pid = None;
-    }
-}
+use process::{
+    configure_cmd_env, kill_process, read_stderr_limited, wait_and_clear_pid, which_claude,
+};
+use session::build_mcp_args;
+use summary::tool_use_summary;
 
 /// 查询 session 是否已建立（面板用来判断预热状态）
 #[tauri::command]
@@ -485,88 +348,6 @@ pub async fn claude_warmup_spare(
     let _ = child.wait().await;
     let _ = app.emit("claude-spare-ready", ());
     Ok(())
-}
-
-/// 根据工具名和输入参数生成简短摘要
-fn tool_use_summary(name: &str, input: Option<&serde_json::Value>) -> String {
-    let input = match input {
-        Some(v) => v,
-        None => return String::new(),
-    };
-    match name {
-        "Bash" => {
-            let cmd = input.get("command").and_then(|v| v.as_str()).unwrap_or("");
-            truncate_str(cmd, 200)
-        }
-        "Read" | "Write" | "Edit" => {
-            let path = input
-                .get("file_path")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            truncate_str(path, 200)
-        }
-        "Glob" | "Grep" => {
-            let pattern = input.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
-            truncate_str(pattern, 200)
-        }
-        "WebSearch" | "WebFetch" => {
-            let q = input
-                .get("query")
-                .or_else(|| input.get("url"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            truncate_str(q, 200)
-        }
-        _ => {
-            // 通用：取第一个字符串值
-            if let Some(obj) = input.as_object() {
-                for val in obj.values() {
-                    if let Some(s) = val.as_str() {
-                        if !s.is_empty() {
-                            return truncate_str(s, 120);
-                        }
-                    }
-                }
-            }
-            String::new()
-        }
-    }
-}
-
-fn truncate_str(s: &str, max: usize) -> String {
-    let s = s.lines().next().unwrap_or(s); // 只取第一行
-    if s.chars().count() <= max {
-        s.to_string()
-    } else {
-        let end = s.char_indices().nth(max).map_or(s.len(), |(i, _)| i);
-        format!("{}…", &s[..end])
-    }
-}
-
-fn which_claude() -> Option<String> {
-    // 检查常见安装路径，含 ~/.local/bin（Claude Code 默认安装位置）
-    let home = std::env::var("HOME").unwrap_or_default();
-    let local_bin = format!("{home}/.local/bin/claude");
-    for p in &[
-        local_bin.as_str(),
-        "/opt/homebrew/bin/claude",
-        "/usr/local/bin/claude",
-        "/usr/bin/claude",
-    ] {
-        if std::path::Path::new(p).exists() {
-            return Some(p.to_string());
-        }
-    }
-    // 尝试 PATH 中的 claude
-    if let Ok(output) = std::process::Command::new("which").arg("claude").output() {
-        if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !path.is_empty() {
-                return Some(path);
-            }
-        }
-    }
-    None
 }
 
 /// 快速检测 Claude Code CLI 是否已安装（只检查二进制，不发请求）

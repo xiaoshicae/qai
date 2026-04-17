@@ -16,6 +16,7 @@ import ExtractRulesEditor from './extract-rules-editor'
 import RunsTab from './runs-tab'
 import type { KeyValuePair } from '@/types'
 import { safeJsonParse } from '@/lib/utils'
+import { prettyLoadBody, formatJson, compactJson } from '@/lib/body'
 import { METHOD_COLORS } from '@/lib/styles'
 import { VarInput } from '@/components/ui/var-input'
 
@@ -48,16 +49,7 @@ export default function RequestPanel() {
       setQueryParams(safeJsonParse(currentRequest.query_params, []))
       setBodyType(currentRequest.body_type)
       setProtocol(currentRequest.protocol || 'http')
-      // JSON 类型加载时自动格式化
-      if (currentRequest.body_type === 'json' && currentRequest.body_content) {
-        try {
-          setBodyContent(JSON.stringify(JSON.parse(currentRequest.body_content), null, 2))
-        } catch {
-          setBodyContent(currentRequest.body_content)
-        }
-      } else {
-        setBodyContent(currentRequest.body_content)
-      }
+      setBodyContent(prettyLoadBody(currentRequest.body_type, currentRequest.body_content))
     }
   }, [currentRequest])
 
@@ -65,16 +57,12 @@ export default function RequestPanel() {
 
   const [copied, setCopied] = useState(false)
 
-  const formatJson = useCallback(() => {
-    try {
-      setBodyContent(JSON.stringify(JSON.parse(bodyContent), null, 2))
-    } catch { /* 非法 JSON 不处理 */ }
+  const handleFormatJson = useCallback(() => {
+    setBodyContent(formatJson(bodyContent))
   }, [bodyContent])
 
-  const compactJson = useCallback(() => {
-    try {
-      setBodyContent(JSON.stringify(JSON.parse(bodyContent)))
-    } catch { /* 非法 JSON 不处理 */ }
+  const handleCompactJson = useCallback(() => {
+    setBodyContent(compactJson(bodyContent))
   }, [bodyContent])
 
   const copyBody = useCallback(async () => {
@@ -269,10 +257,10 @@ export default function RequestPanel() {
                 <BodyTypeSelector value={bodyType} onChange={setBodyType}>
                 {bodyType === 'json' && bodyContent && (
                   <div className="ml-auto flex items-center gap-0.5">
-                    <button onClick={formatJson} className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-overlay/[0.04] cursor-pointer transition-colors" title={t('request.format_json')}>
+                    <button onClick={handleFormatJson} className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-overlay/[0.04] cursor-pointer transition-colors" title={t('request.format_json')}>
                       <Braces className="h-3 w-3" /> Format
                     </button>
-                    <button onClick={compactJson} className="px-2 py-1 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-overlay/[0.04] cursor-pointer transition-colors" title={t('request.compact_json')}>Compact</button>
+                    <button onClick={handleCompactJson} className="px-2 py-1 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-overlay/[0.04] cursor-pointer transition-colors" title={t('request.compact_json')}>Compact</button>
                     <button onClick={copyBody} className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-overlay/[0.04] cursor-pointer transition-colors" title={t('request.copy')}>
                       {copied ? <Check className="h-3 w-3 text-success" /> : <Copy className="h-3 w-3" />}
                     </button>

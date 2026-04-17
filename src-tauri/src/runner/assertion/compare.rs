@@ -1,4 +1,5 @@
 use regex::RegexBuilder;
+use std::cmp::Ordering;
 
 /// 正则表达式最大长度限制（防止 ReDoS）
 const MAX_REGEX_LEN: usize = 500;
@@ -7,29 +8,68 @@ const REGEX_SIZE_LIMIT: usize = 1_000_000; // 1MB
 /// 正则嵌套深度限制
 const REGEX_NEST_LIMIT: u32 = 100;
 
+/// 数字字面量的解析结果，保留整数语义
+#[derive(Debug, Clone, Copy)]
+enum NumKind {
+    Int(i128),
+    Float(f64),
+}
+
+/// 优先按 i128 解析，失败再回退 f64；都不是数字返回 None
+fn parse_number(s: &str) -> Option<NumKind> {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Ok(i) = trimmed.parse::<i128>() {
+        return Some(NumKind::Int(i));
+    }
+    trimmed.parse::<f64>().ok().map(NumKind::Float)
+}
+
+/// 比较两个字符串的数字值，类型不一致时按 f64 提升比较
+fn compare_numeric(actual: &str, expected: &str) -> Option<Ordering> {
+    let a = parse_number(actual)?;
+    let b = parse_number(expected)?;
+    match (a, b) {
+        (NumKind::Int(a), NumKind::Int(b)) => Some(a.cmp(&b)),
+        (NumKind::Float(a), NumKind::Float(b)) => a.partial_cmp(&b),
+        (NumKind::Int(a), NumKind::Float(b)) => (a as f64).partial_cmp(&b),
+        (NumKind::Float(a), NumKind::Int(b)) => a.partial_cmp(&(b as f64)),
+    }
+}
+
 pub fn compare(actual: &str, operator: &str, expected: &str) -> bool {
     match operator {
-        "eq" => actual == expected,
-        "neq" => actual != expected,
+        // eq/neq：先按字符串完全相等判定（保留 "abc" 等非数字场景）
+        // 都解析成数字时再按数值比较，让 "200" 与 "200.0" 等价
+        "eq" => {
+            if actual == expected {
+                return true;
+            }
+            matches!(compare_numeric(actual, expected), Some(Ordering::Equal))
+        }
+        "neq" => {
+            if actual == expected {
+                return false;
+            }
+            !matches!(compare_numeric(actual, expected), Some(Ordering::Equal))
+        }
         "contains" => actual.contains(expected),
         "not_contains" => !actual.contains(expected),
         "exists" => !actual.is_empty(),
         "not_exists" => actual.is_empty(),
         "matches" => match_regex_safe(actual, expected),
-        "gt" | "lt" | "gte" | "lte" => {
-            let a = actual.parse::<f64>();
-            let b = expected.parse::<f64>();
-            match (a, b) {
-                (Ok(a), Ok(b)) => match operator {
-                    "gt" => a > b,
-                    "lt" => a < b,
-                    "gte" => a >= b,
-                    "lte" => a <= b,
-                    _ => false,
-                },
+        "gt" | "lt" | "gte" | "lte" => match compare_numeric(actual, expected) {
+            Some(ord) => match operator {
+                "gt" => ord == Ordering::Greater,
+                "lt" => ord == Ordering::Less,
+                "gte" => ord != Ordering::Less,
+                "lte" => ord != Ordering::Greater,
                 _ => false,
-            }
-        }
+            },
+            None => false,
+        },
         _ => actual == expected,
     }
 }
@@ -159,6 +199,42 @@ mod tests {
     #[test]
     fn test_numeric_large_values() {
         assert!(compare("999999999999", "gt", "1"));
+    }
+
+    #[test]
+    fn test_eq_numeric_equivalence() {
+        // 整数与浮点字面量等价
+        assert!(compare("200", "eq", "200.0"));
+        assert!(compare("200.0", "eq", "200"));
+        assert!(compare("0", "eq", "-0"));
+        // 实际不等的数值仍然 false
+        assert!(!compare("200", "eq", "201"));
+    }
+
+    #[test]
+    fn test_neq_numeric_equivalence() {
+        // "200" 与 "200.0" 数值相等，neq 应返回 false
+        assert!(!compare("200", "neq", "200.0"));
+        assert!(compare("200", "neq", "201"));
+    }
+
+    #[test]
+    fn test_eq_strings_unaffected() {
+        // 非数字字符串保持原 eq 语义
+        assert!(compare("hello", "eq", "hello"));
+        assert!(!compare("hello", "eq", "world"));
+    }
+
+    #[test]
+    fn test_numeric_int_boundary() {
+        // 超出 i64 但在 i128 内的数仍能精确比较
+        assert!(compare("9223372036854775808", "gt", "9223372036854775807"));
+    }
+
+    #[test]
+    fn test_numeric_mixed_int_float() {
+        assert!(compare("1.5", "gt", "1"));
+        assert!(compare("1", "lt", "1.5"));
     }
 
     // ─── matches (regex) ────────────────────────────────────

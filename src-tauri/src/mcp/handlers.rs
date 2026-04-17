@@ -338,6 +338,7 @@ pub async fn run_collection(
             |_| {},
             None,
             false,
+            false, // MCP 默认失败即停
         )
         .await;
         for step in cr.steps {

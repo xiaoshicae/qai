@@ -17,6 +17,7 @@ import { MiniResponseViewer } from '@/components/request/mini-response-viewer'
 import AssertionEditor from '@/components/assertion/assertion-editor'
 import { invokeErrorMessage } from '@/lib/invoke-error'
 import { METHOD_COLORS } from '@/lib/styles'
+import { isKvBody, parseKvBody, formatJson } from '@/lib/body'
 
 type EditFormTab = 'body' | 'headers' | 'assertions' | 'extract' | 'poll'
 
@@ -443,7 +444,7 @@ export function EditForm({ req, onChange, onSave, onEnsureSaved, onCancel, envVa
                       <button
                         type="button"
                         className="ml-auto flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-overlay/[0.04] cursor-pointer transition-colors"
-                        onClick={() => { try { set('body_content', JSON.stringify(JSON.parse(req.body_content), null, 2)) } catch { /* ignore */ } }}
+                        onClick={() => set('body_content', formatJson(req.body_content))}
                       >
                         <Braces className="h-3 w-3" /> Format
                       </button>
@@ -454,9 +455,9 @@ export function EditForm({ req, onChange, onSave, onEnsureSaved, onCancel, envVa
                   <div className="flex-1 min-h-[120px] rounded-xl border border-overlay/[0.06] bg-overlay/[0.02] flex items-center justify-center">
                     <span className="text-xs text-muted-foreground/40">{t('scenario.no_body')}</span>
                   </div>
-                ) : (req.body_type === 'form-data' || req.body_type === 'urlencoded' || req.body_type === 'form') ? (
+                ) : isKvBody(req.body_type) ? (
                   <KeyValueTable
-                    value={(() => { try { const p = JSON.parse(req.body_content || '[]'); return Array.isArray(p) ? p : [] } catch { return [] } })()}
+                    value={parseKvBody(req.body_content)}
                     onChange={(v) => set('body_content', JSON.stringify(v))}
                     allowFiles={req.body_type === 'form-data'}
                     envVars={envVars}

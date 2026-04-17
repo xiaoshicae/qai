@@ -15,6 +15,7 @@ import { MiniResponseViewer } from '@/components/request/mini-response-viewer'
 import { invokeErrorMessage } from '@/lib/invoke-error'
 import { useEnvVars } from '@/hooks/use-env-vars'
 import { METHOD_COLORS } from '@/lib/styles'
+import { isKvBody, parseKvBody, serializeBodyForSubmit, formatJson } from '@/lib/body'
 import type { ExecutionResult, KeyValuePair } from '@/types'
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD'].map((m) => ({ value: m, label: m }))
@@ -62,7 +63,6 @@ export default function QuickTestDialog({ open, onOpenChange, envVars: envVarsPr
     setStreamContent('')
     streamContentRef.current = ''
 
-    const isKvBody = bodyType === 'form-data' || bodyType === 'urlencoded'
     const tempId = crypto.randomUUID()
     let unlisten: (() => void) | undefined
     let streamStarted = false
@@ -84,7 +84,7 @@ export default function QuickTestDialog({ open, onOpenChange, envVars: envVarsPr
           headers: JSON.stringify(headers),
           queryParams: '[]',
           bodyType,
-          bodyContent: isKvBody ? JSON.stringify(bodyKv) : bodyContent,
+          bodyContent: serializeBodyForSubmit(bodyType, bodyContent, bodyKv),
           protocol: 'http',
           requestId: tempId,
         },
@@ -124,8 +124,10 @@ export default function QuickTestDialog({ open, onOpenChange, envVars: envVarsPr
     if (parsed.body_type && parsed.body_type !== 'none') {
       setBodyType(parsed.body_type)
       if (parsed.body_content) {
-        if (parsed.body_type === 'form-data' || parsed.body_type === 'urlencoded') {
-          try { setBodyKv(JSON.parse(parsed.body_content)) } catch { setBodyContent(parsed.body_content) }
+        if (isKvBody(parsed.body_type)) {
+          const kv = parseKvBody(parsed.body_content)
+          if (kv.length > 0) setBodyKv(kv)
+          else setBodyContent(parsed.body_content)
         } else {
           setBodyContent(parsed.body_content)
         }
@@ -271,7 +273,7 @@ export default function QuickTestDialog({ open, onOpenChange, envVars: envVarsPr
                       <button
                         type="button"
                         className="ml-auto flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-overlay/[0.04] cursor-pointer transition-colors"
-                        onClick={() => { try { setBodyContent(JSON.stringify(JSON.parse(bodyContent), null, 2)) } catch { /* ignore */ } }}
+                        onClick={() => setBodyContent(formatJson(bodyContent))}
                       >
                         <Braces className="h-3 w-3" /> Format
                       </button>

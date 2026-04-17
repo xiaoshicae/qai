@@ -369,5 +369,14 @@
     "show_help": "Show help",
     "save": "Save",
     "close_dialog": "Close dialog"
+  },
+  "menu": {
+    "exported_to": "Exported to {{path}}",
+    "import_done_with": "Import complete. Added: {{parts}}",
+    "import_done_no_change": "Import complete. No changes.",
+    "count_collections": "{{count}} collections",
+    "count_items": "{{count}} requests",
+    "count_assertions": "{{count}} assertions",
+    "count_environments": "{{count}} environments"
   }
 }

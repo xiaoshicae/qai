@@ -25,9 +25,10 @@ impl RunnerState {
     }
 
     fn lock_inner(&self) -> std::sync::MutexGuard<'_, Option<Arc<AtomicBool>>> {
-        self.current_cancel
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
+        self.current_cancel.lock().unwrap_or_else(|e| {
+            log::error!("RunnerState mutex poisoned, recovering inner state: {e}");
+            e.into_inner()
+        })
     }
 
     /// 开始新运行，返回取消令牌
@@ -280,6 +281,7 @@ async fn run_collection_inner(
                             let _ = app_result_cb.emit("execution-result", result);
                         })),
                         dry_run,
+                        false, // collection 编排默认失败即停，与 batch 行为一致
                     )
                     .await;
 
@@ -348,8 +350,10 @@ pub async fn run_chain(
     http: State<'_, HttpClient>,
     item_id: String,
     dry_run: Option<bool>,
+    continue_on_failure: Option<bool>,
 ) -> Result<ChainResult, AppError> {
     let dry_run = dry_run.unwrap_or(false);
+    let continue_on_failure = continue_on_failure.unwrap_or(false);
     let (steps, base_vars, item_name) = {
         let conn = db.conn()?;
         let chain_item = crate::db::item::get(&conn, &item_id)?;
@@ -379,6 +383,7 @@ pub async fn run_chain(
             let _ = app_result.emit("execution-result", result);
         })),
         dry_run,
+        continue_on_failure,
     )
     .await;
 

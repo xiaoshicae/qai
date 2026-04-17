@@ -34,8 +34,24 @@ export function useCollectionRunner({ collectionId, allRequests, tableItems }: O
   const getConfig = () => useRunConfigStore.getState()
 
   const abortRef = useRef(false)
-  /** 统一的 listener 清理函数（并发 + 顺序模式共用） */
-  const unlistenRef = useRef<(() => void) | null>(null)
+  /** Listener 清理函数池：所有注册的 listen() 返回值都加入此 Set，避免覆盖泄漏 */
+  const unlistenSet = useRef<Set<() => void>>(new Set())
+
+  /** 注册 listener cleanup，返回去注册函数（自动从 Set 移除） */
+  const trackListener = (fn: () => void) => {
+    unlistenSet.current.add(fn)
+    return () => {
+      if (unlistenSet.current.delete(fn)) fn()
+    }
+  }
+
+  /** 清空所有未释放的 listener（stop / 卸载时） */
+  const clearAllListeners = () => {
+    unlistenSet.current.forEach((fn) => {
+      try { fn() } catch { /* ignore */ }
+    })
+    unlistenSet.current.clear()
+  }
 
   const total = allRequests.length
 
@@ -130,7 +146,7 @@ export function useCollectionRunner({ collectionId, allRequests, tableItems }: O
       const contents: Record<string, string> = {}
       // 当前正在执行的 item IDs，用于 stream-chunk 过滤
       const activeItemIds = new Set<string>()
-      const unlisten = await listen<StreamChunk>('stream-chunk', (event) => {
+      const rawUnlisten = await listen<StreamChunk>('stream-chunk', (event) => {
         const { chunk, done, item_id } = event.payload
         if (abortRef.current || done || chunk === '[DONE]') return
         if (!activeItemIds.has(item_id)) return
@@ -138,8 +154,7 @@ export function useCollectionRunner({ collectionId, allRequests, tableItems }: O
         contents[item_id] = (contents[item_id] ?? '') + (delta ?? chunk + '\n')
         setStreamingContents({ ...contents })
       })
-      // 注册到 unlistenRef，确保组件卸载时能清理
-      unlistenRef.current = () => unlisten()
+      const releaseStream = trackListener(rawUnlisten)
 
       try {
         for (const tableItem of items) {
@@ -150,7 +165,7 @@ export function useCollectionRunner({ collectionId, allRequests, tableItems }: O
             const stepIds = tableItem.steps.map((s) => s.id)
             stepIds.forEach((id) => activeItemIds.add(id))
             setRunningIds((prev) => new Set(prev).add(tableItem.groupId))
-            const unlistenChain = await listen<ChainProgress>('chain-progress', (event) => {
+            const rawChain = await listen<ChainProgress>('chain-progress', (event) => {
               const p = event.payload
               if (p.item_id !== tableItem.groupId) return
               const stepId = stepIds[p.step_index]
@@ -161,10 +176,12 @@ export function useCollectionRunner({ collectionId, allRequests, tableItems }: O
                 setRunningIds((prev) => { const n = new Set(prev); n.delete(stepId); return n })
               }
             })
-            const unlistenResult = await listen<ExecutionResult>('execution-result', (e) => {
+            const rawChainResult = await listen<ExecutionResult>('execution-result', (e) => {
               if (!stepIds.includes(e.payload.item_id)) return
               setSingleResults((prev) => ({ ...prev, [e.payload.item_id]: e.payload }))
             })
+            const releaseChain = trackListener(rawChain)
+            const releaseChainResult = trackListener(rawChainResult)
             try {
               const result = await invoke<ChainResult>('run_chain', { itemId: tableItem.groupId, dryRun })
               if (!abortRef.current) {
@@ -176,8 +193,8 @@ export function useCollectionRunner({ collectionId, allRequests, tableItems }: O
             } catch (e: unknown) {
               if (!abortRef.current) toast.error(invokeErrorMessage(e))
             } finally {
-              unlistenChain()
-              unlistenResult()
+              releaseChain()
+              releaseChainResult()
               stepIds.forEach((id) => activeItemIds.delete(id))
               setRunningIds((prev) => { const n = new Set(prev); stepIds.forEach((id) => n.delete(id)); n.delete(tableItem.groupId); return n })
             }
@@ -213,8 +230,7 @@ export function useCollectionRunner({ collectionId, allRequests, tableItems }: O
           }
         }
       } finally {
-        unlisten()
-        unlistenRef.current = null
+        releaseStream()
         setStreamingContents({})
         const elapsed = Date.now() - startTime
         if (elapsed < MIN_LOADING_MS) await new Promise((r) => setTimeout(r, MIN_LOADING_MS - elapsed))
@@ -225,7 +241,7 @@ export function useCollectionRunner({ collectionId, allRequests, tableItems }: O
     } else {
       // 构建当前集合的 item ID 集合，用于事件隔离过滤
       const itemIds = new Set(allRequests.map((r) => r.id))
-      const unlistenProgress = await listen<TestProgress>('test-progress', (e) => {
+      const rawProgress = await listen<TestProgress>('test-progress', (e) => {
         if (abortRef.current || !itemIds.has(e.payload.item_id)) return
         setProgress((prev) => {
           const idx = prev.findIndex((x) => x.item_id === e.payload.item_id)
@@ -234,11 +250,12 @@ export function useCollectionRunner({ collectionId, allRequests, tableItems }: O
         })
       })
       // 实时接收每个请求完成的结果（按 item_id 过滤，只接收本集合的）
-      const unlistenResult = await listen<ExecutionResult>('execution-result', (e) => {
+      const rawResult = await listen<ExecutionResult>('execution-result', (e) => {
         if (abortRef.current || !itemIds.has(e.payload.item_id)) return
         setSingleResults((prev) => ({ ...prev, [e.payload.item_id]: e.payload }))
       })
-      unlistenRef.current = () => { unlistenProgress(); unlistenResult() }
+      const releaseProgress = trackListener(rawProgress)
+      const releaseResult = trackListener(rawResult)
       try {
         const excludeList = excludeIds?.size ? Array.from(excludeIds) : undefined
         const result = await invoke<BatchResult>('run_collection', { collectionId, concurrency, excludeIds: excludeList, dryRun })
@@ -248,7 +265,8 @@ export function useCollectionRunner({ collectionId, allRequests, tableItems }: O
         const elapsed = Date.now() - startTime
         if (elapsed < MIN_LOADING_MS) await new Promise((r) => setTimeout(r, MIN_LOADING_MS - elapsed))
         setRunning(false)
-        unlistenRef.current?.(); unlistenRef.current = null
+        releaseProgress()
+        releaseResult()
         useRunQueueStore.getState().finishRun()
       }
     }
@@ -265,8 +283,7 @@ export function useCollectionRunner({ collectionId, allRequests, tableItems }: O
     setRunning(false)
     setProgress([])
     setStreamingContents({})
-    unlistenRef.current?.()
-    unlistenRef.current = null
+    clearAllListeners()
     loadStatuses()
   }
 
@@ -275,12 +292,13 @@ export function useCollectionRunner({ collectionId, allRequests, tableItems }: O
     setRunningIds((prev) => new Set(prev).add(requestId))
     setStreamingContents((prev) => ({ ...prev, [requestId]: '' }))
     let content = ''
-    const unlisten = await listen<StreamChunk>('stream-chunk', (event) => {
+    const rawUnlisten = await listen<StreamChunk>('stream-chunk', (event) => {
       const { chunk, done, item_id } = event.payload
       if (item_id !== requestId || done || chunk === '[DONE]') return
       content += chunk + '\n'
       setStreamingContents((prev) => ({ ...prev, [requestId]: content }))
     })
+    const release = trackListener(rawUnlisten)
     try {
       const dr = getConfig().dryRun
       const result = await invoke<ExecutionResult>('send_request_stream', { id: requestId, dryRun: dr })
@@ -296,7 +314,7 @@ export function useCollectionRunner({ collectionId, allRequests, tableItems }: O
         },
       }))
     } finally {
-      unlisten()
+      release()
       setRunningIds((prev) => { const n = new Set(prev); n.delete(requestId); return n })
       setStreamingContents((prev) => { const n = { ...prev }; delete n[requestId]; return n })
     }
@@ -307,7 +325,7 @@ export function useCollectionRunner({ collectionId, allRequests, tableItems }: O
     setSingleResults((prev) => { const n = { ...prev }; for (const id of stepIds) delete n[id]; return n })
     setStatuses((prev) => { const n = { ...prev }; for (const id of stepIds) delete n[id]; return n })
 
-    const unlistenChain = await listen<ChainProgress>('chain-progress', (event) => {
+    const rawChain = await listen<ChainProgress>('chain-progress', (event) => {
       const p = event.payload
       if (p.item_id !== chainItemId) return
       const stepId = stepIds[p.step_index]
@@ -325,10 +343,12 @@ export function useCollectionRunner({ collectionId, allRequests, tableItems }: O
       }
     })
     // 实时接收每步完成结果
-    const unlistenResult = await listen<ExecutionResult>('execution-result', (e) => {
+    const rawResult = await listen<ExecutionResult>('execution-result', (e) => {
       if (!stepIds.includes(e.payload.item_id)) return
       setSingleResults((prev) => ({ ...prev, [e.payload.item_id]: e.payload }))
     })
+    const releaseChain = trackListener(rawChain)
+    const releaseResult = trackListener(rawResult)
 
     try {
       const dr = getConfig().dryRun
@@ -340,8 +360,8 @@ export function useCollectionRunner({ collectionId, allRequests, tableItems }: O
     } catch (e: unknown) {
       toast.error(invokeErrorMessage(e))
     } finally {
-      unlistenChain()
-      unlistenResult()
+      releaseChain()
+      releaseResult()
       setRunningIds((prev) => { const n = new Set(prev); stepIds.forEach((id) => n.delete(id)); n.delete(chainItemId); return n })
     }
   }
@@ -360,8 +380,8 @@ export function useCollectionRunner({ collectionId, allRequests, tableItems }: O
     setProgress((prev) => prev.filter((p) => p.item_id !== itemId))
   }
 
-  /** 清理 listener（组件卸载时调用） */
-  const cleanup = () => { unlistenRef.current?.() }
+  /** 清理所有 listener（组件卸载时调用） */
+  const cleanup = clearAllListeners
 
   return {
     // state

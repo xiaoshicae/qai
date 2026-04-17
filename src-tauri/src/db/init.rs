@@ -53,8 +53,7 @@ pub fn initialize_database(app: &AppHandle) -> Result<(), Box<dyn std::error::Er
             .timeout(std::time::Duration::from_secs(crate::HTTP_TIMEOUT_SECS))
             .connect_timeout(std::time::Duration::from_secs(10))
             .redirect(reqwest::redirect::Policy::limited(10))
-            .build()
-            .expect("failed to build http client"),
+            .build()?,
     ));
     Ok(())
 }

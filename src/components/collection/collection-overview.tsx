@@ -1,16 +1,12 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { useTranslation } from 'react-i18next'
-import {
-  Play, Download, ChevronDown, ChevronRight, Loader2, Plus, Trash2, Link2, Square, GripVertical, Pencil, Copy,
-} from 'lucide-react'
 import { toast } from 'sonner'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Progress } from '@/components/ui/progress'
 import { EmptyState } from '@/components/ui/empty-state'
 import { useConfirmStore } from '@/components/ui/confirm-dialog'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from '@/components/ui/dialog'
@@ -25,8 +21,11 @@ import {
   allRequestsFromTableItems,
   type TableItem,
 } from './collection-overview-model'
-import { StatCard, InlineEdit, EditForm } from './collection-overview-edit-parts'
+import { InlineEdit, EditForm } from './collection-overview-edit-parts'
 import { ScenarioRow } from './collection-overview-scenario-row'
+import { CollectionOverviewStats } from './collection-overview-stats'
+import { CollectionOverviewToolbar, CollectionOverviewProgress } from './collection-overview-toolbar'
+import { ChainGroupRow } from './collection-overview-chain-row'
 
 function getTableItemId(item: TableItem): string {
   return 'isChain' in item ? item.groupId : item.id
@@ -422,56 +421,29 @@ export default function CollectionOverview({ collection, tree }: Props) {
         />
       </div>
 
-      <div className="grid grid-cols-4 gap-3">
-        <StatCard label="TOTAL" value={total} />
-        <StatCard label="PASSED" value={passed} color="text-success" />
-        <StatCard label="FAILED" value={failed} color="text-error" />
-        <div className="rounded-xl border border-overlay/[0.06] px-4 py-3">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">PASS RATE</span>
-          <div className="text-xl font-bold tabular-nums mt-0.5 text-success" style={{ color: passRate === 100 ? 'var(--color-success)' : passRate >= 60 ? 'var(--color-warning)' : passed + failed === 0 ? 'inherit' : 'var(--color-error)' }}>
-            {passed + failed > 0 ? `${passRate}%` : '-'}
-          </div>
-          {passed + failed > 0 && <div className="mt-1.5 h-1.5 rounded-full bg-overlay/[0.06] overflow-hidden"><div className="h-full rounded-full transition-all duration-500" style={{ width: `${passRate}%`, background: passRate === 100 ? 'var(--color-success)' : passRate >= 60 ? 'var(--color-warning)' : 'var(--color-error)' }} /></div>}
-        </div>
-      </div>
+      <CollectionOverviewStats total={total} passed={passed} failed={failed} passRate={passRate} />
 
-      <div className="flex items-center gap-2">
-        <div className="flex items-center gap-2 flex-1">
-        {running ? (
-          <Button onClick={stopRun} size="sm" variant="destructive" className="gap-1.5">
-            <Square className="h-3 w-3" /> {t('dashboard.stop')}
-          </Button>
-        ) : (
-          <Button onClick={handleRunAll} size="sm" className="gap-1.5">
-            <Play className="h-3.5 w-3.5" /> {dryRun ? t('dashboard.dry_run') : t('dashboard.run_all')}
-          </Button>
-        )}
-        <Button variant="outline" size="sm" className="gap-1.5" onClick={addTestCase}>
-          <Plus className="h-3.5 w-3.5" /> {t('dashboard.add_case')}
-        </Button>
-        <Button variant="outline" size="sm" className="gap-1.5" onClick={addChain}>
-          <Link2 className="h-3.5 w-3.5" /> {t('dashboard.add_chain')}
-        </Button>
-        {batchResult && <Button variant="outline" size="sm" onClick={exportHtml} className="gap-1.5"><Download className="h-3.5 w-3.5" /> {t('dashboard.export_report')}</Button>}
-        </div>
-      </div>
+      <CollectionOverviewToolbar
+        running={running}
+        dryRun={dryRun}
+        onRunAll={handleRunAll}
+        onStop={stopRun}
+        onAddCase={addTestCase}
+        onAddChain={addChain}
+        onExportHtml={exportHtml}
+        hasBatchResult={!!batchResult}
+      />
 
-      {running && (() => {
-        const done = progress.filter((p) => p.status !== 'running').length || Object.keys(singleResults).length
-        const totalCount = progress[0]?.total ?? total
-        const currentItem = progress.find((p) => p.status === 'running')
-        const currentName = currentItem ? allRequests.find((r) => r.id === currentItem.item_id)?.name : undefined
-        return (
-          <div className="space-y-1.5">
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>{currentName ? currentName : t('dashboard.run_all')} ({done}/{totalCount})</span>
-              <span>{progressPercent}%</span>
-            </div>
-            <Progress value={progressPercent} />
-          </div>
-        )
-      })()}
-      {error && <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-lg">{error}</div>}
+      <CollectionOverviewProgress
+        running={running}
+        progress={progress}
+        singleResults={singleResults}
+        total={total}
+        progressPercent={progressPercent}
+        allRequests={allRequests}
+        error={error}
+        batchResult={batchResult}
+      />
 
       <div className="rounded-xl border border-overlay/[0.06] overflow-hidden">
         <div className="overflow-x-auto">
@@ -504,93 +476,59 @@ export default function CollectionOverview({ collection, tree }: Props) {
             if ('isChain' in item) {
               const groupKey = `group-${item.groupId}`
               const groupExpanded = expandedRows.has(groupKey)
-              const isAnyStepRunning = runningIds.has(item.groupId) || item.steps.some((s) => runningIds.has(s.id) || progress.find((p) => p.item_id === s.id)?.status === 'running')
-              const groupStatuses = item.steps.map((s) => getStatus(s.id)).filter(Boolean)
-              const groupPass = groupStatuses.every((s) => s === 'success')
-              const groupFail = groupStatuses.some((s) => s === 'failed' || s === 'error')
-              const groupLabel = isAnyStepRunning ? 'Running' : groupStatuses.length === 0 ? '-' : groupPass ? 'PASS' : groupFail ? 'FAIL' : '-'
-              const groupColor = isAnyStepRunning ? 'text-info' : groupStatuses.length === 0 ? '' : groupPass ? 'text-success' : groupFail ? 'text-error' : ''
               return (
                 <SortableRow key={item.groupId} id={item.groupId}>
                   {(dragHandleProps) => (
-                <div>
-                  <div
-                    className="grid grid-cols-[minmax(0,1fr)_80px_64px_64px_80px_72px] gap-2 px-4 py-2.5 text-sm bg-warning/5 hover:bg-warning/10 cursor-pointer transition-colors group"
-                    onClick={() => {
-                      setExpandedRows((p) => {
-                        const n = new Set(p)
-                        if (n.has(groupKey)) n.delete(groupKey)
-                        else n.add(groupKey)
-                        return n
-                      })
-                    }}
-                  >
-                    <span className="flex items-center gap-1.5 min-w-0">
-                      <span {...dragHandleProps} className="cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-40 hover:!opacity-100 transition-opacity shrink-0 touch-none" onClick={(e) => e.stopPropagation()}>
-                        <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />
-                      </span>
-                      <input
-                        type="checkbox"
-                        checked={!disabledIds.has(item.groupId)}
-                        onChange={() => {
-                          setDisabledIds((prev) => {
-                            const n = new Set(prev)
-                            if (n.has(item.groupId)) n.delete(item.groupId)
-                            else n.add(item.groupId)
-                            return n
-                          })
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                        className="h-3.5 w-3.5 rounded accent-primary cursor-pointer shrink-0 mr-1"
-                      />
-                      {groupExpanded ? <ChevronDown className="h-3 w-3 shrink-0 text-warning" /> : <ChevronRight className="h-3 w-3 shrink-0 text-warning" />}
-                      <Link2 className="h-3 w-3 shrink-0 text-warning" />
-                      {editingChainId === item.groupId ? (
-                        <Input
-                          value={editingChainName}
-                          onChange={(e) => setEditingChainName(e.target.value)}
-                          onBlur={commitChainRename}
-                          onKeyDown={(e) => { if (e.key === 'Enter') commitChainRename(); if (e.key === 'Escape') setEditingChainId(null) }}
-                          className="h-6 text-sm font-medium w-48"
-                          autoFocus
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      ) : (
-                        <>
-                          <span className="font-medium truncate text-warning/90" onDoubleClick={(e) => startEditChain(item.groupId, item.groupName, e)}>{item.groupName}</span>
-                          <span className="text-[10px] text-warning/50 ml-1">{item.steps.length} {t('scenario.steps')}</span>
-                        </>
-                      )}
-                    </span>
-                    <span className={`flex items-center gap-1 font-bold text-xs ${groupColor}`}>{groupLabel}</span>
-                    <span className="font-mono text-xs self-center">-</span>
-                    <span />
-                    <span />
-                    <span className="flex items-center justify-end gap-0.5" onClick={(e) => e.stopPropagation()}>
-                      {(() => { const isChainRunning = runningIds.has(item.groupId); return (
-                        <button type="button" className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 hover:bg-overlay/[0.04] transition-all cursor-pointer" onClick={() => runChain(item.groupId, item.steps.map((s) => s.id))} disabled={isChainRunning} title={t('runner.run_chain')}>
-                          {isChainRunning ? <Loader2 className="h-3 w-3 animate-spin text-warning" /> : <Play className="h-3 w-3 text-warning" />}
-                        </button>
-                      ) })()}
-                      <button type="button" className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 hover:bg-overlay/[0.04] transition-all cursor-pointer" onClick={(e) => startEditChain(item.groupId, item.groupName, e)} title={t('tree.rename')}>
-                        <Pencil className="h-3 w-3 text-warning" />
-                      </button>
-                      <button type="button" className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 hover:bg-overlay/[0.04] transition-all cursor-pointer" onClick={() => addChainStep(item.groupId)} title={t('chain.add_step')}>
-                        <Plus className="h-3 w-3 text-warning" />
-                      </button>
-                      <button type="button" className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 hover:bg-overlay/[0.04] transition-all cursor-pointer" onClick={() => copyRequest(item.groupId)} title={t('common.copy')}>
-                        <Copy className="h-3 w-3 text-warning" />
-                      </button>
-                      <button type="button" className="h-6 w-6 flex items-center justify-center rounded-md opacity-0 group-hover:opacity-100 hover:bg-destructive/10 transition-all cursor-pointer" onClick={(e) => deleteChain(item.groupId, item.groupName, e)} title={t('common.delete')}>
-                        <Trash2 className="h-3 w-3 text-destructive" />
-                      </button>
-                    </span>
-                  </div>
-                  {groupExpanded && item.steps.map((r, stepIdx) => {
-                    const prevDone = stepIdx === 0 || !!getStatus(item.steps[stepIdx - 1].id)
-                    return <ScenarioRow key={r.id} r={r} stepLabel={`Step ${stepIdx + 1}`} version={itemVersion[r.id]} indent envVars={envVars} assertionCount={assertionCounts[r.id] ?? 0} getResult={getResult} getStatus={getStatus} statuses={statuses} progress={progress} runningIds={runningIds} expandedRows={expandedRows} detailData={detailData} loadDetail={loadDetail} toggleRow={toggleRow} runSingle={handleRunSingle} openEdit={openEdit} copyRequest={copyRequest} deleteRequest={deleteRequest} streamingContent={streamingContents[r.id]} canRun={prevDone} />
-                  })}
-                </div>
+                    <ChainGroupRow
+                      group={item}
+                      expandedKey={groupKey}
+                      expanded={groupExpanded}
+                      disabled={disabledIds.has(item.groupId)}
+                      onToggleExpanded={() => {
+                        setExpandedRows((p) => {
+                          const n = new Set(p)
+                          if (n.has(groupKey)) n.delete(groupKey)
+                          else n.add(groupKey)
+                          return n
+                        })
+                      }}
+                      onToggleDisabled={() => {
+                        setDisabledIds((prev) => {
+                          const n = new Set(prev)
+                          if (n.has(item.groupId)) n.delete(item.groupId)
+                          else n.add(item.groupId)
+                          return n
+                        })
+                      }}
+                      editingChainId={editingChainId}
+                      editingChainName={editingChainName}
+                      onEditingChainNameChange={setEditingChainName}
+                      onCommitRename={commitChainRename}
+                      onCancelRename={() => setEditingChainId(null)}
+                      onStartRename={startEditChain}
+                      onRunChain={runChain}
+                      onAddStep={addChainStep}
+                      onCopy={copyRequest}
+                      onDelete={deleteChain}
+                      dragHandleProps={dragHandleProps}
+                      runningIds={runningIds}
+                      progress={progress}
+                      itemVersion={itemVersion}
+                      envVars={envVars}
+                      assertionCounts={assertionCounts}
+                      getResult={getResult}
+                      getStatus={getStatus}
+                      statuses={statuses}
+                      expandedRows={expandedRows}
+                      detailData={detailData}
+                      loadDetail={loadDetail}
+                      toggleRow={toggleRow}
+                      runSingle={handleRunSingle}
+                      openEdit={openEdit}
+                      copyRequest={copyRequest}
+                      deleteRequest={deleteRequest}
+                      streamingContents={streamingContents}
+                    />
                   )}
                 </SortableRow>
               )

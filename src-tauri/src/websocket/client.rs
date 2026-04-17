@@ -98,6 +98,52 @@ fn is_error_message(json: &serde_json::Value) -> bool {
 
 /// WebSocket 连接超时时间
 const WS_CONNECT_TIMEOUT_SECS: u64 = 15;
+/// 初始连接失败时的重试次数（中途断开不重试，因为会话状态会丢失）
+const WS_CONNECT_RETRIES: u32 = 2;
+/// 重试基础退避时间（毫秒），按 base * 2^attempt 指数退避
+const WS_RETRY_BASE_MS: u64 = 300;
+
+/// 带超时和指数退避重试的 WebSocket 连接
+async fn connect_with_retry(
+    ws_url: &str,
+) -> Result<
+    tokio_tungstenite::WebSocketStream<
+        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    >,
+    anyhow::Error,
+> {
+    let mut last_err: Option<anyhow::Error> = None;
+    for attempt in 0..=WS_CONNECT_RETRIES {
+        if attempt > 0 {
+            let backoff_ms = WS_RETRY_BASE_MS * (1u64 << (attempt - 1));
+            log::warn!(
+                "WebSocket 连接失败，{}ms 后重试 ({}/{})",
+                backoff_ms,
+                attempt,
+                WS_CONNECT_RETRIES
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
+        }
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(WS_CONNECT_TIMEOUT_SECS),
+            connect_async(ws_url),
+        )
+        .await
+        {
+            Ok(Ok((ws, _))) => return Ok(ws),
+            Ok(Err(e)) => {
+                last_err = Some(anyhow::anyhow!("WebSocket 连接失败: {}", e));
+            }
+            Err(_) => {
+                last_err = Some(anyhow::anyhow!(
+                    "WebSocket 连接超时 ({}s)",
+                    WS_CONNECT_TIMEOUT_SECS
+                ));
+            }
+        }
+    }
+    Err(last_err.unwrap_or_else(|| anyhow::anyhow!("WebSocket 连接失败：未知错误")))
+}
 
 /// 执行 WebSocket 请求
 /// - body_content 为 JSON 数组时：多步模式（用户完全控制每条消息内容）
@@ -107,14 +153,7 @@ pub async fn execute(item: &CollectionItem) -> Result<ExecutionResult, anyhow::E
     let execution_id = Uuid::new_v4().to_string();
     let start = Instant::now();
 
-    // 带超时的连接，防止慢服务器无限挂起
-    let (ws, _) = tokio::time::timeout(
-        std::time::Duration::from_secs(WS_CONNECT_TIMEOUT_SECS),
-        connect_async(&ws_url),
-    )
-    .await
-    .map_err(|_| anyhow::anyhow!("WebSocket 连接超时 ({}s)", WS_CONNECT_TIMEOUT_SECS))?
-    .map_err(|e| anyhow::anyhow!("WebSocket 连接失败: {}", e))?;
+    let ws = connect_with_retry(&ws_url).await?;
 
     if is_multi_step_body(&item.body_content) {
         let messages = parse_messages(&item.body_content);

@@ -56,7 +56,11 @@ pub async fn run_batch(
         let ct = cancel_token.clone();
 
         let handle = tokio::spawn(async move {
-            let _permit = sem.acquire().await.expect("semaphore closed");
+            // semaphore 关闭说明 runtime 异常，跳过此任务（外层 for 已过滤 None）
+            let _permit = match sem.acquire().await {
+                Ok(p) => p,
+                Err(_) => return None,
+            };
             if ct.load(std::sync::atomic::Ordering::Relaxed) {
                 return None;
             }

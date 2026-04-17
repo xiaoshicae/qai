@@ -6,6 +6,7 @@ import { save, open } from '@tauri-apps/plugin-dialog'
 import { writeTextFile, readTextFile } from '@tauri-apps/plugin-fs'
 import { toast } from 'sonner'
 import { Toaster } from 'sonner'
+import { useTranslation } from 'react-i18next'
 import AppLayout from './components/layout/app-layout'
 import WorkbenchView from './views/workbench-view'
 import { ConfirmDialog } from './components/ui/confirm-dialog'
@@ -30,6 +31,7 @@ function RouteFallback() {
 /** 监听 macOS 菜单事件 */
 function MenuListener() {
   const navigate = useNavigate()
+  const { t } = useTranslation()
 
   useEffect(() => {
     let reloadTimer: ReturnType<typeof setTimeout> | null = null
@@ -43,7 +45,7 @@ function MenuListener() {
         const path = await save({ defaultPath: 'qai-export.json', filters: [{ name: 'JSON', extensions: ['json'] }] })
         if (path) {
           await writeTextFile(path, json)
-          toast.success(`已导出到 ${path}`)
+          toast.success(t('menu.exported_to', { path }))
         }
       } catch (e: unknown) { toast.error(invokeErrorMessage(e)) }
     })
@@ -62,13 +64,13 @@ function MenuListener() {
         const c = stats.createdCollections + stats.createdItems + stats.createdAssertions + stats.createdGroups + stats.createdEnvironments + stats.createdEnvVariables
         if (c > 0) {
           const parts: string[] = []
-          if (stats.createdCollections) parts.push(`${stats.createdCollections} 集合`)
-          if (stats.createdItems) parts.push(`${stats.createdItems} 请求`)
-          if (stats.createdAssertions) parts.push(`${stats.createdAssertions} 断言`)
-          if (stats.createdEnvironments) parts.push(`${stats.createdEnvironments} 环境`)
-          toast.success(`导入完成，新增：${parts.join(', ')}`)
+          if (stats.createdCollections) parts.push(t('menu.count_collections', { count: stats.createdCollections }))
+          if (stats.createdItems) parts.push(t('menu.count_items', { count: stats.createdItems }))
+          if (stats.createdAssertions) parts.push(t('menu.count_assertions', { count: stats.createdAssertions }))
+          if (stats.createdEnvironments) parts.push(t('menu.count_environments', { count: stats.createdEnvironments }))
+          toast.success(t('menu.import_done_with', { parts: parts.join(', ') }))
         } else {
-          toast.success('导入完成，数据无变化')
+          toast.success(t('menu.import_done_no_change'))
         }
         reloadTimer = setTimeout(() => window.location.reload(), 800)
       } catch (e: unknown) { toast.error(invokeErrorMessage(e)) }
@@ -77,7 +79,7 @@ function MenuListener() {
       u1.then((fn) => fn()); u2.then((fn) => fn()); u3.then((fn) => fn())
       if (reloadTimer) clearTimeout(reloadTimer)
     }
-  }, [navigate])
+  }, [navigate, t])
   return null
 }
 

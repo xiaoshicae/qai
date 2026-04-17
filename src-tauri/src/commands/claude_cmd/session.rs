@@ -1,7 +1,7 @@
 use std::sync::Mutex;
 
-use crate::errors::AppError;
 use super::process::validate_mcp_config;
+use crate::errors::AppError;
 
 /// Claude 会话内部状态
 /// 所有字段放在一个结构体中，由单个 Mutex 保护，避免竞态条件
@@ -44,7 +44,10 @@ pub struct ClaudeEvent {
 }
 
 /// 构建带 MCP 参数的公共 args
-pub fn build_mcp_args(args: &mut Vec<String>, mcp_config_path: Option<&str>) -> Result<(), AppError> {
+pub fn build_mcp_args(
+    args: &mut Vec<String>,
+    mcp_config_path: Option<&str>,
+) -> Result<(), AppError> {
     if let Some(config) = mcp_config_path {
         validate_mcp_config(config)?;
         args.push(format!("--mcp-config={config}"));

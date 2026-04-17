@@ -152,16 +152,10 @@ fn walk(value: &Value, segments: &[PathSegment]) -> Vec<Value> {
         let seg = &segments[i];
         match seg {
             PathSegment::Key(k) => {
-                current = current
-                    .iter()
-                    .filter_map(|v| v.get(k).cloned())
-                    .collect();
+                current = current.iter().filter_map(|v| v.get(k).cloned()).collect();
             }
             PathSegment::Index(idx) => {
-                current = current
-                    .iter()
-                    .filter_map(|v| v.get(idx).cloned())
-                    .collect();
+                current = current.iter().filter_map(|v| v.get(idx).cloned()).collect();
             }
             PathSegment::Wildcard => {
                 let mut next = Vec::new();

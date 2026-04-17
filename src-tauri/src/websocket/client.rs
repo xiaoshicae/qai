@@ -107,9 +107,7 @@ const WS_RETRY_BASE_MS: u64 = 300;
 async fn connect_with_retry(
     ws_url: &str,
 ) -> Result<
-    tokio_tungstenite::WebSocketStream<
-        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-    >,
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
     anyhow::Error,
 > {
     let mut last_err: Option<anyhow::Error> = None;

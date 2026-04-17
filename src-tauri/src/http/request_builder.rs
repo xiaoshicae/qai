@@ -123,17 +123,13 @@ async fn apply_body(
     body_content: &str,
 ) -> Result<reqwest::RequestBuilder, anyhow::Error> {
     match body_type {
-        "json" => {
-            if !body_content.is_empty() {
-                let json_value: serde_json::Value = serde_json::from_str(body_content)
-                    .unwrap_or(serde_json::Value::String(body_content.to_string()));
-                builder = builder.json(&json_value);
-            }
+        "json" if !body_content.is_empty() => {
+            let json_value: serde_json::Value = serde_json::from_str(body_content)
+                .unwrap_or(serde_json::Value::String(body_content.to_string()));
+            builder = builder.json(&json_value);
         }
-        "raw" => {
-            if !body_content.is_empty() {
-                builder = builder.body(body_content.to_string());
-            }
+        "raw" if !body_content.is_empty() => {
+            builder = builder.body(body_content.to_string());
         }
         "form" | "urlencoded" => {
             let form_data: Vec<KeyValuePair> =

@@ -168,34 +168,28 @@ pub fn to_curl(
 
     // Body
     match body_type {
-        "json" => {
-            if !body_content.is_empty() {
-                // 压缩 JSON
-                let compact = serde_json::from_str::<serde_json::Value>(body_content)
-                    .map(|v| serde_json::to_string(&v).unwrap_or_else(|_| body_content.to_string()))
-                    .unwrap_or_else(|_| body_content.to_string());
-                parts.push(format!("  -d '{compact}'"));
-            }
+        "json" if !body_content.is_empty() => {
+            // 压缩 JSON
+            let compact = serde_json::from_str::<serde_json::Value>(body_content)
+                .map(|v| serde_json::to_string(&v).unwrap_or_else(|_| body_content.to_string()))
+                .unwrap_or_else(|_| body_content.to_string());
+            parts.push(format!("  -d '{compact}'"));
         }
-        "raw" => {
-            if !body_content.is_empty() {
-                parts.push(format!("  -d '{}'", body_content.replace('\'', "'\\''")));
-            }
+        "raw" if !body_content.is_empty() => {
+            parts.push(format!("  -d '{}'", body_content.replace('\'', "'\\''")));
         }
-        "urlencoded" | "form-data" => {
-            if !body_content.is_empty() {
-                // 尝试解析 KV 数组
-                if let Ok(kvs) = serde_json::from_str::<Vec<KeyValuePair>>(body_content) {
-                    for kv in kvs.iter().filter(|k| k.enabled) {
-                        if body_type == "form-data" {
-                            parts.push(format!("  -F '{}={}'", kv.key, kv.value));
-                        } else {
-                            parts.push(format!("  --data-urlencode '{}={}'", kv.key, kv.value));
-                        }
+        "urlencoded" | "form-data" if !body_content.is_empty() => {
+            // 尝试解析 KV 数组
+            if let Ok(kvs) = serde_json::from_str::<Vec<KeyValuePair>>(body_content) {
+                for kv in kvs.iter().filter(|k| k.enabled) {
+                    if body_type == "form-data" {
+                        parts.push(format!("  -F '{}={}'", kv.key, kv.value));
+                    } else {
+                        parts.push(format!("  --data-urlencode '{}={}'", kv.key, kv.value));
                     }
-                } else {
-                    parts.push(format!("  -d '{body_content}'"));
                 }
+            } else {
+                parts.push(format!("  -d '{body_content}'"));
             }
         }
         _ => {}

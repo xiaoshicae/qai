@@ -2,8 +2,8 @@ use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
-use crate::errors::AppError;
 use super::session::ClaudeState;
+use crate::errors::AppError;
 
 /// stderr 最大读取字节数（1MB），防止恶意输出耗尽内存
 pub const MAX_STDERR_BYTES: usize = 1024 * 1024;
